@@ -373,11 +373,11 @@ async function openMasterDetail(tmdbId, type, fallbackTitle, backdropPath, poste
     console.log(`🎬 Vibe Check: Routing to Standard TMDB UI`);
     document.getElementById('detail-overview').innerText = "Loading details...";
     activeMedia.malData = null; // Clear it out just in case
-    return openMovieDetail(tmdbId, type);
+    return openMovieDetail(tmdbId, fallbackTitle, type);
 }
 
 //Open FULL file page(description and both playbacks)
-export async function openMovieDetail(id, type = 'movie') {
+export async function openMovieDetail(id, fallbackTitle, type = 'movie') {
     const view = document.getElementById('movie-detail-view');
 
     try {
@@ -533,14 +533,7 @@ export async function openMovieDetail(id, type = 'movie') {
 
         // Play (High Quality) Button
         btnTorrent.onclick = () => {
-            startTorrentioStream(tmdbId, fallbackTitle, type);
-        };
-
-        // Play (Direct Stream IFrame) Button
-        btnScraper.onclick = () => {
-            const currentAbsoluteEp = document.getElementById('selected-episode').value;
-            // ⚠️ Note: We are passing '1' for the season as a temporary placeholder.
-            openIframePlayer(tmdbId, fallbackTitle, 'tv', 1, currentAbsoluteEp);
+            startTorrentioStream(id, fallbackTitle, type);
         };
 
         // 4. Show the page!
