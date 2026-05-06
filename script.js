@@ -1,10 +1,9 @@
-import { art, playDirect, clearPlayerInstance, stopPlayback } from './player.js';
-import { getPosterForLibrary, TMDB_KEY } from './api.js';
+import { playDirect, stopPlayback, requestLink, startPlayer } from './player.js';
+import { TMDB_KEY, getAnimeIds, searchTMDB, loadDiscover } from './api.js';
 import { parseMediaData } from './parseMedia.js';
 
 let allTorrents = [];
 let currentTorrentId = null;
-let clickCooldown = false;
 
 export const TRAKT_CLIENT_ID = '027c95542a22d861d8a4e82b7535560b457639527f09b5526315682c611488c9';
 // PASTE YOUR CLOUDFLARE URL BELOW (keep the /?url= at the end!)
@@ -144,9 +143,6 @@ export function goHome() {
     document.getElementById('search-input').value = '';
 
     window.location.reload();
-
-    refreshLibrary();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 // --- LIBRARY ---
@@ -222,13 +218,21 @@ export function renderList(items) {
         `;
 
         card.onclick = () => {
-            if (clickCooldown) { showToast("Please wait a moment."); return; }
-            clickCooldown = true; setTimeout(() => clickCooldown = false, 2000);
+            if (appState.clickCooldown) { showToast("Please wait a moment."); return; }
+            appState.clickCooldown = true; setTimeout(() => appState.clickCooldown = false, 2000);
 
-            if (isShow) openPicker(t, vaultData);
+            // 🧠 THE FIX: Grab FRESH vault data right at the exact moment of the click!
+            const freshVault = JSON.parse(localStorage.getItem('tmdb_vault') || '{}');
+            const currentVaultData = freshVault[(t.hash || "").toLowerCase()];
+
+            if (isShow) openPicker(t);
             else {
                 const vid = t.files.find(f => f.name.match(/\.(mkv|mp4|avi|mov)$/i)) || t.files[0];
-                import('./player.js').then(m => m.requestLink(t.id, vid.id, t.name, vid.name));
+                if (vid) {
+                    requestLink(t.id, vid.id, t.name, vid.name);
+                } else {
+                    showToast("No playable video files found in this torrent.", "error");
+                }
             }
         };
 
@@ -269,7 +273,6 @@ export function renderList(items) {
                         if (typeof fetchedData === 'object' && fetchedData.id) {
                             let safeVault = JSON.parse(localStorage.getItem('tmdb_vault') || '{}');
                             safeVault[item.hash] = { id: fetchedData.id, type: fetchedData.type, poster: fetchedData.poster };
-                            //TEMP UNOOOOOOO
                             //localStorage.setItem('tmdb_vault', JSON.stringify(safeVault));
                         }
                     }
@@ -283,835 +286,679 @@ export function renderList(items) {
     }
 }
 
+async function getPosterForLibrary(cleanTitle, year) {
+    try {
+        let url = `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_KEY}&query=${encodeURIComponent(cleanTitle)}&page=1`;
+        if (year) url += `&primary_release_year=${year}`;
+
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (data.results && data.results.length > 0) {
+            const bestMatch = data.results[0];
+
+            // Return the full package so the Vault can cache it!
+            return {
+                id: bestMatch.id,
+                type: bestMatch.media_type || (bestMatch.name ? 'tv' : 'movie'),
+                poster: bestMatch.poster_path ? `https://image.tmdb.org/t/p/w500${bestMatch.poster_path}` : null
+            };
+        }
+        return null;
+    } catch (e) {
+        return null;
+    }
+}
+
 function refreshLibrary() {
     const key = localStorage.getItem('tb_api_key');
     if (key) loadLibrary(key);
 }
 
-// --- THE TMDB CACHE ENGINE (On a Data Diet) ---
-export async function getTmdbSeasonData(tmdbId, cleanName, seasonNum = 1) {
+//#region TMDB ID
+async function getTmdbIdFallback(title) {
+    if (!title) return null;
+    const cleanTitle = title.toLowerCase().trim();
+
+    // 1. Scan LocalStorage Cache First
+    const cacheKey = 'tmdb_title_cache';
+    let titleCache = JSON.parse(localStorage.getItem(cacheKey) || '{}');
+
+    if (titleCache[cleanTitle]) {
+        console.log(`⚡ Loaded TMDB ID from Cache for: "${title}"`);
+        return titleCache[cleanTitle];
+    }
+
+    // 2. Fetch from TMDB API if not in cache
+    console.log(`🕵️ Fetching TMDB ID via text search for: "${title}"...`);
     try {
-        let finalId = tmdbId;
+        const searchUrl = `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_KEY}&query=${encodeURIComponent(cleanTitle)}&page=1`;
+        const searchRes = await fetch(searchUrl);
+        const searchData = await searchRes.json();
 
-        if (!finalId && cleanName) {
-            const searchUrl = `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_KEY}&query=${encodeURIComponent(cleanName)}&page=1`;
-            const searchRes = await fetch(searchUrl);
-            const searchData = await searchRes.json();
-            if (searchData.results && searchData.results.length > 0) finalId = searchData.results[0].id;
+        if (searchData.results && searchData.results.length > 0) {
+            const foundId = searchData.results[0].id;
+
+            // 3. Save it to LocalStorage so we never have to search this title again!
+            titleCache[cleanTitle] = foundId;
+            localStorage.setItem(cacheKey, JSON.stringify(titleCache));
+
+            console.log(`🎯 TMDB Fallback Success! Found ID: ${foundId}`);
+            return foundId;
+        } else {
+            console.log(`🛑 TMDB returned nothing for "${title}".`);
+            return null;
         }
-        if (!finalId) return null;
-
-        const cacheKey = `tmdb_season_${finalId}_s${seasonNum}`;
-        const cachedPayload = localStorage.getItem(cacheKey);
-
-        /*if (cachedPayload) {
-            const parsedCache = JSON.parse(cachedPayload);
-            if (Date.now() < parsedCache.expiresAt) {
-                console.log(`⚡ Loaded S${seasonNum} instantly from Cache!`);
-                return parsedCache.data;
-            }
-        }*/
-
-        const seasonUrl = `https://api.themoviedb.org/3/tv/${finalId}/season/${seasonNum}?api_key=${TMDB_KEY}`;
-        const seasonRes = await fetch(seasonUrl);
-        const seasonData = await seasonRes.json();
-
-        // 🧠 THE DATA DIET: Strip out the useless TMDB data to save 90% of LocalStorage space!
-        const slimEpisodes = seasonData.episodes ? seasonData.episodes.map(ep => ({
-            episode_number: ep.episode_number,
-            name: ep.name,
-            still_path: ep.still_path,
-            runtime: ep.runtime,
-            air_date: ep.air_date
-        })) : [];
-
-        let isOngoing = false;
-        if (slimEpisodes.length > 0) {
-            const lastEp = slimEpisodes[slimEpisodes.length - 1];
-            if (!lastEp.air_date || new Date(lastEp.air_date).getTime() > Date.now()) isOngoing = true;
-        }
-
-        const expireTime = isOngoing ? (12 * 60 * 60 * 1000) : (30 * 24 * 60 * 60 * 1000);
-
-        //localStorage.setItem(cacheKey, JSON.stringify({
-        //    expiresAt: Date.now() + expireTime,
-        //    data: { episodes: slimEpisodes }
-        //}));
-
-        console.log(`🌐 Fetched S${seasonNum} from TMDB! (Cached for ${isOngoing ? '12 Hours' : '30 Days'})`);
-        return { episodes: slimEpisodes };
-
-    } catch (error) {
-        console.error("Network error fetching TMDB season pack:", error);
+    } catch (e) {
+        console.warn("TMDB text search failed.", e);
         return null;
     }
 }
 
-// --- THE KITSU CHAIN-LINK ENGINE ---
-export async function buildKitsuGrid(initialKitsuId, maxEpisodes, mainShowTitle = "", maxExplicitSeason = 1) {
-    console.log(`🕵️ Building Kitsu Grid (Live Fetching)...`);
-    let grid = [];
-    let currentId = initialKitsuId;
-    let currentAbsoluteStart = 1;
-    const visitedIds = new Set();
+// Get Anilist ID from string
+async function getAnilistIdFromText(searchText) {
+    const query = `
+    query ($search: String) {
+      Page (page: 1, perPage: 1) {
+        media (search: $search, type: ANIME) {
+          id
+          title { english romaji }
+          coverImage { large } 
+        }
+      }
+    }`;
 
     try {
-        while (currentId && (currentAbsoluteStart <= maxEpisodes || grid.length < maxExplicitSeason)) {
+        const res = await fetch('https://graphql.anilist.co', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query, variables: { search: searchText } })
+        });
+        const json = await res.json();
+        const match = json.data?.Page?.media[0];
 
-            if (visitedIds.has(currentId)) {
-                console.warn(`🛑 Circular Kitsu link detected at ID ${currentId}! Breaking loop to prevent crash.`);
-                break;
+        return match ? {
+            id: match.id,
+            title: match.title.english || match.title.romaji,
+            coverImage: match.coverImage?.large // <-- We grab the official poster here!
+        } : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+// 1. Keep this at the top of your file
+let anilistQueue = Promise.resolve();
+
+async function getDirectSequel(currentAnilistId) {
+
+    // 2. The simple, bulletproof 150ms delay line.
+    // This forces the function to wait 150ms after the previous call finishes.
+    // The .catch(() => {}) ensures a failed network call never breaks the queue.
+    await (anilistQueue = anilistQueue.then(() => new Promise(r => setTimeout(r, 150))).catch(() => { }));
+
+    // 3. Proceed with the normal fetch!
+    const query = `
+    query ($id: Int) {
+      Media (id: $id) {
+        relations {
+          edges {
+            relationType
+            node {
+              id
+              episodes
+              title { english romaji }
             }
-            visitedIds.add(currentId);
+          }
+        }
+      }
+    }`;
 
-            const url = `https://kitsu.io/api/edge/anime/${currentId}?include=mediaRelationships.destination`;
-            const res = await fetch(url);
-            const data = await res.json();
+    try {
+        const res = await fetch('https://graphql.anilist.co', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query, variables: { id: currentAnilistId } })
+        });
+        const json = await res.json();
 
-            const animeData = data.data;
-            // 🚨 LOG 1: See what show we are currently looking at
-            console.log(`[GRID] Looking at ID: ${currentId} | Title: ${animeData.attributes.canonicalTitle} | Type: ${animeData.attributes.subtype}`);
-            const epCount = animeData.attributes.episodeCount || 100; // Cap ongoing shows so it doesn't loop forever
+        const allRelations = json.data?.Media?.relations?.edges || [];
+        const sequelEdge = allRelations.find(edge => edge.relationType === 'SEQUEL');
 
-            // Add this season to our mathematical grid
-            grid.push({
-                kitsuId: currentId,
-                start: currentAbsoluteStart,
-                end: currentAbsoluteStart + epCount - 1,
-                title: animeData.attributes.canonicalTitle // 🧠 NEW: Save the official Kitsu name!
+        if (sequelEdge) {
+            const sequelTitle = sequelEdge.node.title.english || sequelEdge.node.title.romaji || "Unknown Title";
+            return {
+                id: sequelEdge.node.id,
+                officialEpisodeCount: sequelEdge.node.episodes,
+                title: sequelTitle,
+            };
+        }
+        return null;
+
+    } catch (e) {
+        console.error("AniList Graph Fetch Failed", e);
+        return null;
+    }
+}
+//#endregion
+
+//#region Grouping
+function preProcessTorrentData(videoFiles, mainShowTitle, type = 'unknown') {
+    const franchiseGroups = {};
+
+    videoFiles.forEach(file => {
+        const fileData = parseMediaData(file.name, type);
+
+        // 1. Cleaned up redundant ORs
+        let mergedInfo = {
+            title: fileData.title || mainShowTitle || 'Unknown',
+            episode: fileData.episode || null,
+            season: fileData.season || 1,
+            year: parseInt(fileData.year || fileData.airDate, 10) || null,
+            fileType: fileData.fileType || ''
+        };
+
+        const sizeInMB = file.size / (1024 * 1024);
+
+        // 2. CRITICAL FIX: Force to UPPERCASE to match the switch cases
+        const fileType = mergedInfo.fileType.toUpperCase();
+        let finalFileType = "TV";
+
+        switch (fileType) {
+            case 'MOVIE': finalFileType = 'Movie'; break;
+            case 'OVA':
+            case 'OAD':
+            case 'ODA':
+            case 'ONA': finalFileType = 'OVA'; break;
+            case 'SPECIAL':
+            case 'SP': finalFileType = 'Special'; break;
+            case 'OP':
+            case 'OPENING':
+            case 'NCOP':
+            case 'ED':
+            case 'ENDING':
+            case 'NCED':
+            case 'THEME': finalFileType = 'Theme'; break;
+            case 'PV':
+            case 'PROMO':
+            case 'TRAILER': finalFileType = 'Trailer'; break;
+            case 'TV':
+            default: finalFileType = 'TV'; break;
+        }
+
+        const cleanTitle = mergedInfo.title.toLowerCase().trim();
+
+        // 3. Initialize the group if it doesn't exist
+        if (!franchiseGroups[cleanTitle]) {
+            franchiseGroups[cleanTitle] = {
+                title: mergedInfo.title,
+                files: []
+                // Removed finalType from here so groups can hold mixed types safely
+            };
+        }
+
+        // 4. Push the file, including its individual type and size
+        franchiseGroups[cleanTitle].files.push({
+            originalFile: file,
+            season: mergedInfo.season,
+            episode: mergedInfo.episode,
+            year: mergedInfo.year,
+            fileType: finalFileType, // Store the type on the file itself!
+            sizeMB: sizeInMB.toFixed(2) // Put your size calculation to good use
+        });
+    });
+
+    // 5. Cleaned up the counting loop
+    for (const group of Object.values(franchiseGroups)) {
+        group.episodeCount = group.files.length;
+    }
+
+    console.log(franchiseGroups);
+    return franchiseGroups;
+}
+
+// Helper to fix episode fragmentation before hitting APIs
+function consolidateEpisodes(franchiseGroups, mainShowTitle) {
+    // 1. Group only TV files by their season
+    const seasonGroups = {};
+
+    parsedList.forEach(item => {
+        if (item.fileType === 'TV' && item.season) {
+            if (!seasonGroups[item.season]) seasonGroups[item.season] = [];
+            seasonGroups[item.season].push(item);
+        }
+    });
+
+    // 2. Loop through each season to perform the "Title Check"
+    for (const season in seasonGroups) {
+        const filesInSeason = seasonGroups[season];
+
+        // If there's only 1 file, no need to consolidate
+        if (filesInSeason.length <= 1) continue;
+
+        // Get the first 3 episodes (or fewer if the season is tiny)
+        const sampleSize = Math.min(3, filesInSeason.length);
+        const sampleFiles = filesInSeason.slice(0, sampleSize);
+
+        // Check if ANY of the first 3 files successfully parsed the main title
+        // We use lowercase to ensure a safe, fuzzy match
+        const mainTitleClean = mainShowTitle.toLowerCase();
+        const hasMainTitle = sampleFiles.some(f =>
+            f.title && f.title.toLowerCase().includes(mainTitleClean)
+        );
+
+        // 3. If the parser grabbed episode names instead of the show name...
+        if (!hasMainTitle) {
+            // Force ALL files in this season to use the main torrent title!
+            // This squashes 24 API requests down to 1.
+            filesInSeason.forEach(f => {
+                f.title = mainShowTitle;
             });
-
-            currentAbsoluteStart += epCount;
-
-            // 🧠 THE FIX: Find the TRUE next season (Skip recap movies and OVAs!)
-            let sequelId = null;
-            if (data.included) {
-                const sequels = data.included.filter(inc => inc.type === 'mediaRelationships' && inc.attributes.role === 'sequel');
-
-                // 🧠 THE SMART LINK PICKER: If Kitsu users messed up and added multiple sequels,
-                // we collect them all and force them into chronological order!
-                let validDestinations = [];
-
-                for (let seq of sequels) {
-                    if (seq.relationships?.destination?.data) {
-                        const destData = seq.relationships.destination.data;
-
-                        if (destData.type === 'anime') {
-                            const destAnime = data.included.find(inc => inc.type === 'anime' && inc.id === destData.id);
-
-                            if (destAnime && destAnime.attributes && ['TV', 'ONA', 'special'].includes(destAnime.attributes.subtype)) {
-                                validDestinations.push(destAnime);
-                            }
-                        }
-                    }
-                }
-
-                if (validDestinations.length > 0) {
-                    // Sort them by start date (oldest first) so we never skip a season!
-                    validDestinations.sort((a, b) => {
-                        const dateA = new Date(a.attributes.startDate || '2099-01-01');
-                        const dateB = new Date(b.attributes.startDate || '2099-01-01');
-                        return dateA - dateB;
-                    });
-
-                    // Grab the TRUE next season
-                    sequelId = validDestinations[0].id;
-                }
-            }
-
-            // 2. THE FALLBACK (If the chain broke, but we still need more episodes/seasons!)
-            if (!sequelId && (currentAbsoluteStart <= maxEpisodes || grid.length < maxExplicitSeason) && mainShowTitle) {
-                const nextSeasonNum = grid.length + 1;
-                console.log(`[GRID] ⚠️ Broken link detected! Attempting Hail Mary text search for Season ${nextSeasonNum}...`);
-
-                // Try searching for "Show Name Season X"
-                const searchUrl = `https://kitsu.io/api/edge/anime?filter[text]=${encodeURIComponent(mainShowTitle + ' Season ' + nextSeasonNum)}&page[limit]=3`;
-                const searchRes = await fetch(searchUrl);
-                const searchData = await searchRes.json();
-
-                if (searchData.data && searchData.data.length > 0) {
-                    // Safety Check: Must be TV/ONA and MUST air chronologically AFTER the current season
-                    const currentStartDate = new Date(animeData.attributes.startDate || '2000-01-01');
-
-                    const validHits = searchData.data.filter(hit => {
-                        const hitDate = new Date(hit.attributes.startDate || '2099-01-01');
-                        return ['TV', 'ONA'].includes(hit.attributes.subtype) && hitDate > currentStartDate;
-                    });
-
-                    if (validHits.length > 0) {
-                        validHits.sort((a, b) => new Date(a.attributes.startDate) - new Date(b.attributes.startDate));
-                        sequelId = validHits[0].id;
-                        console.log(`[GRID] 🏈 Hail Mary Success! Forcibly linked ID ${sequelId} as Season ${nextSeasonNum}`);
-                    }
-                }
-            }
-
-            currentId = sequelId; // Move to the next link
         }
-
-        console.log(`🌐 Built Live Kitsu Grid:`, grid);
-        return grid;
-
-    } catch (e) {
-        console.warn("Failed to build Kitsu Grid", e);
-        return null;
     }
+
+    return parsedList;
 }
 
-// --- THE KITSU CACHE ENGINE (Now with Parallel Fetching!) ---
-export async function getKitsuEpisodesCached(kitsuId) {
-    const cacheKey = `kitsu_eps_${kitsuId}`;
-    const cachedPayload = localStorage.getItem(cacheKey);
-
-    /*if (cachedPayload) {
-        const parsedCache = JSON.parse(cachedPayload);
-        if (Date.now() < parsedCache.expiresAt) {
-            console.log(`⚡ Loaded Kitsu Episodes instantly from Cache!`);
-            return parsedCache.data;
-        }
-    }*/
-
-    let allKitsuEpisodes = [];
-
-    try {
-        // 1. Fetch Page 1 to find out how many total episodes exist
-        const firstRes = await fetch(`https://kitsu.io/api/edge/anime/${kitsuId}/episodes?page[limit]=20&page[offset]=0`);
-        const firstData = await firstRes.json();
-
-        if (firstData.data) {
-            const slimFirst = firstData.data.map(ep => ({
-                number: parseInt(ep.attributes.number),
-                canonicalTitle: ep.attributes.canonicalTitle,
-                thumbnail: ep.attributes.thumbnail ? ep.attributes.thumbnail.original : null,
-                length: ep.attributes.length
-            }));
-            allKitsuEpisodes.push(...slimFirst);
-
-            // 2. ⚡ PARALLEL FETCH: Fire the remaining pages safely in batches!
-            const total = firstData.meta.count;
-
-            if (total > 20) {
-                // First, create a list of all the offsets we need to fetch
-                const offsets = [];
-                for (let offset = 20; offset < total; offset += 20) {
-                    offsets.push(offset);
-                }
-
-                const BATCH_SIZE = 5; // Fetch 5 pages (100 episodes) at a time
-
-                // Loop through our offsets in chunks of 5
-                for (let i = 0; i < offsets.length; i += BATCH_SIZE) {
-                    const batchOffsets = offsets.slice(i, i + BATCH_SIZE);
-
-                    // Fire the 5 requests in parallel
-                    const batchPromises = batchOffsets.map(offset =>
-                        fetch(`https://kitsu.io/api/edge/anime/${kitsuId}/episodes?page[limit]=20&page[offset]=${offset}`).then(r => r.json())
-                    );
-
-                    const extraPages = await Promise.all(batchPromises);
-
-                    // Process the results
-                    extraPages.forEach(pageData => {
-                        if (pageData.data) {
-                            // Change this in both slim maps inside getKitsuEpisodesCached!
-                            const slim = pageData.data.map(ep => ({
-                                number: parseInt(ep.attributes.number),
-                                canonicalTitle: ep.attributes.canonicalTitle || (ep.attributes.titles ? (ep.attributes.titles.en_us || ep.attributes.titles.en_jp || ep.attributes.titles.en) : null),
-                                thumbnail: ep.attributes.thumbnail ? ep.attributes.thumbnail.original : null,
-                                length: ep.attributes.length
-                            }));
-                            allKitsuEpisodes.push(...slim);
-                        }
-                    });
-
-                    // 🛑 SAFETY VALVE: If there are more batches left, wait 250ms before firing again
-                    if (i + BATCH_SIZE < offsets.length) {
-                        await new Promise(resolve => setTimeout(resolve, 250));
-                    }
-                }
-            }
-        }
-
-        const expireTime = 24 * 60 * 60 * 1000;
-        //localStorage.setItem(cacheKey, JSON.stringify({ expiresAt: Date.now() + expireTime, data: allKitsuEpisodes }));
-
-        console.log(`[KITSU CACHE] Fetched ${allKitsuEpisodes.length} episodes for Kitsu ID: ${kitsuId}. First episode number is:`, allKitsuEpisodes[0]?.number);
-
-        console.log(`🌐 Fetched Kitsu in Parallel! (Cached for 24 Hours)`);
-        return allKitsuEpisodes;
-
-    } catch (e) {
-        console.warn("Kitsu fetch failed", e);
-        return null;
-    }
-}
-
-// Episode Table with 2D Franchise Mapping & Kitsu Slicer
-async function openPicker(torrent, vaultData) {
+// ==========================================
+// 1. THE BRAIN (Processing & API Mapping)
+// ==========================================
+async function openPicker(torrent) {
     const picker = document.getElementById('file-picker');
     const list = document.getElementById('picker-list');
     const title = document.getElementById('picker-title');
 
-    const tmdbId = null; //vaultData ? vaultData.id : null;
-    let initialKitsuId = null; //vaultData ? vaultData.kitsuId : null;
-
     picker.classList.remove('hidden');
-    currentTorrentId = torrent.id;
 
-    // 1. EXTRACT AND PARSE ALL FILES
+    // Show the spinner immediately
+    list.innerHTML = `
+        <div class="col-span-full flex justify-center p-10">
+            <svg class="animate-spin h-8 w-8 text-blue-500" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+        </div>
+    `;
+
+
     const videoFiles = torrent.files.filter(f => f.name.match(/\.(mkv|mp4|avi|mov)$/i));
     const baseInfo = parseMediaData(torrent.name);
+    const cleanName = baseInfo.title;
 
-    let maxAbsoluteEpisode = 0;
-    let maxExplicitSeason = 1;
+    const tmdbId = await getTmdbIdFallback(cleanName);
+    const anilistID = await getAnimeIds(tmdbId);
 
-    videoFiles.forEach(file => {
-        file.info = parseMediaData(file.name.split('/').pop(), baseInfo.title);
-        if (file.info.episode > maxAbsoluteEpisode) maxAbsoluteEpisode = file.info.episode;
-        if (file.info.season > maxExplicitSeason) maxExplicitSeason = file.info.season;
+    let torrentType = "";
+
+    if (anilistID) torrentType = "anime"
+
+    const franchiseGroups = await preProcessTorrentData(videoFiles, cleanName, torrentType);
+
+    const suspiciousKeys = Object.keys(franchiseGroups).filter(key => {
+        const group = franchiseGroups[key];
+        // Flag groups that have 1 or 2 files, AND are NOT movies
+        return group.files.length <= 2 && !group.files.some(f => f.fileType === 'Movie' || f.fileType === 'Theme');
     });
 
-    videoFiles.sort((a, b) => (a.info.episode || 0) - (b.info.episode || 0));
+    suspiciousKeys.forEach(key => {
+        const group = franchiseGroups[key];
 
-    let animeGrid = null;
+        // 1. Grab the first file to inspect its path
+        const sampleFile = group.files[0];
+        const pathParts = sampleFile.originalFile.name.split('/');
 
-    // 🧠 THE MISSING LINK: If the vault didn't have the Kitsu ID, fetch it right now!
-    if (!initialKitsuId && maxAbsoluteEpisode > 0) {
-        console.log("🕵️ Kitsu ID missing from vault! Fetching via text search...");
-        try {
-            const searchRes = await fetch(`https://kitsu.io/api/edge/anime?filter[text]=${encodeURIComponent(baseInfo.title)}&page[limit]=5`);
-            const searchData = await searchRes.json();
+        // 2. Find the parent folder (if it exists)
+        const isFlatDirectory = pathParts.length === 1;
 
-            if (searchData.data && searchData.data.length > 0) {
-                // 🧠 THE DYNAMIC FILTER: Let the files dictate what we look for!
-                const isSingleFile = videoFiles.length === 1;
-                let validHits = searchData.data;
+        let realTitle = cleanName; // Default to the main torrent title
 
-                if (isSingleFile) {
-                    validHits = searchData.data.filter(hit => ['movie', 'special', 'OVA'].includes(hit.attributes.subtype));
-                } else {
-                    validHits = searchData.data.filter(hit => ['TV', 'ONA'].includes(hit.attributes.subtype));
-                }
+        if (!isFlatDirectory) {
+            // 3. Parse the folder name to get the REAL show title
+            const parentFolder = pathParts[pathParts.length - 2];
+            const folderData = parseMediaData(parentFolder, torrentType);
+            realTitle = folderData.title || cleanName;
+        }
 
-                // 🛡️ Safety net: If our strict filter deleted everything, just use the raw search results
-                if (validHits.length === 0) validHits = searchData.data;
+        const realTitleKey = realTitle.toLowerCase().trim();
 
-                // 🛑 THE WESTERN MEDIA KILLSWITCH (The John Wick Fix)
-                // Kitsu will aggressively hallucinate if it doesn't know a show. We must verify the names match!
-                const searchWords = baseInfo.title.toLowerCase().split(/[\s\-:]+/).filter(w => w.length > 2); // Get words longer than 2 letters
+        // 4. If the real title is different from the fragmented episode title...
+        if (realTitleKey !== key) {
 
-                validHits = validHits.filter(hit => {
-                    const titles = hit.attributes.titles || {};
-                    const en = (titles.en || "").toLowerCase();
-                    const romaji = (titles.en_jp || "").toLowerCase();
-                    const canonical = (hit.attributes.canonicalTitle || "").toLowerCase();
-
-                    // Does Kitsu's answer contain at least ONE meaningful word from our search?
-                    return searchWords.some(w => en.includes(w) || romaji.includes(w) || canonical.includes(w));
-                });
-
-                if (validHits.length > 0) {
-                    // Sort the surviving hits by date to guarantee we start at the beginning
-                    const sortedHits = validHits.sort((a, b) => {
-                        const dateA = new Date(a.attributes.startDate || '2099-01-01');
-                        const dateB = new Date(b.attributes.startDate || '2099-01-01');
-                        return dateA - dateB;
-                    });
-
-                    initialKitsuId = sortedHits[0].id;
-                    console.log(`🎯 Smart Sort Success! Snagged ID: ${initialKitsuId}`);
-                } else {
-                    console.log(`🛑 Kitsu returned garbage for "${baseInfo.title}". Assuming Western Media!`);
-                    initialKitsuId = null; // Kill the Kitsu pipeline entirely
-                }
-            } else {
-                initialKitsuId = null;
+            // Create the master group if it doesn't exist yet
+            if (!franchiseGroups[realTitleKey]) {
+                franchiseGroups[realTitleKey] = {
+                    title: realTitle,
+                    files: []
+                };
             }
-        } catch (e) { console.log("Text search failed."); }
-    }
 
-
-    const mainShowTitle = baseInfo.title.toLowerCase().trim();
-    const titlesToVerify = new Set();
-
-    // Now build the grid!
-    if (initialKitsuId && maxAbsoluteEpisode > 0) {
-        animeGrid = await buildKitsuGrid(initialKitsuId, maxAbsoluteEpisode, mainShowTitle, maxExplicitSeason);
-    }
-
-    // We will use this dictionary to translate fake names into the main name
-    const titleTranslationMap = {};
-
-    videoFiles.forEach(file => {
-        const rawTitle = (file.info.title || mainShowTitle).toLowerCase().trim();
-
-        const isSmall = file.size < 150 * 1024 * 1024;
-        const isThemeMatch = file.name.match(/\b(ncop|nced|op|ed|opening|ending|creditless|theme)\b/i);
-        const isExtra = isThemeMatch || (isSmall && !file.info.episode);
-
-        // If it's NOT an extra, and it's a weird name we haven't seen yet, queue it up!
-        if (!isExtra && rawTitle !== mainShowTitle) {
-            titlesToVerify.add(rawTitle);
+            // 5. Dump the files into the master group and delete the fragment
+            franchiseGroups[realTitleKey].files.push(...group.files);
+            delete franchiseGroups[key];
         }
     });
-
-    const uniqueTitlesArray = Array.from(titlesToVerify);
 
     // ==========================================
-    // 🛑 NEW STEP 2: KITSU VERIFICATION & MAPPING
+    // THE PREMIUM METADATA LOOP (AniList + AniZip)
     // ==========================================
-    // Only run this if we found weird titles AND we successfully built a grid to check against
-    if (uniqueTitlesArray.length > 0 && animeGrid) {
-        console.log(`🕵️ Verifying ${uniqueTitlesArray.length} unique rogue titles against Kitsu...`);
+    if (torrentType === "anime") {
+        for (const groupKey in franchiseGroups) {
+            const group = franchiseGroups[groupKey];
+            group.seasonTitles = {};
 
-        // Fire the checks in parallel so it doesn't slow down the UI
-        await Promise.all(uniqueTitlesArray.map(async (rogueTitle) => {
-            try {
-                const searchRes = await fetch(`https://kitsu.io/api/edge/anime?filter[text]=${encodeURIComponent(rogueTitle)}&page[limit]=3`);
-                const searchData = await searchRes.json();
+            // 1. Find all unique seasons inside this specific group
+            const searchableFiles = group.files.filter(f => f.fileType === 'TV' || f.fileType === 'Movie' || f.fileType === 'OVA');
+            const uniqueSeasons = [...new Set(searchableFiles.map(f => f.season))].sort((a, b) => a - b);
 
-                if (searchData.data && searchData.data.length > 0) {
-                    // Check the top 3 hits just in case Kitsu's #1 result was a fuzzy match
-                    for (let hit of searchData.data) {
-                        const foundId = hit.id;
+            for (const season of uniqueSeasons) {
+                const targetFile = searchableFiles.find(f => f.season === season);
 
-                        // DOES THIS ID EXIST IN OUR GRID?
-                        const matchesGrid = animeGrid.some(g => g.kitsuId === foundId);
+                // 2. Construct the search string
+                let searchString = group.title;
+                if (season > 1 && targetFile.fileType === 'TV') {
+                    searchString += ` Season ${season}`;
+                }
 
-                        if (matchesGrid) {
-                            // BINGO! Math proves this rogue title belongs to the main show.
-                            // Put it in the dictionary so we can translate it later.
-                            titleTranslationMap[rogueTitle] = mainShowTitle;
-                            console.log(`🔗 Mapped rogue title: "${rogueTitle}" -> belongs to Main Show (Matched ID: ${foundId})`);
-                            break; // We found the match, stop looking at other hits
+                // 3. The Two-Step AniList Search
+                let aniListMatch = await getAnilistIdFromText(searchString);
+
+                if (!aniListMatch) {
+                    // Fallback: Strip movie numbers/junk
+                    let polishedString = searchString.replace(/(Movie)\s*\d*\s*-?\s*/gi, '').trim();
+                    aniListMatch = await getAnilistIdFromText(polishedString);
+                    if (aniListMatch) console.log(`Animist polished id ${aniListMatch.title}`);
+                }
+
+                if (aniListMatch && aniListMatch.title) {
+                    group.seasonTitles[season] = aniListMatch.title;
+                }
+
+                // If AniList completely fails, fallback to the Fribb Master ID (safest for Season 1/Movies)
+                let finalAnilistId = aniListMatch?.id || anilistID?.anilistId;
+                let officialMoviePoster = aniListMatch?.coverImage || null;
+
+                // 4. FETCH ANIZIP THUMBNAILS
+                if (finalAnilistId) {
+                    try {
+                        const azRes = await fetch(`https://api.ani.zip/mappings?anilist_id=${finalAnilistId}`);
+                        if (azRes.ok) {
+                            const azData = await azRes.json();
+                            const epDict = azData.episodes || {};
+                            
+                            console.log(azData);
+                            // Isolate only the local files that belong to THIS season
+                            const seasonFiles = group.files.filter(f => f.season === season);
+
+                            // 5. ATTACH THE DATA TO YOUR LOCAL FILES
+                            seasonFiles.forEach(file => {
+                                if (file.episode) {
+                                    const epInt = parseInt(file.episode, 10);
+                                    const epArray = Object.values(epDict);
+                                    
+                                    // Prioritize relative season number, fallback to absolute
+                                    let matchedEp = epArray.find(ep => ep.episodeNumber === epInt);
+                                    if (!matchedEp) {
+                                        matchedEp = epArray.find(ep => ep.absoluteEpisodeNumber === epInt);
+                                    }
+
+                                    if (matchedEp) {
+                                        file.aniZipTitle = matchedEp.title?.en || matchedEp.title?.xIdx;
+                                        file.aniZipThumbnail = matchedEp.image;
+                                        file.relativeEpisode = matchedEp.episodeNumber;
+                                    }
+                                }
+
+                                // 🎬 THE MOVIE FALLBACK
+                                if (!file.aniZipTitle && file.fileType === 'Movie') {
+                                    // THE FIX: If AniList found an exact match, use the official movie title!
+                                    // If AniList failed and we fell back to the Master ID, use your raw file name!
+                                    file.aniZipTitle = aniListMatch?.title || file.originalFile.short_name;
+
+                                    file.aniZipThumbnail = officialMoviePoster || azData.image || azData.coverImage || null;
+                                    file.relativeEpisode = 1;
+                                }
+                            });
+
+                            // THE SPLIT-COUR DETECTOR
+                            const starvingFiles = seasonFiles.filter(f => !f.aniZipTitle && f.fileType === 'TV');
+
+                            if (starvingFiles.length > 0) {
+                                const sequelData = await getDirectSequel(finalAnilistId);
+
+                                if (sequelData) {
+                                    try {
+                                        const sequelAzRes = await fetch(`https://api.ani.zip/mappings?anilist_id=${sequelData.id}`);
+                                        group.seasonTitles[`${season} (Part 2)`] = sequelData.title;
+                                        if (sequelAzRes.ok) {
+                                            const sequelAzData = await sequelAzRes.json();
+                                            const sequelEpArray = Object.values(sequelAzData.episodes || {});
+
+                                            // 1. Find the highest episode number currently in this season
+                                            const maxMappedEp = Math.max(0, ...seasonFiles.filter(f => f.aniZipTitle).map(f => parseInt(f.relativeEpisode) || 0));
+
+                                            starvingFiles.forEach(file => {
+                                                if (file.episode) {
+                                                    const localEpInt = parseInt(file.episode, 10);
+
+                                                    // Map directly using the Absolute Episode Number
+                                                    const matchedEp = sequelEpArray.find(ep => ep.absoluteEpisodeNumber === localEpInt || ep.episodeNumber === localEpInt);
+
+                                                    if (matchedEp) {
+                                                        file.aniZipTitle = matchedEp.title?.en || matchedEp.title?.xIdx;
+                                                        file.aniZipThumbnail = matchedEp.image;
+
+                                                        // 📺 TV SHOW: The Split UI Method (New Tab)
+                                                        file.relativeEpisode = matchedEp.episodeNumber;
+                                                        file.season = `${season} (Part 2)`;
+                                                    }
+                                                } else {
+                                                    // THE FIX: If the file has no episode number at all, 
+                                                    // evict it to Part 2 so it doesn't clutter Part 1!
+                                                    file.season = `${season} (Part 2)`;
+                                                }
+                                            });
+                                        }
+                                    } catch (e) {
+                                        console.warn(`⚠️ AniZip Sequel fetch failed for ID: ${sequelData.id}`);
+                                    }
+                                }
+                            }
+
                         }
+                    } catch (e) {
+                        console.warn(`⚠️ AniZip fetch failed for ID: ${finalAnilistId}`);
                     }
                 }
-            } catch (e) {
-                console.warn(`Failed to verify rogue title: ${rogueTitle}`);
             }
-        }));
+        }
+        console.log("=== 🏁 PREMIUM METADATA FETCH COMPLETE ===");
     }
 
-    const franchiseMap = {};
-    const mainShowLedger = {};
+    // Render the final UI
+    renderPickerUI(torrent, franchiseGroups, title, list, cleanName);
+}
 
-    // 🛡️ PASS 1: Secure the Main Show's Slots (Applying the Grid Math!)
-    videoFiles.forEach(file => {
-        let rawTitle = (file.info.title || mainShowTitle).toLowerCase().trim();
+// ==========================================
+// 2. THE PAINTER (UI Rendering)
+// ==========================================
+function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cleanName) {
 
-        // 🧠 THE MAGIC TRICK: If Kitsu verified this fake name, swap it for the real one!
-        if (titleTranslationMap[rawTitle]) {
-            rawTitle = titleTranslationMap[rawTitle];
-        }
+    const groupKeys = Object.keys(franchiseGroups);
+    const mainShowKey = groupKeys[0];
 
-        let s = file.info.season != null ? file.info.season : 1;
-        let epNum = file.info.episode;
-
-        if (animeGrid && epNum) {
-            let gridIndex = -1;
-
-            // 1. If explicit season 2 or higher (S02E01), trust the file's season tag!
-            if (file.info.season > 1) {
-                gridIndex = file.info.season - 1;
-            }
-            // 2. If it defaulted to Season 1, use the Absolute Math to find its true home!
-            else if (rawTitle === mainShowTitle) {
-                gridIndex = animeGrid.findIndex(g => epNum >= g.start && epNum <= g.end);
-                if (gridIndex !== -1) {
-                    epNum = (epNum - animeGrid[gridIndex].start) + 1;
-                }
-            }
-            if (gridIndex !== -1 && animeGrid[gridIndex]) s = gridIndex + 1;
-        }
-
-        // Secure it in the ledger if it matches the show OR had an explicit season
-        if ((rawTitle === mainShowTitle || file.info.season) && epNum) {
-            if (!mainShowLedger[s]) mainShowLedger[s] = new Set();
-            mainShowLedger[s].add(epNum);
-        }
-    });
-
-    // ⚓ PASS 2: Place the files, catch Movies, and detect Collisions!
-    videoFiles.forEach(file => {
-        const isSmall = file.size < 150 * 1024 * 1024;
-        const isThemeMatch = file.name.match(/\b(ncop|nced|op|ed|opening|ending|creditless|theme)\b/i);
-        const isExtra = isThemeMatch || (isSmall && !file.info.episode);
-
-        let epNum = file.info.episode;
-        let rawTitle = (file.info.title || mainShowTitle).toLowerCase().trim();
-
-        // 🧠 THE MAGIC TRICK: Swap it in Pass 2 as well!
-        if (titleTranslationMap[rawTitle]) {
-            rawTitle = titleTranslationMap[rawTitle];
-        }
-
-        let s = isExtra ? 'extras' : (file.info.season != null ? file.info.season : 1);
-        let showName = mainShowTitle;
-        let targetKitsuId = initialKitsuId;
-        let kitsuTitle = null;
-
-        if (!isExtra) {
-            // 🎬 MOVIES & SPECIALS CATCHER
-            if (!epNum || file.info.isSpecial) {
-                showName = "🎬 Movies & Specials";
-                s = 'movies';
-            }
-            else {
-                if (animeGrid) {
-                    let gridIndex = -1;
-
-                    if (file.info.season > 1) {
-                        gridIndex = file.info.season - 1;
-                    } else if (rawTitle === mainShowTitle) {
-                        gridIndex = animeGrid.findIndex(g => epNum >= g.start && epNum <= g.end);
-                        if (gridIndex !== -1) {
-                            epNum = (epNum - animeGrid[gridIndex].start) + 1;
-                        }
-                    }
-
-                    // Apply the Kitsu ID and Official Title!
-                    if (gridIndex !== -1 && animeGrid[gridIndex]) {
-                        s = gridIndex + 1;
-                        targetKitsuId = animeGrid[gridIndex].kitsuId;
-                        kitsuTitle = animeGrid[gridIndex].title;
-                    }
-                }
-
-                // 💥 COLLISION DETECTOR
-                if (rawTitle !== mainShowTitle) {
-                    if (!mainShowLedger[s]) mainShowLedger[s] = new Set();
-                    if (mainShowLedger[s].has(epNum)) showName = rawTitle;
-                    else {
-                        mainShowLedger[s].add(epNum);
-                        showName = mainShowTitle;
-                    }
-                }
+    if (mainShowKey && groupKeys.length > 1) {
+        for (const key of groupKeys) {
+            // Updated to use strict fileType checks
+            if (key !== mainShowKey && (
+                franchiseGroups[key].files.every(f => f.fileType === 'OVA' || f.fileType === 'Special') ||
+                franchiseGroups[key].files.every(f => f.fileType === 'Theme')
+            )) {
+                franchiseGroups[mainShowKey].files.push(...franchiseGroups[key].files);
+                delete franchiseGroups[key];
             }
         }
+    }
 
-        // Save the translated math onto the file object so the renderer can use it!
-        file.mappedEpisode = epNum;
-        file.mappedKitsuId = targetKitsuId;
-        file.kitsuTitle = kitsuTitle;
+    const uniqueShows = Object.keys(franchiseGroups);
+    let currentShowKey = uniqueShows[0];
 
-        // Build the 2D Map
-        if (!franchiseMap[showName]) franchiseMap[showName] = {};
-        if (!franchiseMap[showName][s]) franchiseMap[showName][s] = [];
-        franchiseMap[showName][s].push({ file: file, info: file.info });
-    });
+    const displayTitle = cleanName;
 
-    const uniqueShows = Object.keys(franchiseMap);
-    const isMegaPack = uniqueShows.length > 1;
-
-    // 🎯 Set initial state
-    let currentShow = franchiseMap[mainShowTitle] ? mainShowTitle : uniqueShows.sort((a, b) => Object.values(franchiseMap[b]).flat().length - Object.values(franchiseMap[a]).flat().length)[0];
-
-    const dynamicKitsuCache = {};
-    dynamicKitsuCache[currentShow] = initialKitsuId;
-
-    // 4. 📺 BUILD THE DYNAMIC UI HEADER
     let showSelectorHTML = '';
-    if (isMegaPack) {
+    if (uniqueShows.length > 1) {
         showSelectorHTML = `
-            <select id="library-show-select" class="bg-slate-800 text-sm font-bold text-fuchsia-400 border border-slate-600 rounded-lg p-1.5 outline-none cursor-pointer max-w-[150px] truncate shrink-0 shadow-lg">
-                ${uniqueShows.map(show => `<option value="${show}" ${show === currentShow ? 'selected' : ''}>${show.replace(/\b\w/g, l => l.toUpperCase())}</option>`).join('')}
+            <select id="library-show-select" class="bg-slate-800 text-sm font-bold text-blue-400 border border-slate-600 rounded-lg p-1.5 outline-none cursor-pointer shadow-lg">
+                ${uniqueShows.map(key => `<option value="${key}">${franchiseGroups[key].title}</option>`).join('')}
             </select>
         `;
     }
 
-    const seasonContainer = document.createElement('div');
-    seasonContainer.id = "season-dropdown-container";
-
-    title.innerHTML = `
-        <div class="flex items-center w-full gap-3 overflow-hidden">
-            <span class="truncate flex-1 font-bold text-slate-200" title="${baseInfo.title}">${baseInfo.title}</span> 
-            ${showSelectorHTML}
+    // 3. Update the innerHTML to cluster everything together on the left
+    titleElement.innerHTML = `
+        <div class="flex flex-wrap items-center w-full gap-3 overflow-hidden px-1">
+            <span class="font-bold text-slate-200 text-lg truncate shrink-0 max-w-full md:max-w-[50%]">
+                ${displayTitle}
+            </span> 
+            <div class="flex flex-wrap items-center gap-2">
+                ${showSelectorHTML}
+                <div id="season-dropdown-container"></div>
+            </div>
         </div>
     `;
-    title.querySelector('.flex').appendChild(seasonContainer);
 
-    // 5. THE RENDER FUNCTION
-    const renderSeason = async (selectedShow, seasonNum) => {
-        list.innerHTML = `
-            <div class="col-span-full flex justify-center p-10">
-                <svg class="animate-spin h-8 w-8 text-fuchsia-500" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-            </div>
-        `;
+    const seasonContainer = document.getElementById('season-dropdown-container');
 
-        // 🛡️ Generate a unique ID for this specific render cycle
-        const currentRenderToken = Date.now().toString();
-        list.dataset.renderToken = currentRenderToken;
+    const renderSeason = (showKey, seasonFilter) => {
+        // You can keep the loading text if you want, but realistically 
+        // the user will never see it because the thread blocks until it's done.
+        listElement.innerHTML = '';
 
-        let tmdbSeasonData = null;
-        let kitsuEpisodes = null;
-        let activeKitsuId = null;
+        const showData = franchiseGroups[showKey];
 
-        const showData = franchiseMap[selectedShow] || {};
-        const filesToRender = seasonNum === 'raw' ? videoFiles.map(f => ({ file: f, info: f.info })) : (showData[seasonNum] || []);
-
-        if (seasonNum !== 'raw' && seasonNum !== 'extras' && seasonNum !== 'movies') {
-            try {
-                // 1. Figure out the Kitsu ID for this specific season
-                if (selectedShow === mainShowTitle && filesToRender.length > 0) {
-                    activeKitsuId = filesToRender[0].file.mappedKitsuId;
-                } else {
-                    if (dynamicKitsuCache[selectedShow] === undefined) {
-                        const searchRes = await fetch(`https://kitsu.io/api/edge/anime?filter[text]=${encodeURIComponent(selectedShow)}`);
-                        const searchData = await searchRes.json();
-                        dynamicKitsuCache[selectedShow] = (searchData.data && searchData.data.length > 0) ? searchData.data[0].id : null;
-                    }
-                    activeKitsuId = dynamicKitsuCache[selectedShow];
-                }
-
-                // 2. Fetch Kitsu Data
-                if (activeKitsuId) {
-                    kitsuEpisodes = await getKitsuEpisodesCached(activeKitsuId);
-                }
-
-                // 3. 🩹 THE TMDB VIBE CHECK
-                // We consider Kitsu "trash" if it gave us nothing, or if the first episode is just lazily named "Episode 1" with no thumbnail.
-                let kitsuIsTrash = false;
-                if (kitsuEpisodes && kitsuEpisodes.length > 0) {
-                    const firstEp = kitsuEpisodes[0];
-                    if (!firstEp.thumbnail || (firstEp.canonicalTitle && firstEp.canonicalTitle.match(/^Episode \d+$/i))) {
-                        kitsuIsTrash = true;
-                    }
-                } else {
-                    kitsuIsTrash = true; // No Kitsu data at all
-                }
-
-                // 4. Fetch TMDB Backup if needed!
-                if (kitsuIsTrash && tmdbId) {
-                    console.log(`🩹 Kitsu dropped the ball on Season ${seasonNum}. Fetching TMDB backup...`);
-                    tmdbSeasonData = await getTmdbSeasonData(tmdbId, mainShowTitle, seasonNum);
-                } else if (!activeKitsuId) {
-                    // Normal Western TV Show fallback
-                    tmdbSeasonData = await getTmdbSeasonData(tmdbId, selectedShow, seasonNum);
-                }
-
-            } catch (e) { console.log("Failed to fetch episode data.", e); }
+        // Filter the files based on the selected dropdown
+        let filesToRender = [];
+        if (seasonFilter === 'themes') {
+            filesToRender = showData.files.filter(f => f.fileType === 'Theme');
+        } else if (seasonFilter === 'ovas') {
+            filesToRender = showData.files.filter(f => f.fileType === 'OVA' || f.fileType === 'Special');
+        } else {
+            filesToRender = showData.files.filter(f => f.season.toString() === seasonFilter.toString() && (f.fileType === 'TV' || f.fileType === 'Movie'));
         }
 
-        list.innerHTML = '';
+        // Sort them neatly
+        filesToRender.sort((a, b) => {
+            const valA = parseInt(a.episode);
+            const valB = parseInt(b.episode);
+            return (isNaN(valA) ? 9999 : valA) - (isNaN(valB) ? 9999 : valB);
+        });
 
-        const libImg = document.getElementById(`img-${torrent.id}`);
-        const fallbackPoster = libImg && !libImg.classList.contains('hidden') ? libImg.src : '';
+        if (filesToRender.length === 0) {
+            listElement.innerHTML = `<div class="col-span-full text-center text-slate-400 py-10">No files found for this category.</div>`;
+            return;
+        }
 
-        let accentColor = activeKitsuId ? 'fuchsia' : 'blue';
-        if (seasonNum === 'raw' || seasonNum === 'movies') accentColor = 'amber';
-        if (seasonNum === 'extras') accentColor = 'emerald';
+        filesToRender.forEach((fileObj, index) => {
+            const { originalFile, episode, relativeEpisode, aniZipTitle, aniZipThumbnail, fileType } = fileObj;
 
-        // 🧠 THE O(1) SPEED UP: Build Hash Maps before we start looping!
-        const kitsuMap = {};
-        if (kitsuEpisodes) kitsuEpisodes.forEach(ep => kitsuMap[ep.number] = ep);
+            // Updated badge logic based on the new strings
+            let isThemeFile = fileType === 'Theme';
+            let isOvaFile = (fileType === 'OVA' || fileType === 'Special');
 
-        const tmdbMap = {};
-        if (tmdbSeasonData && tmdbSeasonData.episodes) tmdbSeasonData.episodes.forEach(ep => tmdbMap[ep.episode_number] = ep);
+            let displayTitle = aniZipTitle || originalFile.short_name;
+            let badgeText = isThemeFile ? '🎵 Theme' : (isOvaFile ? '⭐ Special' : `Episode ${relativeEpisode ?? episode ?? (index + 1)}`);
+            let badgeColor = isThemeFile ? 'bg-emerald-600' : (isOvaFile ? 'bg-amber-600' : 'bg-blue-600');
 
-        filesToRender.forEach(({ file, info }, index) => {
-            const epNum = file.mappedEpisode || info.episode;
+            const fileSize = (originalFile.size / 1073741824).toFixed(2) + ' GB';
+            const fallbackImage = document.getElementById(`img-${torrent.id}`)?.src || '';
 
-            let kEp = null;
-            let tEp = null;
-            let isMatchedByTMDB = false;
-
-            const isRaw = seasonNum === 'raw' || seasonNum === 'extras' || seasonNum === 'movies';
-
-            if (!isRaw) {
-                // 🚀 INSTANT LOOKUP: Grab both if we have them!
-                if (kitsuEpisodes && epNum) kEp = kitsuMap[epNum];
-                if (tmdbSeasonData && epNum) {
-                    tEp = tmdbMap[epNum];
-                    if (tEp) isMatchedByTMDB = true;
-                }
-            }
-
-            // 🧠 THE HYBRID FALLBACK ENGINE (Title)
-            // Does Kitsu have a REAL title? (Not just "Episode 12")
-            let hasGoodKitsuTitle = kEp && kEp.canonicalTitle && !kEp.canonicalTitle.match(/^Episode \d+$/i);
-
-            const epName = isRaw ? file.name.split('/').pop() :
-                (hasGoodKitsuTitle ? kEp.canonicalTitle :
-                    (tEp && tEp.name ? tEp.name :
-                        (kEp && kEp.canonicalTitle ? kEp.canonicalTitle : `Episode ${epNum || index + 1}`)));
-
-            // 🧠 THE HYBRID FALLBACK ENGINE (Image)
-            // TMDB High-Res > Kitsu Thumbnail > Fallback Poster
-            let stillImage = fallbackPoster;
-            if (!isRaw) {
-                if (tEp && tEp.still_path) {
-                    stillImage = `https://image.tmdb.org/t/p/w500${tEp.still_path}`;
-                } else if (kEp && kEp.thumbnail) {
-                    stillImage = kEp.thumbnail;
-                }
-            }
-
-            // 🧠 THE HYBRID FALLBACK ENGINE (Runtime)
-            const runtime = (!isRaw && tEp && tEp.runtime) ? tEp.runtime : (kEp ? kEp.length : null);
-            const fileSize = (file.size / 1073741824).toFixed(2) + ' GB';
+            // Use AniZip thumbnail, fallback to the main UI show poster
+            const cardImage = aniZipThumbnail || fallbackImage;
 
             const card = document.createElement('div');
-            const cardId = `card-${torrent.id}-${seasonNum}-${index}`;
-
-            // 🧠 SMART LABELING: Give Extras and Raw files proper numbered titles!
-            let topLabel = `E${epNum || index + 1}`;
-            if (seasonNum === 'extras') topLabel = `Intro / Outro ${index + 1}`;
-            else if (seasonNum === 'raw') topLabel = `Raw File ${index + 1}`;
-            else if (seasonNum === 'movies') topLabel = file.info.isSpecial ? `⭐ OVA` : `🎬 Movie`;
-
-            card.className = `episode-card h-full relative flex flex-col w-full rounded-xl border-2 border-slate-700 bg-slate-800/80 overflow-hidden cursor-pointer transition-all hover:border-${accentColor}-500 hover:shadow-[0_0_15px_rgba(${activeKitsuId ? '217,70,239' : '59,130,246'},0.2)] group select-none`;
+            card.className = "relative flex flex-col w-full rounded-xl border-2 border-slate-700 bg-slate-800 overflow-hidden cursor-pointer hover:border-blue-500 transition-all group select-none";
 
             card.innerHTML = `
-                <div class="relative aspect-video bg-slate-900 w-full flex-shrink-0 border-b border-slate-700/50">
-                    <img id="img-${cardId}" src="${stillImage}" draggable="false" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" loading="lazy">
-                    
-                    <div class="absolute inset-0 flex items-center justify-center">
-                        <div class="w-12 h-12 rounded-full bg-${accentColor}-600/90 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all transform scale-75 group-hover:scale-100 shadow-[0_0_20px_rgba(37,99,235,0.4)] backdrop-blur-sm">
-                            <svg class="w-6 h-6 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                        </div>
-                    </div>
-
-                    <div class="absolute bottom-2 right-2 bg-black/85 px-2 py-1 rounded text-[11px] text-white font-bold flex gap-2.5 backdrop-blur-md shadow-lg border border-white/10">
-                        <span id="runtime-${cardId}" class="opacity-90 ${runtime ? '' : 'hidden'}">${runtime ? runtime + 'm' : ''}</span>
-                        <span class="text-${accentColor}-400">${fileSize}</span>
-                    </div>
+                <div class="relative aspect-video bg-slate-900 border-b border-slate-700">
+                    <img src="${cardImage}" class="w-full h-full object-cover opacity-60 group-hover:opacity-90 transition-opacity">
+                    <div class="absolute bottom-2 right-2 bg-black/80 px-2 py-1 rounded text-[11px] text-white font-bold">${fileSize}</div>
                 </div>
-                
-                <div class="p-3.5 flex-1 flex flex-col justify-center gap-1">
-                    <p id="label-${cardId}" class="text-sm text-${accentColor}-400 font-extrabold tracking-wide">${topLabel}</p>
-                    <p id="title-${cardId}" class="text-xs text-slate-200 line-clamp-2 leading-relaxed group-hover:text-white transition-colors" title="${file.name}">${epName}</p>
+                <div class="p-3 flex flex-col gap-1">
+                    <span class="text-[10px] font-bold text-white px-2 py-0.5 rounded w-max ${badgeColor}">${badgeText}</span>
+                    <p class="text-xs text-slate-300 line-clamp-2 mt-1 group-hover:text-white">${displayTitle}</p>
                 </div>
             `;
 
             card.onclick = () => {
-                if (clickCooldown) return;
-                clickCooldown = true; setTimeout(() => clickCooldown = false, 2000);
+                if (appState.clickCooldown) return;
+                appState.clickCooldown = true; setTimeout(() => appState.clickCooldown = false, 2000);
                 closePicker();
-                import('./player.js').then(m => m.requestLink(torrent.id, file.id, torrent.name, file.name));
+                requestLink(torrent.id, originalFile.id, torrent.name, originalFile.name);
             };
 
-            list.appendChild(card);
+            listElement.appendChild(card);
+        });
+    };
 
-            // 🎬 🧠 THE MOVIE LAZY LOADER! (Now with Waterfall Anti-Spam)
-            if (seasonNum === 'movies') {
-                const cleanQuery = file.name.replace(/\.(mkv|mp4|avi)$/i, '').replace(/\[.*?\]|\(.*?\)/g, '').replace(/_/g, ' ').trim();
+    // 4. Update the Season Dropdown logic
+    const updateSeasonDropdown = (showKey) => {
+        const showData = franchiseGroups[showKey];
 
-                setTimeout(() => {
-                    if (list.dataset.renderToken !== currentRenderToken) return;
+        const hasOvas = showData.files.some(f => f.fileType === 'OVA' || f.fileType === 'Special');
+        const hasThemes = showData.files.some(f => f.fileType === 'Theme');
 
-                    fetch(`https://kitsu.io/api/edge/anime?filter[text]=${encodeURIComponent(cleanQuery)}&page[limit]=1`)
-                        .then(r => r.json())
-                        .then(data => {
-                            if (list.dataset.renderToken !== currentRenderToken) return;
-
-                            if (data.data && data.data.length > 0) {
-                                const hit = data.data[0].attributes;
-                                const imgEl = document.getElementById(`img-${cardId}`);
-                                const titleEl = document.getElementById(`title-${cardId}`);
-                                const labelEl = document.getElementById(`label-${cardId}`);
-                                const runtimeEl = document.getElementById(`runtime-${cardId}`);
-
-                                // Prefer horizontal backgrounds, but fallback to posters!
-                                const bestImage = hit.coverImage ? hit.coverImage.original : (hit.posterImage ? hit.posterImage.large : null);
-
-                                if (imgEl && bestImage) imgEl.src = bestImage;
-                                if (titleEl) titleEl.innerText = hit.canonicalTitle || hit.titles.en_jp;
-
-                                // Inject the runtime and un-hide it
-                                if (runtimeEl && hit.episodeLength) {
-                                    runtimeEl.innerText = `${hit.episodeLength}m`;
-                                    runtimeEl.classList.remove('hidden');
-                                }
-
-                                // Smart Badge Logic
-                                if (labelEl) {
-                                    let badge = '⭐ Special';
-                                    if (hit.subtype === 'movie') badge = '🎬 Movie';
-                                    else if (hit.subtype === 'OVA' || file.info.isSpecial) badge = '⭐ OVA';
-                                    labelEl.innerText = badge;
-                                }
-                            }
-                        }).catch(e => console.log("Movie metadata fetch failed"));
-                }, index * 250);
+        const standardSeasons = [...new Set(showData.files.filter(f => f.fileType === 'TV' || f.fileType === 'Movie').map(f => f.season))].sort((a, b) => {
+            const numA = parseFloat(a);
+            const numB = parseFloat(b);
+            if (numA === numB) {
+                return a.toString().localeCompare(b.toString());
             }
-        });
-    };
-
-    // 6. ⚙️ THE UI ENGINE
-    const updateSeasonDropdown = (selectedShow) => {
-        const showData = franchiseMap[selectedShow];
-        const numericSeasons = Object.keys(showData).filter(k => k !== 'extras' && k !== 'raw' && k !== 'movies').map(Number).sort((a, b) => a - b);
-
-        let defaultSeason = 'raw';
-        if (numericSeasons.includes(1)) defaultSeason = 1;
-        else if (numericSeasons.length > 0) defaultSeason = numericSeasons[0];
-        else if (showData['movies']) defaultSeason = 'movies';
-        else if (showData['extras']) defaultSeason = 'extras';
-
-        seasonContainer.innerHTML = `
-            <select id="library-season-select" class="bg-slate-800 text-sm font-bold text-blue-400 border border-slate-600 rounded-lg p-1.5 outline-none cursor-pointer max-w-[120px] md:max-w-[200px] truncate shrink-0">
-                ${numericSeasons.map(s => {
-            // 🧠 NEW: Grab the official name we saved, or fallback to "Season X"
-            const officialName = showData[s][0]?.file?.kitsuTitle;
-            const displayName = officialName ? officialName : `Season ${s}`;
-            return `<option value="${s}">${displayName}</option>`;
-        }).join('')}
-                ${showData['movies'] ? `<option value="movies" class="bg-slate-900 text-amber-400">🎬 Movies</option>` : ''}
-                ${showData['extras'] ? `<option value="extras" class="bg-slate-900 text-emerald-400">🎵 Extras</option>` : ''}
-                <option value="raw" class="bg-slate-900 text-amber-400">⚠️ All Files (Raw)</option>
-            </select>
-        `;
-
-        document.getElementById('library-season-select').addEventListener('change', (e) => {
-            const val = e.target.value;
-            renderSeason(selectedShow, (val === 'raw' || val === 'extras' || val === 'movies') ? val : parseInt(val));
+            return numA - numB;
         });
 
-        renderSeason(selectedShow, defaultSeason);
+        let defaultSelection = standardSeasons.length > 0 ? standardSeasons[0] : (hasOvas ? 'ovas' : 'themes');
+
+        // THE FIX: Count the total number of tabs. 
+        const totalTabs = standardSeasons.length + (hasOvas ? 1 : 0) + (hasThemes ? 1 : 0);
+
+        if (totalTabs > 1) {
+            // Only draw the dropdown if there is actually a choice to make
+            seasonContainer.innerHTML = `
+                <select id="library-season-select" class="bg-slate-800 text-sm font-bold text-slate-200 border border-slate-600 rounded-lg p-1.5 outline-none cursor-pointer shadow-lg max-w-[180px] md:max-w-xs truncate">
+                    ${standardSeasons.map(s => {
+                // 👈 THE FIX: Check for a custom title, otherwise fallback to "Season X"
+                const customTitle = showData.seasonTitles?.[s];
+                const displayLabel = customTitle ? customTitle : `Season ${s}`;
+
+                return `<option value="${s}">${displayLabel}</option>`;
+            }).join('')}
+                    ${hasOvas ? `<option value="ovas">⭐ Specials / OVAs</option>` : ''}
+                    ${hasThemes ? `<option value="themes">🎵 Themes & Extras</option>` : ''}
+                </select>
+            `;
+
+            document.getElementById('library-season-select').addEventListener('change', (e) => {
+                renderSeason(showKey, e.target.value);
+            });
+        }
+
+        // Render the default UI immediately regardless of the dropdown
+        renderSeason(showKey, defaultSelection);
     };
 
-    if (isMegaPack) {
+    // Event listener for Mega Batch top menu
+    if (uniqueShows.length > 1) {
         document.getElementById('library-show-select').addEventListener('change', (e) => {
-            currentShow = e.target.value;
-            updateSeasonDropdown(currentShow);
+            currentShowKey = e.target.value;
+            updateSeasonDropdown(currentShowKey);
         });
     }
 
-    updateSeasonDropdown(currentShow);
+    // Initialize the UI
+    updateSeasonDropdown(currentShowKey);
 }
 
 function closePicker() {
     document.getElementById('file-picker').classList.add('hidden');
-}
-
-export async function scrobble(action, movieName, progress) {
-    const token = localStorage.getItem('trakt_token');
-    if (!token) return;
-
-    const body = {
-        movie: { title: movieName },
-        progress: progress || 0,
-        app_version: "1.0"
-    };
-
-    const endpoint = action === 'stop' ? 'scrobble/stop' : 'scrobble/start';
-
-    try {
-        await smartFetch(`https://api.trakt.tv/${endpoint}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`,
-                'trakt-api-version': '2',
-                'trakt-api-key': TRAKT_CLIENT_ID
-            },
-            body: JSON.stringify(body)
-        });
-    } catch (e) { console.log("Trakt Error", e); }
 }
 
 // --- DEVICE (GHOST) LIBRARY LOGIC ---
@@ -1148,7 +995,7 @@ window.processLocalFile = async function (event) {
 
         let posterUrl = '';
         try {
-            const tmdbData = await import('./api.js').then(m => m.getPosterForLibrary(parsedData.title, parsedData.year));
+            const tmdbData = await getPosterForLibrary(parsedData.title, parsedData.year);
             posterUrl = typeof tmdbData === 'string' ? tmdbData : (tmdbData?.poster || '');
         } catch (e) { console.warn("Could not fetch poster for local file."); }
 
@@ -1168,9 +1015,7 @@ window.processLocalFile = async function (event) {
 
     const fileBlobUrl = URL.createObjectURL(file);
 
-    import('./player.js').then(m => {
-        m.startPlayer(fileBlobUrl, file.name);
-    });
+    startPlayer(fileBlobUrl, file.name);
 };
 
 window.renderLocalLibrary = function () {
@@ -1194,7 +1039,7 @@ window.renderLocalLibrary = function () {
         const card = document.createElement('div');
         card.className = "relative flex-col cursor-pointer transition-transform hover:scale-105 select-none group";
 
-        const fallbackInitials = fileData.cleanTitle.substring(0, 2).toUpperCase();
+        const fallbackInitials = (fileData.cleanTitle || "Unknown").substring(0, 2).toUpperCase();
 
         card.innerHTML = `
             <div class="relative w-full aspect-[2/3] bg-slate-800 rounded-lg shadow-lg overflow-hidden border border-slate-700/50">
@@ -1210,7 +1055,7 @@ window.renderLocalLibrary = function () {
                     <span class="text-white text-[10px] font-bold mt-2 uppercase tracking-widest text-center px-2">Tap to re-link<br>and play</span>
                 </div>
                 
-                <button onclick="event.stopPropagation(); deleteLocalGhost('${fileData.name}')" class="absolute top-2 right-2 text-white bg-black/60 hover:bg-red-600 p-1.5 rounded-full transition opacity-0 group-hover:opacity-100 backdrop-blur-sm">
+                <button onclick="event.stopPropagation(); deleteLocalGhost(\`${fileData.name.replace(/`/g, '')}\`)" class="absolute top-2 right-2 text-white bg-black/60 hover:bg-red-600 p-1.5 rounded-full transition opacity-0 group-hover:opacity-100 backdrop-blur-sm">
                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
@@ -1250,12 +1095,11 @@ export function handleSearch() {
     clearTimeout(searchTimeout);
 
     if (query.length >= 3) {
-        // Switch to the 1-second (1000ms) delay
         searchTimeout = setTimeout(() => {
             // Auto-switch to the discover tab for the best viewing experience!
             showDiscoverTab();
-            import('./api.js').then(module => module.searchTMDB(query));
-        }, 1000);
+            searchTMDB(query);
+        }, 500);
     } else {
         document.getElementById('global-search-results').classList.add('hidden');
     }
@@ -1267,7 +1111,7 @@ function handleSearchSubmit() {
 
     if (query.startsWith('http://') || query.startsWith('https://')) {
         inputField.blur();
-        startPlayer(query, "Direct Stream"); // Using the imported function
+        startPlayer(query, "Direct Stream");
         return;
     }
 
@@ -1355,7 +1199,7 @@ export function showDiscoverTab() {
 
     // Only fetch from the API if the grid is empty!
     if (document.getElementById('trending-row').innerHTML.trim() === '') {
-        import('./api.js').then(module => module.loadDiscover());
+        loadDiscover();
     }
 }
 
@@ -1390,6 +1234,12 @@ function openExternalPlayer(player) {
 
     if (!videoUrl) {
         showToast("No video stream selected yet.", "error");
+        return;
+    }
+
+    if (videoUrl.startsWith('blob:')) {
+        showToast("Local device files cannot be cast to external players. Please play them directly in the browser.", "error");
+        document.getElementById('external-player-modal').classList.add('hidden');
         return;
     }
 

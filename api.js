@@ -1,4 +1,4 @@
-import { smartFetch, showToast, getTmdbSeasonData, getKitsuEpisodesCached, buildKitsuGrid, MY_PROXY } from './script.js';
+import { smartFetch, showToast, MY_PROXY } from './script.js';
 import { parseMediaData } from './parseMedia.js';
 
 //#region TMDB LOGIC
@@ -282,31 +282,6 @@ export async function loadDiscover() {
     loadMyPicks();
 }
 
-export async function getPosterForLibrary(cleanTitle, year) {
-    try {
-        let url = `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_KEY}&query=${encodeURIComponent(cleanTitle)}&page=1`;
-        if (year) url += `&primary_release_year=${year}`;
-
-        const response = await fetch(url);
-        const data = await response.json();
-
-        if (data.results && data.results.length > 0) {
-            const bestMatch = data.results[0];
-
-            // Return the full package so the Vault can cache it!
-            return {
-                id: bestMatch.id,
-                type: bestMatch.media_type || (bestMatch.name ? 'tv' : 'movie'),
-                poster: bestMatch.poster_path ? `https://image.tmdb.org/t/p/w500${bestMatch.poster_path}` : null
-            };
-        }
-        return null;
-    } catch (e) {
-        return null;
-    }
-}
-
-
 // MY PICKS
 export async function loadMyPicks() {
     const containerId = 'my-picks-row';
@@ -383,16 +358,15 @@ async function openMasterDetail(tmdbId, type, fallbackTitle, backdropPath, poste
 
     // 1. THE VIBE CHECK 🕵️‍♂️ (Hits Fribb)
     document.getElementById('detail-overview').innerText = "Checking Anime databases...";
-    const isMovie = type === 'movie';
-    const animeIds = await getAnimeIds(tmdbId, isMovie);
+    const animeIds = await getAnimeIds(tmdbId);
 
     // 2. IF IT IS ANIME: Pass the MAL ID to our new UI!
     if (animeIds && animeIds.malId) {
         console.log(`🌸 Routing to Anime UI (MAL ID: ${animeIds.malId})`);
         document.getElementById('detail-overview').innerText = "Translating episode data...";
 
-        // Pass malId instead of kitsuId!
-        return openAnimeDetail(tmdbId, animeIds.malId, fallbackTitle, backdropPath, posterPath);
+        // 🚨 ADD THE `type` VARIABLE HERE!
+        return openAnimeDetail(tmdbId, type, animeIds.malId, fallbackTitle, backdropPath, posterPath);
     }
 
     // 3. THE FALLBACK 🎬 (Western TV or Standard Movies)
@@ -559,7 +533,7 @@ export async function openMovieDetail(id, type = 'movie') {
 
         // Play (High Quality) Button
         btnTorrent.onclick = () => {
-            startTorrentioStream(tmdbId, fallbackTitle, 'tv');
+            startTorrentioStream(tmdbId, fallbackTitle, type);
         };
 
         // Play (Direct Stream IFrame) Button
@@ -580,7 +554,7 @@ export async function openMovieDetail(id, type = 'movie') {
 }
 
 // CHECK IF ITS AN ANIME (FRIBB API)
-export async function getAnimeIds(tmdbId, isMovie = false) {
+export async function getAnimeIds(tmdbId) {
     const workerBaseUrl = MY_PROXY.replace('/?url=', '');
 
     // 1. Ask Fribb (The Gatekeeper)
@@ -590,9 +564,9 @@ export async function getAnimeIds(tmdbId, isMovie = false) {
 
         if (res.ok) {
             const data = await res.json();
-            if (data.kitsu_id) {
-                console.log(`⚡ Fribb Hit! TMDB ${tmdbId} -> Kitsu ${data.kitsu_id} | MAL ${data.mal_id || 'None'}`);
-                return { kitsuId: data.kitsu_id, malId: data.mal_id };
+            if (data.mal_id || data.anilist_id) {
+                console.log(`Fribb Hit. TMDB ${tmdbId} -> MAL ${data.mal_id}, ANILIST ${data.anilist_id}`);
+                return { kitsuId: data.kitsu_id, malId: data.mal_id, anilistId: data.anilist_id};
             }
         }
         console.log("🎬 Not found in Anime DB (Likely Western Media).");
@@ -603,64 +577,68 @@ export async function getAnimeIds(tmdbId, isMovie = false) {
     return null;
 }
 
-export async function openAnimeDetail(tmdbId, baseMalId, fallbackTitle, backdropPath, posterPath) {
+// 🚨 ADD tmdbType to the function signature!
+export async function openAnimeDetail(tmdbId, tmdbType, baseMalId, fallbackTitle, backdropPath, posterPath) {
     const tvControls = document.getElementById('tv-controls');
     const customSeasonMenu = document.getElementById('custom-season-menu');
     const episodeList = document.getElementById('episode-list');
 
     try {
-        // 1. FETCH BASIC TMDB DATA 
-        const tmdbUrl = `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_KEY}`;
+        // 🚨 1. USE DYNAMIC TYPE FOR TMDB DATA 
+        const tmdbUrl = `https://api.themoviedb.org/3/${tmdbType}/${tmdbId}?api_key=${TMDB_KEY}`;
         const tmdbRes = await fetch(tmdbUrl);
         const tmdbData = await tmdbRes.json();
 
-        document.getElementById('detail-year').innerText = tmdbData.first_air_date ? tmdbData.first_air_date.split('-')[0] : 'N/A';
+        // (Keep the detail-year / detail-rating assignments the same)
+        document.getElementById('detail-year').innerText = (tmdbData.first_air_date || tmdbData.release_date || '').split('-')[0] || 'N/A';
         document.getElementById('detail-rating').innerText = `★ ${tmdbData.vote_average?.toFixed(1)}`;
         document.getElementById('detail-overview').innerText = tmdbData.overview || "No description available.";
 
         activeMedia.id = tmdbId;
-        activeMedia.type = 'tv';
+        activeMedia.type = tmdbType; // 🚨 DYNAMIC TYPE!
         activeMedia.malId = baseMalId;
+
 
         tvControls.classList.remove('hidden');
         tvControls.classList.add('flex');
         document.getElementById('custom-season-trigger').classList.remove('hidden');
 
-        const handleSeasonChange = async (targetMalId, uiTitle, cleanTitle, optionElement, targetTmdbSeason = 1, totalEpisodes = 1) => {
+        const handleSeasonChange = async (targetMalId, uiTitle, cleanTitle, optionElement, targetTmdbSeason = 1, totalEpisodes = 1, subtype = 'TV') => {
+            activeMedia.subtype = subtype;
             
-            // 🧪 --- OFFICIAL MAL-SYNC TRANSLATOR (FOR GITHUB PAGES) ---
+            // --- ANIZIP TRANSLATOR PROBE ---
             console.log(`\n🔍 --- TRANSLATING: ${cleanTitle} ---`);
             console.log(`Target MAL ID: ${targetMalId}`);
             
             try {
-                // This will fail on localhost, but works flawlessly on GitHub Pages!
-                const syncUrl = `https://api.malsync.moe/mal/anime/${targetMalId}`;
+                // 🚨 The Holy Grail API for Anime Apps
+                const zipUrl = `https://api.ani.zip/mappings?mal_id=${targetMalId}`;
                 
-                fetch(syncUrl).then(res => {
+                fetch(zipUrl).then(res => {
                     if (!res.ok) throw new Error(`HTTP ${res.status}`);
                     return res.json();
-                }).then(syncData => {
+                }).then(zipData => {
                     
-                    if (syncData.Sites && syncData.Sites.TMDB) {
-                        if (syncData.Sites.TMDB.show) {
-                            const trueTmdbId = Object.keys(syncData.Sites.TMDB.show)[0];
-                            console.log(`📺 TRANSLATED: TMDB TV Show ID [${trueTmdbId}]`);
-                        } else if (syncData.Sites.TMDB.movie) {
-                            const trueTmdbId = Object.keys(syncData.Sites.TMDB.movie)[0];
-                            console.log(`🎬 TRANSLATED: TMDB Movie ID [${trueTmdbId}]`);
-                        }
-                    } else {
-                        console.log(`⚠️ WARNING: MAL-Sync has no TMDB mapping for this ID.`);
+                    const mappings = zipData.mappings;
+                    if (!mappings) {
+                        console.log(`⚠️ WARNING: AniZip has no mappings for this ID.`);
+                        return;
                     }
 
-                    if (syncData.Sites && syncData.Sites.Kitsu) {
-                        const trueKitsuId = Object.keys(syncData.Sites.Kitsu)[0];
-                        console.log(`🦊 TRANSLATED: Kitsu ID [${trueKitsuId}]`);
+                    if (mappings.tmdb_id) {
+                        console.log(`📺 TRANSLATED: TMDB ID [${mappings.tmdb_id}]`);
+                    }
+                    if (mappings.kitsu_id) {
+                        console.log(`🦊 TRANSLATED: Kitsu ID [${mappings.kitsu_id}]`);
+                    }
+                    if (mappings.imdb_id) {
+                        console.log(`🎬 TRANSLATED: IMDB ID [${mappings.imdb_id}]`);
                     }
 
+                    console.log(`📦 Full AniZip Payload:`, zipData);
                     console.log(`--------------------------------------\n`);
                     
-                }).catch(e => console.warn("MAL-Sync API Fetch Failed.", e));
+                }).catch(e => console.warn("AniZip API Fetch Failed.", e));
             } catch (e) {
                 // Silent catch
             }
@@ -681,7 +659,28 @@ export async function openAnimeDetail(tmdbId, baseMalId, fallbackTitle, backdrop
 
             episodeList.innerHTML = '<p class="text-fuchsia-400 font-bold p-4 animate-pulse">Loading Episodes...</p>';
 
+            episodeList.innerHTML = '<p class="text-fuchsia-400 font-bold p-4 animate-pulse">Loading Episodes & Thumbnails...</p>';
+
             const allEpisodes = await fetchAllMalEpisodes(targetMalId);
+            
+            // 🧪 --- ANIZIP THUMBNAIL MATCHER ---
+            let anizipEpisodes = {};
+            try {
+                const zipRes = await fetch(`https://api.ani.zip/mappings?mal_id=${targetMalId}`);
+                if (zipRes.ok) {
+                    const zipData = await zipRes.json();
+                    if (zipData.episodes) anizipEpisodes = zipData.episodes;
+                    
+                    // 🧠 BONUS: Save the Kitsu ID into activeMedia right now so Torrentio can use it later!
+                    if (zipData.mappings && zipData.mappings.kitsu_id) {
+                        activeMedia.kitsuId = zipData.mappings.kitsu_id;
+                    }
+                }
+            } catch (e) {
+                console.warn("AniZip fetch failed, falling back to TMDB posters.", e);
+            }
+            // ------------------------------------
+
             episodeList.innerHTML = '';
             let fallbackBg = backdropPath ? `https://image.tmdb.org/t/p/w500${backdropPath}` : '';
 
@@ -693,6 +692,12 @@ export async function openAnimeDetail(tmdbId, baseMalId, fallbackTitle, backdrop
                     const epNumber = ep.mal_id;
                     const rawTitle = ep.title || `Episode ${epNumber}`;
                     const epTitle = rawTitle.replace(/<\/?[^>]+(>|$)/g, ""); 
+                    
+                    // 🖼️ THE UPGRADE: Use the AniZip Thumbnail if it exists!
+                    let thumb = fallbackBg;
+                    if (anizipEpisodes[epNumber] && anizipEpisodes[epNumber].image) {
+                        thumb = anizipEpisodes[epNumber].image;
+                    }
                     
                     const isSelected = index === 0 ? 'border-fuchsia-500 bg-fuchsia-500/10' : 'border-slate-700 bg-slate-800/50';
 
@@ -713,7 +718,7 @@ export async function openAnimeDetail(tmdbId, baseMalId, fallbackTitle, backdrop
 
                     card.innerHTML = `
                         <div class="relative aspect-video bg-slate-900 w-full">
-                            <img src="${fallbackBg}" draggable="false" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" loading="lazy">
+                            <img src="${thumb}" draggable="false" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" loading="lazy">
                         </div>
                         <div class="p-2">
                             <p class="text-xs text-fuchsia-400 font-bold tracking-wide">E${epNumber}</p>
@@ -844,12 +849,13 @@ export async function openAnimeDetail(tmdbId, baseMalId, fallbackTitle, backdrop
                     cleanTitle: item.title, 
                     uiTitle: `${item.title} <span class="text-[10px] text-slate-500 ml-2">${badge}</span>`, 
                     tmdbSeason: tmdbSeason,
-                    episodeCount: item.episodeCount // 🧠 WE ADD THIS!
+                    episodeCount: item.episodeCount,
+                    subtype: item.subtype
                 });
             });
 
             if (availableSeasons.length === 0) {
-                availableSeasons.push({ malId: baseMalId, cleanTitle: fallbackTitle, uiTitle: fallbackTitle, tmdbSeason: 1, episodeCount: 1 });
+                availableSeasons.push({ malId: baseMalId, cleanTitle: fallbackTitle, uiTitle: fallbackTitle, tmdbSeason: 1, episodeCount: 1, subtype: 'TV' });
             }
 
             customSeasonMenu.innerHTML = '';
@@ -860,7 +866,7 @@ export async function openAnimeDetail(tmdbId, baseMalId, fallbackTitle, backdrop
                 btn.innerHTML = season.uiTitle;
 
                 // 🧠 AND PASS IT TO THE FUNCTION HERE!
-                btn.onclick = () => handleSeasonChange(season.malId, season.uiTitle, season.cleanTitle, btn, season.tmdbSeason, season.episodeCount);
+                btn.onclick = () => handleSeasonChange(season.malId, season.uiTitle, season.cleanTitle, btn, season.tmdbSeason, season.episodeCount, season.subtype);
                 customSeasonMenu.appendChild(btn);
             });
 
@@ -886,11 +892,13 @@ export async function openAnimeDetail(tmdbId, baseMalId, fallbackTitle, backdrop
             document.getElementById('season-chevron').classList.toggle('rotate-180');
         };
 
+        
         const btnTorrent = document.getElementById('btn-torrent');
         if (btnTorrent) {
             btnTorrent.onclick = null;
             btnTorrent.onclick = () => {
-                startTorrentioStream(tmdbId, fallbackTitle, 'tv');
+                // 🚨 PASS DYNAMIC TYPE TO TORRENTIO!
+                startTorrentioStream(tmdbId, fallbackTitle, tmdbType);
             };
         }
 
@@ -1408,34 +1416,52 @@ export async function startTorrentioStream(id, movieTitle, type) {
     btn.disabled = true;
 
     try {
-        // Grab the selected episode safely
         const epInput = document.getElementById('selected-episode');
         const e = (type === 'tv' && epInput) ? epInput.value : 1;
 
         let streamData = { streams: [] };
         let typePath = '';
         let torrentioUrl = '';
+        let kitsuFailed = false;
 
         // 🌸 ==========================================
         // 🌸 TRACK A: THE ANIME ROUTE (Kitsu Direct)
         // ==========================================
-        if (activeMedia.kitsuId && type === 'tv') {
-            typePath = `anime/kitsu:${activeMedia.kitsuId}:${e}`;
+
+        if (activeMedia.kitsuId) {
+            
+            // 🚨 FIX 2: Check BOTH MAL's subtype AND TMDB's base type!
+            if (activeMedia.subtype === 'Movie' || type === 'movie') {
+                typePath = `movie/kitsu:${activeMedia.kitsuId}`;
+                console.log(`🎬 [ANIME MOVIE MODE] Fetching Kitsu Route: ${typePath}`);
+            } else {
+                typePath = `anime/kitsu:${activeMedia.kitsuId}:${e}`;
+                console.log(`🌸 [ANIME TV MODE] Fetching Kitsu Route: ${typePath}`);
+            }
+            
             torrentioUrl = `https://torrentio.strem.fun/torbox=${tbKey}|debridoptions=nodownloadlinks/stream/${typePath}.json`;
 
-            console.log(`🌸 [ANIME MODE] Fetching Kitsu Route directly: ${typePath}`);
-
-            const streamRes = await fetch(torrentioUrl);
-            if (streamRes.ok) {
-                streamData = await streamRes.json();
-            } else {
-                console.warn(`⚠️ Torrentio Server Error (${streamRes.status}) on Kitsu route.`);
+            try {
+                const streamRes = await fetch(torrentioUrl);
+                if (streamRes.ok) {
+                    const temp = await streamRes.json();
+                    if (temp.streams && temp.streams.length > 0) {
+                        streamData = temp;
+                    } else kitsuFailed = true; // 0 Streams found!
+                } else kitsuFailed = true; // 500 Error crashed!
+            } catch (err) {
+                kitsuFailed = true;
             }
+        } else {
+            kitsuFailed = true; // No Kitsu ID available
         }
+
         // 🎬 ==========================================
-        // 🎬 TRACK B: THE WESTERN ROUTE (IMDB/TMDB)
+        // 🎬 TRACK B: THE WESTERN FALLBACK (IMDB)
         // ==========================================
-        else {
+        if (kitsuFailed) {
+            console.log(`🚑 Kitsu failed or returned 0 streams. Falling back to IMDB route...`);
+            
             const idUrl = `https://api.themoviedb.org/3/${type}/${id}/external_ids?api_key=${TMDB_KEY}`;
             const idRes = await fetch(idUrl);
             const idData = await idRes.json();
@@ -1444,12 +1470,23 @@ export async function startTorrentioStream(id, movieTitle, type) {
             if (!imdbId) throw new Error("No IMDB ID found for streaming.");
 
             const seasonInput = document.getElementById('season-select');
-            const s = (type === 'tv' && seasonInput) ? seasonInput.value : 1;
+            
+            // 🧠 SMART FALLBACK: If we are falling back on an Anime TV show, use the Spider's season math!
+            let s = seasonInput ? seasonInput.value : 1;
+            if (activeMedia.type === 'tv' && activeMedia.tmdbSeason) {
+                s = activeMedia.tmdbSeason; 
+            }
 
-            typePath = type === 'tv' ? `series/${imdbId}:${s}:${e}` : `movie/${imdbId}`;
+            // If it's technically a movie on MAL, force the Western movie route!
+            if (activeMedia.subtype === 'Movie' || type === 'movie') {
+                typePath = `movie/${imdbId}`;
+            } else {
+                typePath = `series/${imdbId}:${s}:${e}`;
+            }
+            
             torrentioUrl = `https://torrentio.strem.fun/torbox=${tbKey}|debridoptions=nodownloadlinks/stream/${typePath}.json`;
 
-            console.log(`🎬 [WESTERN MODE] Fetching TMDB/IMDB Route: ${typePath}`);
+            console.log(`🎬 [WESTERN MODE] Fetching IMDB Route: ${typePath}`);
 
             const streamRes = await fetch(torrentioUrl);
             if (streamRes.ok) {
@@ -1464,11 +1501,10 @@ export async function startTorrentioStream(id, movieTitle, type) {
             throw new Error("No streams found on Torrentio for this media.");
         }
 
-        // Run the data through our filter engine
         const categorizedStreams = filterAndSortStreams(streamData.streams);
 
-        if (categorizedStreams.top4K.length === 0 && categorizedStreams.top1080p.length === 0) {
-            throw new Error("Found streams, but none were instantly cached in 4K or 1080p.");
+        if (categorizedStreams.top4K.length === 0 && categorizedStreams.top1080p.length === 0 && categorizedStreams.topStandard.length === 0) {
+            throw new Error("Found streams, but none were safe to play.");
         }
 
         showStreamPicker(categorizedStreams, movieTitle);
