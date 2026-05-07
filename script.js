@@ -363,6 +363,7 @@ async function getAnilistIdFromText(searchText) {
         media (search: $search, type: ANIME) {
           id
           title { english romaji }
+          episodes
           coverImage { large } 
         }
       }
@@ -380,7 +381,8 @@ async function getAnilistIdFromText(searchText) {
         return match ? {
             id: match.id,
             title: match.title.english || match.title.romaji,
-            coverImage: match.coverImage?.large // <-- We grab the official poster here!
+            coverImage: match.coverImage?.large,
+            officialEpisodeCount: match.episodes || null
         } : null;
     } catch (e) {
         return null;
@@ -391,10 +393,6 @@ async function getAnilistIdFromText(searchText) {
 let anilistQueue = Promise.resolve();
 
 async function getDirectSequel(currentAnilistId) {
-
-    // 2. The simple, bulletproof 150ms delay line.
-    // This forces the function to wait 150ms after the previous call finishes.
-    // The .catch(() => {}) ensures a failed network call never breaks the queue.
     await (anilistQueue = anilistQueue.then(() => new Promise(r => setTimeout(r, 150))).catch(() => { }));
 
     // 3. Proceed with the normal fetch!
@@ -513,51 +511,7 @@ function preProcessTorrentData(videoFiles, mainShowTitle, type = 'unknown') {
         group.episodeCount = group.files.length;
     }
 
-    console.log(franchiseGroups);
     return franchiseGroups;
-}
-
-// Helper to fix episode fragmentation before hitting APIs
-function consolidateEpisodes(franchiseGroups, mainShowTitle) {
-    // 1. Group only TV files by their season
-    const seasonGroups = {};
-
-    parsedList.forEach(item => {
-        if (item.fileType === 'TV' && item.season) {
-            if (!seasonGroups[item.season]) seasonGroups[item.season] = [];
-            seasonGroups[item.season].push(item);
-        }
-    });
-
-    // 2. Loop through each season to perform the "Title Check"
-    for (const season in seasonGroups) {
-        const filesInSeason = seasonGroups[season];
-
-        // If there's only 1 file, no need to consolidate
-        if (filesInSeason.length <= 1) continue;
-
-        // Get the first 3 episodes (or fewer if the season is tiny)
-        const sampleSize = Math.min(3, filesInSeason.length);
-        const sampleFiles = filesInSeason.slice(0, sampleSize);
-
-        // Check if ANY of the first 3 files successfully parsed the main title
-        // We use lowercase to ensure a safe, fuzzy match
-        const mainTitleClean = mainShowTitle.toLowerCase();
-        const hasMainTitle = sampleFiles.some(f =>
-            f.title && f.title.toLowerCase().includes(mainTitleClean)
-        );
-
-        // 3. If the parser grabbed episode names instead of the show name...
-        if (!hasMainTitle) {
-            // Force ALL files in this season to use the main torrent title!
-            // This squashes 24 API requests down to 1.
-            filesInSeason.forEach(f => {
-                f.title = mainShowTitle;
-            });
-        }
-    }
-
-    return parsedList;
 }
 
 // ==========================================
@@ -594,13 +548,13 @@ async function openPicker(torrent) {
 
     const franchiseGroups = await preProcessTorrentData(videoFiles, cleanName, torrentType);
 
-    const suspiciousKeys = Object.keys(franchiseGroups).filter(key => {
+    const titledEpisodes = Object.keys(franchiseGroups).filter(key => {
         const group = franchiseGroups[key];
         // Flag groups that have 1 or 2 files, AND are NOT movies
-        return group.files.length <= 2 && !group.files.some(f => f.fileType === 'Movie' || f.fileType === 'Theme');
+        return group.files.length <= 2 && group.files.some(f => f.fileType === "TV");
     });
 
-    suspiciousKeys.forEach(key => {
+    titledEpisodes.forEach(key => {
         const group = franchiseGroups[key];
 
         // 1. Grab the first file to inspect its path
@@ -650,6 +604,14 @@ async function openPicker(torrent) {
             const searchableFiles = group.files.filter(f => f.fileType === 'TV' || f.fileType === 'Movie' || f.fileType === 'OVA');
             const uniqueSeasons = [...new Set(searchableFiles.map(f => f.season))].sort((a, b) => a - b);
 
+            const coreSeasons = [...new Set(group.files
+                .filter(f => f.fileType === 'TV' || f.fileType === 'Movie')
+                .map(f => f.season)
+            )].sort((a, b) => a - b);
+
+            // 🛡️ THE FILTER: Exactly 1 core season exists, AND that season is Season 1
+            const isSingleSeasonOne = coreSeasons.length === 1 && (coreSeasons[0] === 1 || coreSeasons[0] === '1');
+
             for (const season of uniqueSeasons) {
                 const targetFile = searchableFiles.find(f => f.season === season);
 
@@ -661,6 +623,7 @@ async function openPicker(torrent) {
 
                 // 3. The Two-Step AniList Search
                 let aniListMatch = await getAnilistIdFromText(searchString);
+                let currentEpisodeCount = null;
 
                 if (!aniListMatch) {
                     // Fallback: Strip movie numbers/junk
@@ -671,6 +634,7 @@ async function openPicker(torrent) {
 
                 if (aniListMatch && aniListMatch.title) {
                     group.seasonTitles[season] = aniListMatch.title;
+                    currentEpisodeCount = aniListMatch.officialEpisodeCount;
                 }
 
                 // If AniList completely fails, fallback to the Fribb Master ID (safest for Season 1/Movies)
@@ -684,8 +648,7 @@ async function openPicker(torrent) {
                         if (azRes.ok) {
                             const azData = await azRes.json();
                             const epDict = azData.episodes || {};
-                            
-                            console.log(azData);
+
                             // Isolate only the local files that belong to THIS season
                             const seasonFiles = group.files.filter(f => f.season === season);
 
@@ -694,35 +657,62 @@ async function openPicker(torrent) {
                                 if (file.episode) {
                                     const epInt = parseInt(file.episode, 10);
                                     const epArray = Object.values(epDict);
-                                    
-                                    // Prioritize relative season number, fallback to absolute
-                                    let matchedEp = epArray.find(ep => ep.episodeNumber === epInt);
-                                    if (!matchedEp) {
-                                        matchedEp = epArray.find(ep => ep.absoluteEpisodeNumber === epInt);
+
+                                    //console.log(file);
+
+                                    let matchedEp = null;
+
+                                    if (isSingleSeasonOne && (file.season === 1)) {
+                                        // PATH A: Mega-Batches and S1. Trust ONLY the Index.
+                                        matchedEp = epDict[epInt];
+                                    } else {
+                                        // PATH B: Sequels and Mixed Batches. Fallback chain.
+                                        matchedEp = epArray.find(ep => ep.episodeNumber === epInt);
+
+                                        if (!matchedEp) {
+                                            matchedEp = epArray.find(ep => ep.absoluteEpisodeNumber === epInt);
+                                        }
+                                        if (!matchedEp) {
+                                            matchedEp = epArray.find(ep => ep.episode === epInt.toString());
+                                        }
                                     }
 
                                     if (matchedEp) {
+                                        if (matchedEp.seasonNumber && (matchedEp.seasonNumber != file.season)) matchedEp = null;
+
                                         file.aniZipTitle = matchedEp.title?.en || matchedEp.title?.xIdx;
                                         file.aniZipThumbnail = matchedEp.image;
                                         file.relativeEpisode = matchedEp.episodeNumber;
+
+                                        //console.log(
+                                        //    `✅ MATCHED | Local: S${season} E${epInt} ➡️ AniZip: ` +
+                                        //    `Relative E${matchedEp.episodeNumber || 'N/A'} ` +
+                                        //    `| Absolute E${matchedEp.absoluteEpisodeNumber || 'N/A'} ` +
+                                        //    `| Season ${matchedEp.seasonNumber || 'N/A'} ` +
+                                        //    `| Title: "${file.aniZipTitle}"`
+                                        //);
                                     }
-                                }
-
-                                // 🎬 THE MOVIE FALLBACK
-                                if (!file.aniZipTitle && file.fileType === 'Movie') {
-                                    // THE FIX: If AniList found an exact match, use the official movie title!
-                                    // If AniList failed and we fell back to the Master ID, use your raw file name!
-                                    file.aniZipTitle = aniListMatch?.title || file.originalFile.short_name;
-
-                                    file.aniZipThumbnail = officialMoviePoster || azData.image || azData.coverImage || null;
-                                    file.relativeEpisode = 1;
                                 }
                             });
 
                             // THE SPLIT-COUR DETECTOR
-                            const starvingFiles = seasonFiles.filter(f => !f.aniZipTitle && f.fileType === 'TV');
+                            const otherPart = seasonFiles.filter(f => {
+                                // 1. If it already successfully matched in Part 1, leave it alone!
+                                if (f.aniZipTitle) return false;
 
-                            if (starvingFiles.length > 0) {
+                                // 2. THE FIX: If the file has NO episode number at all (like your Movies), catch it and send it to Part 2!
+                                if (!f.episode) return true;
+
+                                // 3. If it has an episode number, check if it mathematically overflows the season
+                                if (f.fileType === 'TV') {
+                                    const epInt = parseInt(f.episode, 10);
+                                    return currentEpisodeCount && epInt > currentEpisodeCount;
+                                }
+
+                                return false;
+                            });
+
+                            if (otherPart.length > 0) {
                                 const sequelData = await getDirectSequel(finalAnilistId);
 
                                 if (sequelData) {
@@ -733,10 +723,7 @@ async function openPicker(torrent) {
                                             const sequelAzData = await sequelAzRes.json();
                                             const sequelEpArray = Object.values(sequelAzData.episodes || {});
 
-                                            // 1. Find the highest episode number currently in this season
-                                            const maxMappedEp = Math.max(0, ...seasonFiles.filter(f => f.aniZipTitle).map(f => parseInt(f.relativeEpisode) || 0));
-
-                                            starvingFiles.forEach(file => {
+                                            otherPart.forEach(file => {
                                                 if (file.episode) {
                                                     const localEpInt = parseInt(file.episode, 10);
 
@@ -752,8 +739,7 @@ async function openPicker(torrent) {
                                                         file.season = `${season} (Part 2)`;
                                                     }
                                                 } else {
-                                                    // THE FIX: If the file has no episode number at all, 
-                                                    // evict it to Part 2 so it doesn't clutter Part 1!
+                                                    // If the file has no episode number, its Part 2
                                                     file.season = `${season} (Part 2)`;
                                                 }
                                             });
@@ -764,6 +750,7 @@ async function openPicker(torrent) {
                                 }
                             }
 
+                            const fallbackFiles = seasonFiles.filter(f => !f.aniZipTitle || !f.aniZipThumbnail);
                         }
                     } catch (e) {
                         console.warn(`⚠️ AniZip fetch failed for ID: ${finalAnilistId}`);

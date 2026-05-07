@@ -16,7 +16,7 @@ export function parseMediaData(rawString, knownType = 'unknown') {
         const hasCrc32 = /\[[a-f0-9]{8}\]/i.test(rawString);
         const hasAnimeVocab = /\b(ova|oad|ncop|nced|dual audio|bdrip)\b/i.test(rawString);
 
-        const hasAnimeEpisode = /\s-\s\d{2,4}(?:[\s\[\(]|$)/.test(rawString); 
+        const hasAnimeEpisode = /\s-\s\d{2,4}(?:[\s\[\(]|$)/.test(rawString);
         const hasLooseEpNumber = /\bepisode\s*\d+\b/i.test(rawString);
 
         if (hasWesternSeason || hasWesternMovie) {
@@ -72,17 +72,35 @@ function parseWestern(rawString, fallbackTitle = null) {
         ...parsed,
         title: finalTitle,
         year: parsed.year || year || '',
-        airDate: airDate, 
+        airDate: airDate,
         resolution: parsed.resolution || 'HD',
         isComplete: rawString.toLowerCase().includes('complete'),
         isSpecial: false,
-        mediaType: 'western' 
+        mediaType: 'western'
     };
 }
 
 export function parseAnime(rawString, fallbackTitle = null) {
     const fileNameOnly = rawString.split(/[/\\]/).pop();
-    const cleanString = fileNameOnly.replace(/\[\s*(www\.)?[a-zA-Z0-9-]+\.(com|si|net|org|to|ru)[^\]]*\]\s*/gi, "");
+    let cleanString = fileNameOnly
+        // 1. The URL Remover (Your original regex - perfectly safe)
+        .replace(/\[\s*(www\.)?[a-zA-Z0-9-]+\.(com|si|net|org|to|ru)[^\]]*\]\s*/gi, "")
+
+        // 2. The Asian Typography Normalizer
+        .replace(/【/g, "[")
+        .replace(/】/g, "]")
+
+        // 3. The Version Un-gluer (The fix we discussed earlier)
+        // Fixes: "S01E01v2" -> "S01E01 v2"
+        .replace(/(\d)v(\d)/gi, '$1 v$2')
+
+        // 4. The Season/Cour Un-gluer
+        // Fixes: "Season2" -> "Season 2"
+        .replace(/(Season|Part|Cour)(\d)/gi, '$1 $2')
+
+        // 5. The Underscore/Dot normalizer (Crucial!)
+        // Fixes: "My_Show_S01E05" -> "My Show S01E05"
+        .replace(/_/g, " ");
 
     const parsed = anitomyParse(cleanString);
 
@@ -98,11 +116,11 @@ export function parseAnime(rawString, fallbackTitle = null) {
     const anitomyData = {
         title: finalTitle,
         year: parsed.year || '',
-        season: parseInt(parsed.season, 10) || folderSeason || 1, 
+        season: parseInt(parsed.season, 10) || folderSeason || 1,
         episode: parsed.episode?.number || parsed.episodeNumber || parsed.episode_number || null,
         resolution: parsed.video?.resolution || parsed.videoResolution || parsed.video_resolution || 'HD',
         fileType: parsed.type || "anime"
     };
-    
+
     return anitomyData;
 }
