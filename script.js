@@ -1,6 +1,6 @@
-import { playDirect, stopPlayback, requestLink, startPlayer } from './player.js';
-import { TMDB_KEY, getAnimeIds, searchTMDB, loadDiscover } from './api.js';
-import { parseMediaData } from './parseMedia.js';
+import { playDirect, stopPlayback, getTorboxLink, requestLink, startPlayer } from './player.js';
+import { TMDB_KEY, fetchAnimeMapping, searchTMDB, loadDiscover } from './api.js';
+import { parseTorrentio } from './parseMedia.js';
 
 let allTorrents = [];
 let currentTorrentId = null;
@@ -16,6 +16,9 @@ export const appState = {
     currentStreamUrl: "",
     clickCooldown: false
 };
+
+// Scan for downloaded content
+scanLocalOPFSDirectory();
 
 // Cloudflare Proxy
 export async function smartFetch(targetUrl, options = {}) {
@@ -116,7 +119,6 @@ function checkAuth() {
     } else {
         authScreen.classList.add('hidden');
         loadLibrary(key);
-        //initTrakt();
     }
 }
 
@@ -135,9 +137,8 @@ function logoutTorBox() {
     }
 }
 
-// 🏠 THE CLEANED UP GOHOME
 export function goHome() {
-    stopPlayback(); // 👈 Instantly kills everything
+    stopPlayback();
 
     document.getElementById('player-wrapper').classList.add('hidden');
     document.getElementById('search-input').value = '';
@@ -182,7 +183,7 @@ export function renderList(items) {
         const vidCount = t.files.filter(f => f.name.match(/\.(mkv|mp4|avi|mov)$/i)).length;
         const isShow = vidCount > 1;
 
-        const mediaInfo = parseMediaData(t.name);
+        const mediaInfo = parseTorrentio(t.name);
         const cleanName = mediaInfo.title;
         const year = mediaInfo.year;
 
@@ -192,6 +193,23 @@ export function renderList(items) {
         const card = document.createElement('div');
         card.className = "relative flex-col cursor-pointer transition-transform hover:scale-105 select-none group";
 
+        // 1. Build the action buttons dynamically
+        let actionButtonsHTML = `<button onclick="event.stopPropagation(); deleteTorrent(${t.id}, event);" class="text-red-500 hover:text-red-400 p-1 bg-black/50 rounded-full transition z-10 w-8 h-8 flex items-center justify-center backdrop-blur-sm shadow-md">🗑️</button>`;
+
+        if (!isShow) {
+            // It's a movie! Grab the primary video file to get its ID and Name
+            const vid = t.files.find(f => f.name.match(/\.(mkv|mp4|avi|mov)$/i)) || t.files[0];
+            if (vid) {
+                const safeFileName = vid.name.replace(/'/g, "\\'");
+                // Prepend the download button next to the delete button
+                actionButtonsHTML = `
+                    <button onclick="event.stopPropagation(); downloadToOPFS(${t.id}, ${vid.id}, null, '${cleanName}', this);" class="text-blue-400 hover:text-blue-300 p-1 bg-black/50 rounded-full transition z-10 w-8 h-8 flex items-center justify-center backdrop-blur-sm shadow-md mr-2">⬇️</button>
+                    ${actionButtonsHTML}
+                `;
+            }
+        }
+
+        // 2. Inject into the card
         card.innerHTML = `
             <div class="relative w-full aspect-[2/3] bg-slate-800 rounded-lg shadow-lg overflow-hidden border border-slate-700/50">
                 
@@ -204,7 +222,9 @@ export function renderList(items) {
                 <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3">
                     <div class="flex justify-between items-center mb-1">
                         <span class="text-white font-bold text-xs truncate drop-shadow-md">${isShow ? '📺 Series' : '🎬 Movie'}</span>
-                        <button onclick="event.stopPropagation(); deleteTorrent(${t.id}, event);" class="text-red-500 hover:text-red-400 p-1 bg-black/50 rounded-full transition z-10">🗑️</button>
+                        <div class="flex items-center">
+                            ${actionButtonsHTML}
+                        </div>
                     </div>
                 </div>
                 
@@ -616,11 +636,11 @@ async function searchKitsuText(searchString) {
 //#endregion
 
 //#region Grouping
-function preProcessTorrentData(videoFiles, mainShowTitle, type = 'unknown') {
+function preProcessTorrentData(videoFiles, mainShowTitle) {
     const franchiseGroups = {};
 
     videoFiles.forEach(file => {
-        const fileData = parseMediaData(file.name, type);
+        const fileData = parseTorrentio(file.name);
 
         // 1. Cleaned up redundant ORs
         let mergedInfo = {
@@ -711,7 +731,7 @@ async function openPicker(torrent) {
 
 
     const videoFiles = torrent.files.filter(f => f.name.match(/\.(mkv|mp4|avi|mov)$/i));
-    const baseInfo = parseMediaData(torrent.name);
+    const baseInfo = parseTorrentio(torrent.name);
     const cleanName = baseInfo.title;
 
     // 1. CHECK THE VAULT FIRST (Grab the ID renderList already found for us!)
@@ -730,7 +750,7 @@ async function openPicker(torrent) {
     let animeIds = null;
     if (tmdbId) {
         try {
-            animeIds = await getAnimeIds(tmdbId);
+            animeIds = await fetchAnimeMapping(tmdbId);
         } catch (e) {
             console.error("API failed to find anime mappings:", e);
         }
@@ -739,7 +759,7 @@ async function openPicker(torrent) {
     let torrentType = "";
     if (animeIds) torrentType = "anime";
 
-    const franchiseGroups = await preProcessTorrentData(videoFiles, cleanName, torrentType);
+    const franchiseGroups = await preProcessTorrentData(videoFiles, cleanName);
 
     const titledEpisodes = Object.keys(franchiseGroups).filter(key => {
         const group = franchiseGroups[key];
@@ -762,7 +782,7 @@ async function openPicker(torrent) {
         if (!isFlatDirectory) {
             // 3. Parse the folder name to get the REAL show title
             const parentFolder = pathParts[pathParts.length - 2];
-            const folderData = parseMediaData(parentFolder, torrentType);
+            const folderData = parseTorrentio(parentFolder);
             realTitle = folderData.title || cleanName;
         }
 
@@ -1081,18 +1101,33 @@ function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cle
             const card = document.createElement('div');
             card.className = "relative flex flex-col w-full rounded-xl border-2 border-slate-700 bg-slate-800 overflow-hidden cursor-pointer hover:border-blue-500 transition-all group select-none";
 
+            const safeFileName = originalFile.name.replace(/'/g, "\\'").replace(/"/g, "&quot;");
+
             card.innerHTML = `
-                <div class="relative aspect-video bg-slate-900 border-b border-slate-700">
-                    <img src="${cardImage}" class="w-full h-full object-cover opacity-60 group-hover:opacity-90 transition-opacity">
-                    <div class="absolute bottom-2 right-2 bg-black/80 px-2 py-1 rounded text-[11px] text-white font-bold">${fileSize}</div>
+                <div class="relative aspect-video bg-slate-900 border-b border-slate-700 overflow-hidden">
+                    <img src="${cardImage}" class="w-full h-full object-cover opacity-60 group-hover:opacity-40 transition-opacity">
+                    
+                    <div class="absolute inset-0 flex items-center justify-center gap-4 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                        <button onclick="event.stopPropagation(); downloadToOPFS(${torrent.id}, ${originalFile.id}, '${showData.title}', '${fallbackImage}', '${cardImage}', this);" class="bg-slate-800/90 hover:bg-slate-700 text-white w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-md transition-colors shadow-xl border border-slate-600" title="Download to Device">
+                            ⬇️
+                        </button>
+                        <div class="bg-blue-600/90 text-white w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-md shadow-xl border border-blue-500 pointer-events-none">
+                            ▶️
+                        </div>
+                    </div>
+
+                    <div class="absolute bottom-2 right-2 bg-black/80 px-2 py-1 rounded text-[11px] text-white font-bold pointer-events-none">${fileSize}</div>
                 </div>
-                <div class="p-3 flex flex-col gap-1">
+                <div class="p-3 flex flex-col gap-1 pointer-events-none">
                     <span class="text-[10px] font-bold text-white px-2 py-0.5 rounded w-max ${badgeColor}">${badgeText}</span>
                     <p class="text-xs text-slate-300 line-clamp-2 mt-1 group-hover:text-white">${finalCardTitle}</p>
                 </div>
             `;
 
-            card.onclick = () => {
+            card.onclick = (e) => {
+                // CRITICAL: Ignore clicks that originated from our download button
+                if (e.target.closest('button')) return;
+
                 if (appState.clickCooldown) return;
                 appState.clickCooldown = true; setTimeout(() => appState.clickCooldown = false, 2000);
                 closePicker();
@@ -1195,7 +1230,7 @@ window.processLocalFile = async function (event) {
 
     if (!localVault[file.name]) {
         showToast("Adding to library...", "info");
-        const parsedData = parseMediaData(file.name);
+        const parsedData = parseTorrentio(file.name);
 
         let posterUrl = '';
         try {
@@ -1281,6 +1316,267 @@ window.deleteLocalGhost = function (fileName) {
 };
 
 window.renderLocalLibrary();
+
+export async function downloadToOPFS(torrentId, fileId, folderName, fileName, posterUrl, thumbUrl, epTitle, epNumber, buttonElement) {
+    if (appState.clickCooldown) return;
+
+    // 1. Lock the button and show a spinner
+    buttonElement.disabled = true;
+    buttonElement.innerHTML = `<span class="animate-spin inline-block">⏳</span>`;
+
+    const downloadUrl = await getTorboxLink(torrentId, fileId);
+    if (!downloadUrl) {
+        buttonElement.innerHTML = `⬇️`;
+        buttonElement.disabled = false;
+        return;
+    }
+
+    let wakeLock = null;
+
+    try {
+        // ---------------------------------------------------------
+        // WAKE LOCK: Keep the screen on so the OS doesn't kill our JS thread
+        // ---------------------------------------------------------
+        if ('wakeLock' in navigator) {
+            try {
+                wakeLock = await navigator.wakeLock.request('screen');
+                console.log('💡 Wake Lock active: Screen will not turn off.');
+            } catch (err) {
+                console.warn(`Wake Lock failed: ${err.message}`);
+            }
+        }
+
+        // ---------------------------------------------------------
+        // SANITIZER: Clean illegal characters from the filename
+        // ---------------------------------------------------------
+        const pathParts = fileName.split('/');
+        let safeName = pathParts[pathParts.length - 1].replace(/[\\/:*?"<>|]/g, '_').trim();
+        if (!safeName) safeName = `video_${Date.now()}.mkv`;
+
+        // ---------------------------------------------------------
+        // OPFS FOLDER ROUTING
+        // ---------------------------------------------------------
+        if (navigator.storage && navigator.storage.persist) await navigator.storage.persist();
+        const opfsRoot = await navigator.storage.getDirectory();
+        
+        let targetDirectory = opfsRoot; // Default to root (for Movies)
+        
+        // If it's a TV Show, grab/create the specific folder
+        if (folderName) {
+            targetDirectory = await opfsRoot.getDirectoryHandle(folderName, { create: true });
+        }
+
+        if (posterUrl) {
+            savePosterToOPFS(folderName || fileName, posterUrl);
+        }
+
+        const fileHandle = await targetDirectory.getFileHandle(safeName, { create: true });
+        const writable = await fileHandle.createWritable();
+
+        console.log(`📡 Fetching from CDN: ${downloadUrl}`);
+
+        const response = await fetch(downloadUrl);
+        if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+
+        const contentLength = response.headers.get('content-length');
+        const total = parseInt(contentLength, 10);
+        let loaded = 0;
+
+        const reader = response.body.getReader();
+        const progressStream = new ReadableStream({
+            async start(controller) {
+                while (true) {
+                    const { done, value } = await reader.read();
+
+                    if (done) {
+                        controller.close();
+                        break;
+                    }
+
+                    loaded += value.byteLength;
+
+                    if (total) {
+                        const percent = Math.round((loaded / total) * 100);
+                        buttonElement.innerText = `${percent}%`;
+                    } else {
+                        const mbLoaded = (loaded / (1024 * 1024)).toFixed(0);
+                        buttonElement.innerText = `${mbLoaded}M`;
+                    }
+
+                    controller.enqueue(value);
+                }
+            }
+        });
+
+        // PIPE IT TO THE HARD DRIVE
+        await progressStream.pipeTo(writable);
+
+        // Success!
+        console.log(`✅ File saved to OPFS: ${safeName} ${folderName ? `in ${folderName}` : '(Root)'}`);
+        buttonElement.innerHTML = '✅';
+        buttonElement.classList.replace('text-white', 'text-emerald-400');
+        buttonElement.classList.replace('hover:bg-slate-700', 'hover:bg-emerald-900');
+        showToast(`Downloaded for offline viewing!`, 'success');
+
+    } catch (error) {
+        console.error("OPFS Download failed:", error);
+        showToast(`Download failed: ${error.message}`, 'error');
+        buttonElement.innerHTML = '⬇️';
+        buttonElement.disabled = false;
+    } finally {
+        // ALWAYS release the wake lock so we don't drain the user's battery forever
+        if (wakeLock !== null) {
+            wakeLock.release().then(() => console.log('💡 Wake Lock released.'));
+        }
+    }
+}
+
+export async function savePosterToOPFS(showName, posterUrl) {
+    if (!posterUrl || !showName) return;
+
+    // 1. THE DEDUPLICATOR: Check our Master Catalog
+    let catalog = JSON.parse(localStorage.getItem('offline_catalog') || '{}');
+
+    // If we already saved this poster, exit immediately!
+    if (catalog[showName] && catalog[showName].posterSaved) {
+        console.log(`🖼️ Poster for "${showName}" already exists in OPFS. Skipping.`);
+        return;
+    }
+
+    try {
+        console.log(`🖼️ Downloading poster for "${showName}"...`);
+        
+        // 2. Fetch the image as raw binary data (Blob)
+        const response = await fetch(posterUrl);
+        if (!response.ok) throw new Error("Image fetch failed");
+        const imageBlob = await response.blob();
+
+        // 3. Save to the OPFS Warehouse
+        const opfsRoot = await navigator.storage.getDirectory();
+        
+        // Use the exact same folder name logic we used for the video!
+        const safeFolderName = showName.replace(/[\\/:*?"<>|]/g, '').trim();
+        const showFolder = await opfsRoot.getDirectoryHandle(safeFolderName, { create: true });
+        
+        // Create a simple "poster.jpg" file
+        const fileHandle = await showFolder.getFileHandle('poster.jpg', { create: true });
+        const writable = await fileHandle.createWritable();
+        
+        // Write the blob and close the pipe
+        await writable.write(imageBlob);
+        await writable.close();
+
+        // 4. Update the Master Catalog so we never download it again
+        if (!catalog[showName]) catalog[showName] = {};
+        catalog[showName].posterSaved = true;
+        localStorage.setItem('offline_catalog', JSON.stringify(catalog));
+
+        console.log(`✅ Poster saved to OPFS: ${safeFolderName}/poster.jpg`);
+
+    } catch (e) {
+        console.error("❌ Failed to save poster:", e);
+    }
+}
+
+export async function saveEpisodeDataToOPFS(showName, epNumber, epTitle, thumbUrl) {
+    if (!showName || epNumber == null) return;
+
+    let catalog = JSON.parse(localStorage.getItem('offline_catalog') || '{}');
+
+    // 1. Ensure the show structure exists
+    if (!catalog[showName]) catalog[showName] = { posterSaved: false, episodes: {} };
+    if (!catalog[showName].episodes) catalog[showName].episodes = {};
+
+    // 2. THE DEDUPLICATOR: Check if this specific episode is already saved
+    const epKey = `E${epNumber}`; // e.g., "E1" or "E12"
+    if (catalog[showName].episodes[epKey] && catalog[showName].episodes[epKey].thumbSaved) {
+        console.log(`🖼️ Thumbnail & Data for ${showName} ${epKey} already exists. Skipping.`);
+        return;
+    }
+
+    try {
+        const safeFolderName = showName.replace(/[\\/:*?"<>|]/g, '').trim();
+        let thumbFileName = `${epKey}_thumb.jpg`; // e.g., "E1_thumb.jpg"
+
+        // 3. Download and save the thumbnail Blob (if it exists)
+        if (thumbUrl) {
+            console.log(`🖼️ Downloading thumbnail for ${showName} ${epKey}...`);
+            const response = await fetch(thumbUrl);
+            if (response.ok) {
+                const imageBlob = await response.blob();
+                const opfsRoot = await navigator.storage.getDirectory();
+                const showFolder = await opfsRoot.getDirectoryHandle(safeFolderName, { create: true });
+                
+                const fileHandle = await showFolder.getFileHandle(thumbFileName, { create: true });
+                const writable = await fileHandle.createWritable();
+                await writable.write(imageBlob);
+                await writable.close();
+            } else {
+                thumbFileName = null; // Fetch failed
+            }
+        } else {
+            thumbFileName = null; // No thumbnail provided by API
+        }
+
+        // 4. Save the text data & thumb pointer to your Database!
+        catalog[showName].episodes[epKey] = {
+            title: epTitle,
+            episodeNumber: epNumber,
+            thumbSaved: !!thumbFileName,
+            thumbFileName: thumbFileName
+        };
+        
+        localStorage.setItem('offline_catalog', JSON.stringify(catalog));
+        console.log(`✅ Episode Data saved to catalog for ${epKey}`);
+
+    } catch (e) {
+        console.error("❌ Failed to save episode metadata:", e);
+    }
+}
+
+// --- OPFS LOCAL STORAGE SCANNER ---
+export async function scanLocalOPFSDirectory() {
+    try {
+        // 1. Safety check to make sure the browser supports OPFS
+        if (!navigator.storage || !navigator.storage.getDirectory) {
+            console.warn("OPFS is not supported in this environment.");
+            return;
+        }
+
+        // 2. Open the root directory of your app's virtual hard drive
+        const opfsRoot = await navigator.storage.getDirectory();
+        console.log("🗄️ Scanning OPFS Local Storage...");
+
+        let fileCount = 0;
+        let totalBytes = 0;
+
+        // 3. Loop through every file inside the OPFS root
+        // OPFS uses async iterators, so we use a 'for await' loop
+        for await (const [name, handle] of opfsRoot.entries()) {
+            if (handle.kind === 'file') {
+                // To get the size, we have to extract the actual File object from the Handle
+                const file = await handle.getFile();
+                const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+
+                console.log(`🎬 Found: "${name}" | Size: ${sizeMB} MB`);
+
+                fileCount++;
+                totalBytes += file.size;
+            }
+        }
+
+        // 4. Print a summary
+        if (fileCount === 0) {
+            console.log("📭 OPFS is currently empty.");
+        } else {
+            const totalGB = (totalBytes / (1024 * 1024 * 1024)).toFixed(2);
+            console.log(`📊 OPFS Summary: ${fileCount} files, using ${totalGB} GB total.`);
+        }
+
+    } catch (error) {
+        console.error("❌ Failed to read OPFS directory:", error);
+    }
+}
 
 //#region Search
 let searchTimeout = null;
@@ -1418,18 +1714,6 @@ window.onclick = function (event) {
     }
 }
 
-window.toggleSetupLayer = () => {
-    const layer = document.getElementById('setup-layer');
-    layer.classList.toggle('hidden');
-
-    // Prevent background scrolling when open
-    if (!layer.classList.contains('hidden')) {
-        document.body.style.overflow = 'hidden';
-    } else {
-        document.body.style.overflow = '';
-    }
-};
-
 // Global variable to hold the active stream URL
 appState.currentStreamUrl = "";
 
@@ -1492,3 +1776,4 @@ window.logoutTorBox = logoutTorBox;
 window.closePicker = closePicker;
 window.deleteTorrent = deleteTorrent;
 window.openExternalPlayer = openExternalPlayer;
+window.downloadToOPFS = downloadToOPFS;

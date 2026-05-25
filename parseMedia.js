@@ -1,126 +1,295 @@
-// Alias the imports so PTT and Anitomy don't fight over the word "parse"
 import { parse as pttParse } from './ptt.js';
-import { parse as anitomyParse } from 'https://esm.sh/anitomy';
 
-// ==========================================
-// 1. THE TRAFFIC COP (Router) WITH DIAGNOSTICS
-// ==========================================
-export function parseMediaData(rawString, knownType = 'unknown') {
-    let mediaType = knownType;
+export function parseTorrentio(fullTitle) {
 
-    if (mediaType === 'unknown') {
-        const hasWesternSeason = /[sS]\d{1,2}[eE]\d{1,2}/.test(rawString);
-        const hasWesternMovie = /\b(19|20)\d{2}\b[\.\s\[\-]*(1080p|720p|2160p|4k|bluray|web-dl)/i.test(rawString);
+    if (!fullTitle) return;
 
-        const hasAnimeBrackets = /^\[.*?\]/.test(rawString.trim());
-        const hasCrc32 = /\[[a-f0-9]{8}\]/i.test(rawString);
-        const hasAnimeVocab = /\b(ova|oad|ncop|nced|dual audio|bdrip)\b/i.test(rawString);
+    const lines = fullTitle.split(/\r?\n/);
 
-        const hasAnimeEpisode = /\s-\s\d{2,4}(?:[\s\[\(]|$)/.test(rawString);
-        const hasLooseEpNumber = /\bepisode\s*\d+\b/i.test(rawString);
+    const pttData = parseMediaData(lines[0]);
 
-        if (hasWesternSeason || hasWesternMovie) {
-            mediaType = 'western';
-        } else if (hasAnimeBrackets || hasCrc32 || hasAnimeVocab || hasAnimeEpisode || hasLooseEpNumber) {
-            mediaType = 'anime';
-        } else {
-            mediaType = 'western';
+    const streamData = {
+        seeders: 0,
+        size: null,
+        group: null,
+        languages: [],
+        multi: null
+    };
+
+    // Seeders
+    const seederMatch = fullTitle.match(/👤[\s\-:|]*([\d,]+)/u);
+    if (seederMatch) {
+        streamData.seeders = parseInt(seederMatch[1].replace(/,/g, ''), 10);
+    } else {
+        streamData.seeders = pttData.seeders || 0;
+    }
+
+    // Size
+    const sizeMatch = fullTitle.match(/💾[\s\-:|]*([\d.]+\s*[KMGT]i?B)/ui);
+    if (sizeMatch) {
+        streamData.size = sizeMatch[1].trim();
+    } else {
+        streamData.size = pttData.size || null;
+    }
+
+    // Group
+    const groupMatch = fullTitle.match(/⚙️\s*([^\n]+)/);
+    if (groupMatch) {
+        streamData.group = groupMatch[1].trim();
+    }
+
+    // Languages
+    const lastLine = lines[lines.length - 1];
+
+    const isMetadataLine = lastLine.includes('👤') || lastLine.includes('💾') || lastLine.includes('⚙️');
+
+    if (!isMetadataLine && lines.length > 1) {
+        const lineLanguages = extractLanguage(lastLine);
+
+        if (lineLanguages.languages) {
+            streamData.languages = lineLanguages.languages;
+        }
+
+        if (lineLanguages.multi) {
+            streamData.multi = lineLanguages.multi;
         }
     }
 
-    if (mediaType === 'anime') {
-        return parseAnime(rawString);
-    } else {
-        return parseWestern(rawString);
+    if (!streamData.languages || streamData.languages.length === 0) {
+        streamData.languages = pttData.languages || null;
     }
+
+    const fullData = { ...pttData, ...streamData };
+
+    return fullData;
 }
 
-// ==========================================
-// 2. THE WESTERN PARSER (For TV & Movies)
-// ==========================================
-function parseWestern(rawString, fallbackTitle = null) {
-    let cleanName = rawString;
 
-    let yearMatch = cleanName.match(/[\(\[](\d{4})[\)\]]/);
-    let year = yearMatch ? yearMatch[1] : null;
+function parseMediaData(rawString) {
+    let cleanName = rawString.toLowerCase();
 
-    cleanName = cleanName.replace(/([sS]\d{1,2}[eE]\d{1,2})\s*-\s*[eE]?(\d{1,2})/g, '$1-$2');
-
-    const dateMatch = cleanName.match(/(\d{4})[\.\- ](\d{2})[\.\- ](\d{2})/);
-    let airDate = null;
-    if (dateMatch) {
-        airDate = `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`;
-        cleanName = cleanName.replace(/(\d{4})[\.\- ](\d{2})[\.\- ](\d{2})/, '');
+    let fallbackSeason = null;
+    let fallbackEpisode = null;
+    const seMatch = rawString.match(/[sS](\d{1,2})[\.\-\s]?[eE](\d{1,4})/);
+    if (seMatch) {
+        fallbackSeason = parseInt(seMatch[1], 10);
+        fallbackEpisode = parseInt(seMatch[2], 10);
     }
-
-    cleanName = cleanName.replace(/\bcomplete\s*(series|season)?\b/ig, '');
-    cleanName = cleanName.replace(/seasons?\s*\d+\s*-\s*\d+/ig, '');
-    cleanName = cleanName.replace(/[\._]/g, ' ').trim();
 
     // Uses PTT for Western shows
     const parsed = pttParse(cleanName);
-    let finalTitle = parsed.title || fallbackTitle || cleanName;
 
-    finalTitle = finalTitle.replace(/(^|\s)[sS]\d+[eE]\d+.*$/i, '');
-    finalTitle = finalTitle.replace(/\s\d{4}$/, '');
-    finalTitle = finalTitle.replace(/[\(\[].*?[\)\]]/g, '');
-    finalTitle = finalTitle.replace(/[\s\-\.]+$/, '').trim();
+    let finalTitle = parsed.title || cleanName;
 
-    if (!finalTitle && fallbackTitle) finalTitle = fallbackTitle;
+    // Season packs
+    let seasonText = null;
+
+    if (/\b(?:complete series|complete collection|the complete series)\b/i.test(cleanName)) {
+        seasonText = "COMPLETE SERIES";
+    }
+    if (!seasonText) {
+        const seasonRangeMatch = cleanName.match(/(?:s|season[s]?\s*)0*(\d{1,2})\s*(?:-|~)\s*(?:s|season[s]?\s*)?0*(\d{1,2})/i);
+        if (seasonRangeMatch) {
+            seasonText = `SEASONS ${seasonRangeMatch[1]}-${seasonRangeMatch[2]}`;
+        }
+    }
+    if (!seasonText && Array.isArray(parsed.season) && parsed.season.length > 1) {
+        const min = Math.min(...parsed.season);
+        const max = Math.max(...parsed.season);
+        seasonText = `SEASONS ${min}-${max}`;
+    }
+    if (!seasonText) {
+        const epRangeMatch = rawString.match(/(?:^|\s|-\s)0*(\d{1,3})\s*(?:~|\s-\s)\s*0*(\d{1,3})(?:\s|$|\[|\()/);
+        if (epRangeMatch) {
+            seasonText = `EPISODES ${epRangeMatch[1]}-${epRangeMatch[2]}`;
+        }
+    }
+    if (!seasonText) {
+        const activeSeason = parsed.season !== undefined ? parsed.season : fallbackSeason;
+        const activeEpisode = parsed.episode !== undefined ? parsed.episode : fallbackEpisode;
+
+        if (activeSeason !== undefined && activeSeason !== null && !Array.isArray(activeSeason)) {
+            const hasPackKeywords = /\b(?:season pack|complete season|season \d+ complete)\b/i.test(cleanName);
+            if (hasPackKeywords || (activeEpisode === undefined || activeEpisode === null)) {
+                seasonText = `FULL SEASON ${activeSeason}`;
+            }
+        }
+    }
+    if (!seasonText && /\bseason pack\b/i.test(cleanName)) {
+        seasonText = "SEASON PACK";
+    }
+
+    // Video codec
+    let videoFormat = "";
+    if (parsed.codec) {
+        videoFormat = (parsed.codec).toUpperCase();
+
+        if (videoFormat === 'H264' || videoFormat === 'X264') {
+            videoFormat = 'x264';
+        } else if (videoFormat === 'H265' || videoFormat === 'X265' || videoFormat === 'HEVC') {
+            videoFormat = 'HEVC/x265';
+        }
+    }
+
+    // Video codec
+    const customVideo = extractVideoCodec(rawString);
+
+    // Audio codec
+    const customAudio = extractAudioCodec(rawString);
+
+    finalTitle = finalTitle.replace(/^\[.*?\]\s*/, '');
+    finalTitle = finalTitle.replace(/\s*\[.*?\]$/, '');
+
+    finalTitle = finalTitle.replace(/[._]/g, ' ');
+    finalTitle = finalTitle.split(/\(|\bseason\b|\bepisode\b/i)[0];
+    finalTitle = finalTitle.replace(/\b[sS]\d{1,2}[eE]\d{1,4}\b/g, '');
+
+    if (parsed.year) {
+        const yearRegex = new RegExp(`\\s?\\[?${parsed.year}\\]?`, 'g');
+        finalTitle = finalTitle.replace(yearRegex, '');
+    } else {
+        finalTitle = finalTitle.replace(/\s\d{4}$/, '');
+    }
+
+    // 7. Clean up emojis, leftover hyphens, and normalize multiple spaces
+    finalTitle = finalTitle.replace(/[\p{Extended_Pictographic}]/gu, '');
+    finalTitle = finalTitle.replace(/\s+/g, ' ').trim();
+    finalTitle = finalTitle.replace(/^[-–—\s]+|[-–—\s]+$/g, '');
+
+    const pttData = {
+        title: finalTitle,
+        season: parsed.season !== undefined ? parsed.season : fallbackSeason,
+        episode: parsed.episode !== undefined ? parsed.episode : fallbackEpisode,
+        seasonDetails: seasonText,
+        audioType: customAudio || parsed.audio,
+        languages: parsed.languages,
+        videoType: parsed.codec || videoFormat,
+        resolution: parsed.resolution,
+        source: customVideo || parsed.source
+    };
+
+    return pttData;
+}
+
+// Ensure these are defined at the top of your file
+const emojiToLanguage = {
+    '🇬🇧': 'English', '🇺🇸': 'English', 'EN': 'English',
+    '🇫🇷': 'French',
+    '🇪🇸': 'Spanish', '🇲🇽': 'Spanish',
+    '🇮🇹': 'Italian',
+    '🇷🇺': 'Russian',
+    '🇩🇪': 'German',
+    '🇵🇹': 'Portuguese', '🇧🇷': 'Portuguese',
+    '🇯🇵': 'Japanese',
+    '🇰🇷': 'Korean',
+    '🇮🇳': 'Hindi',
+    '🇨🇳': 'Chinese', '🇹🇼': 'Chinese', '🇭🇰': 'Chinese',
+    '🇳🇱': 'Dutch',
+    '🇵🇱': 'Polish',
+    '🇷🇴': 'Romanian',
+    '🇬🇷': 'Greek',
+    '🇩🇰': 'Danish',
+    '🇫🇮': 'Finnish',
+    '🇸🇪': 'Swedish',
+    '🇳🇴': 'Norwegian',
+    '🇹🇷': 'Turkish',
+    '🇸🇦': 'Arabic',
+    '🇮🇱': 'Hebrew',
+    '🇮🇩': 'Indonesian',
+    '🇹🇭': 'Thai'
+};
+
+//#region Extractors
+function extractLanguage(rawString) {
+    const foundLanguages = new Set();
+
+    let multiStatus = null;
+
+    if (/\bmulti\b/i.test(rawString)) {
+        multiStatus = "Multi";
+    } else if (/\bdual\b/i.test(rawString)) {
+        multiStatus = "Dual";
+    } else if (/\bdubbed\b/i.test(rawString)) {
+        multiStatus = "Dubbed";
+    } else if (/\bsub\b/i.test(rawString)) {
+        multiStatus = "Subbed";
+    }
+
+    // 2. Language Extraction
+    Object.entries(emojiToLanguage).forEach(([key, langName]) => {
+        const isText = /^[a-zA-Z]+$/.test(key);
+
+        if (isText) {
+            const langRegex = new RegExp(`\\b${key}\\b`, 'i');
+            if (langRegex.test(rawString)) {
+                foundLanguages.add(langName);
+            }
+        } else {
+            if (rawString.includes(key)) {
+                foundLanguages.add(langName);
+            }
+        }
+    });
 
     return {
-        ...parsed,
-        title: finalTitle,
-        year: parsed.year || year || '',
-        airDate: airDate,
-        resolution: parsed.resolution || 'HD',
-        isComplete: rawString.toLowerCase().includes('complete'),
-        isSpecial: false,
-        mediaType: 'western'
+        languages: foundLanguages.size > 0 ? Array.from(foundLanguages) : null,
+        multi: multiStatus
     };
 }
 
-export function parseAnime(rawString, fallbackTitle = null) {
-    const fileNameOnly = rawString.split(/[/\\]/).pop();
-    let cleanString = fileNameOnly
-        // 1. The URL Remover (Your original regex - perfectly safe)
-        .replace(/\[\s*(www\.)?[a-zA-Z0-9-]+\.(com|si|net|org|to|ru)[^\]]*\]\s*/gi, "")
+// Video formats
+function extractVideoCodec(rawString) {
+    // Check for Remux first, as it's the ultimate quality modifier
+    const isRemux = /\bremux\b/i.test(rawString);
 
-        // 2. The Asian Typography Normalizer
-        .replace(/【/g, "[")
-        .replace(/】/g, "]")
+    if (/\b(?:blu-?ray|blue-?ray|bdrip|brrip)\b/i.test(rawString)) {
+        return isRemux ? "BluRay Remux" : "BluRay";
+    }
 
-        // 3. The Version Un-gluer (The fix we discussed earlier)
-        // Fixes: "S01E01v2" -> "S01E01 v2"
-        .replace(/(\d)v(\d)/gi, '$1 v$2')
+    // 2. WEB-DL (Matches: web-dl, webdl, web.dl)
+    if (/\b(?:web-?dl|web\.dl)\b/i.test(rawString)) {
+        return "WEB-DL";
+    }
 
-        // 4. The Season/Cour Un-gluer
-        // Fixes: "Season2" -> "Season 2"
-        .replace(/(Season|Part|Cour)(\d)/gi, '$1 $2')
+    // 3. WEBRip (Matches: web-rip, webrip, web.rip)
+    if (/\b(?:web-?rip|web\.rip)\b/i.test(rawString)) {
+        return "WEBRip";
+    }
 
-        // 5. The Underscore/Dot normalizer (Crucial!)
-        // Fixes: "My_Show_S01E05" -> "My Show S01E05"
-        .replace(/_/g, " ");
+    // 4. Fallback WEB (If it just says "WEB")
+    if (/\b(?:web)\b/i.test(rawString)) {
+        return "WEB";
+    }
 
-    const parsed = anitomyParse(cleanString);
+    // 5. HDTV / HDRip
+    if (/\b(?:hdtv)\b/i.test(rawString)) return "HDTV";
+    if (/\b(?:hdrip)\b/i.test(rawString)) return "HDRip";
 
-    // 1. Map the nested title 
-    let finalTitle = parsed.title || fallbackTitle || cleanString;
+    // If no source is found but it says Remux, label it Remux
+    return isRemux ? "Remux" : null;
+}
 
-    const rawStringL = rawString.toLowerCase();
+// Audio formats
+const audioTypes = [
+    'truehd', 'atmos', 'dts-hd', 'dts:x', 'flac',
+    'dd+', 'e-ac3', 'eac3', 'ac3', 'dts',
+    'dolby digital', 'aac'
+];
 
-    const folderSeasonMatch = rawString.match(/[sS]eason\s*(\d+)/);
-    const folderSeason = folderSeasonMatch ? parseInt(folderSeasonMatch[1], 10) : null;
+function extractAudioCodec(rawString) {
+    const foundAudio = new Set();
 
-    // 3. Map the nested properties using optional chaining (?.)
-    const anitomyData = {
-        title: finalTitle,
-        year: parsed.year || '',
-        season: parseInt(parsed.season, 10) || folderSeason || 1,
-        episode: parsed.episode?.number || parsed.episodeNumber || parsed.episode_number || null,
-        resolution: parsed.video?.resolution || parsed.videoResolution || parsed.video_resolution || 'HD',
-        fileType: parsed.type || "anime"
-    };
+    audioTypes.forEach(audio => {
+        // Escape special characters like + or . in the audio name
+        const escapedAudio = audio.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
 
-    return anitomyData;
+        // This regex ensures we match exactly the audio string and not partial words
+        const audioRegex = new RegExp(`(?:^|\\W|_)${escapedAudio}(?:$|\\W|_)`, 'i');
+
+        if (audioRegex.test(rawString)) {
+            foundAudio.add(audio);
+        }
+    });
+
+    return foundAudio.size > 0 ? Array.from(foundAudio) : null;
 }

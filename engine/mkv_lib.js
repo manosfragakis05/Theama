@@ -3,6 +3,21 @@ let wasm = null;
 
 const MSE = window.ManagedMediaSource || window.MediaSource;
 
+// Clear ASS subtitles
+function cleanSubtitleText(codec, rawText) {
+    if (codec === "S_TEXT/ASS" || codec === "S_TEXT/SSA") {
+        const parts = rawText.split(',');
+        if (parts.length >= 9) {
+            let text = parts.slice(8).join(','); 
+            text = text.replace(/\\N/gi, '\n');
+            text = text.replace(/\{[^}]+\}/g, '');
+            return text;
+        }
+    }
+    // S_TEXT/UTF8 (SRT) comes through completely clean out of the box!
+    return rawText; 
+}
+
 // Bypasses background tab throttling
 const yieldThread = () => new Promise(resolve => {
     const channel = new MessageChannel();
@@ -233,39 +248,105 @@ class CoreEngine {
         this.audioFramesOut = 0;
     }
 
-    _bootAudioEncoder() {
+    async _bootAudioEncoder(targetAudioTrack) {
         if (this.audioEncoder && this.audioEncoder.state !== 'closed') {
             try { this.audioEncoder.close(); } catch (e) { }
         }
 
+        const currentSampleRate = Math.round(targetAudioTrack.sample_rate || 48000);
+        const originalChannels = targetAudioTrack.channels;
+
+        // 1. Build the Negotiation Queue based on your rules
+        const configsToTry = [];
+
+        // Only try 6 channels if the original file actually has 6 or more
+        if (originalChannels >= 6) {
+            configsToTry.push({ channels: 6, vbr: true, bitrate: 192000 }); // 1. 6-Ch VBR
+            configsToTry.push({ channels: 6, vbr: false, bitrate: 192000 }); // 2. 6-Ch CBR
+        }
+
+        // Always queue Stereo as the smart fallback (or primary if source < 6)
+        configsToTry.push({ channels: 2, vbr: true, bitrate: 128000 });  // 3. 2-Ch VBR
+        configsToTry.push({ channels: 2, vbr: false, bitrate: 128000 }); // 4. 2-Ch CBR
+
+        let finalConfig = null;
+        let finalChannels = 2;
+
+        // 2. The Hardware Negotiation Loop
+        for (const test of configsToTry) {
+            const config = {
+                codec: 'mp4a.40.2',
+                sampleRate: currentSampleRate,
+                numberOfChannels: test.channels,
+                bitrate: test.bitrate,
+                bitrateMode: test.vbr ? "variable" : "constant"
+            };
+
+            const support = await AudioEncoder.isConfigSupported(config);
+            if (support.supported) {
+                this.log(`Hardware accepted ${test.channels} channels (${test.vbr ? 'VBR' : 'CBR'}).`);
+                finalConfig = config;
+                finalChannels = test.channels;
+                break; // Stop testing once the hardware accepts one!
+            }
+        }
+
+        // 3. Absolute Fail-Safe (If everything fails)
+        if (!finalConfig) {
+            this.log("Hardware rejected all configs. Forcing basic stereo.");
+            finalChannels = 2;
+            finalConfig = {
+                codec: 'mp4a.40.2',
+                sampleRate: currentSampleRate,
+                numberOfChannels: 2,
+                bitrate: 128000,
+                bitrateMode: "constant"
+            };
+        }
+
+        this.encoderChannels = finalChannels;
+
+        // 4. Beam the final decision down to Rust so it downmixes perfectly
+        if (this.demuxer && this.demuxer.ptr) {
+            wasm._demuxer_set_target_channels(this.demuxer.ptr, this.encoderChannels);
+        }
+
+        // 5. Boot the Hardware Encoder
         this.audioEncoder = new AudioEncoder({
             output: (chunk, metadata) => {
                 this.audioFramesOut++;
-
                 const aacData = new Uint8Array(chunk.byteLength);
                 chunk.copyTo(aacData);
                 const aacPtr = wasm._alloc_memory(aacData.length);
                 new Uint8Array(getWasmMemory(), aacPtr, aacData.length).set(aacData);
 
-                const dtsSamples = BigInt(Math.floor((chunk.timestamp * 48000) / 1000000));
-
+                const dtsSamples = BigInt(Math.floor((chunk.timestamp * currentSampleRate) / 1000000));
                 wasm._demuxer_append_aac(this.demuxer.ptr, aacPtr, aacData.length, dtsSamples);
                 wasm._free_memory(aacPtr, aacData.length);
             },
             error: (e) => console.error("Hardware Encoder Error:", e)
         });
 
-        this.audioEncoder.configure({
-            codec: 'mp4a.40.2',
-            sampleRate: 48000,
-            numberOfChannels: 2,
-            bitrate: 128000
-        });
-        this.log("Hardware Audio Encoder rebuilt.");
+        this.audioEncoder.configure(finalConfig);
+        this.log(`Hardware Audio Encoder successfully rebuilt for ${this.encoderChannels} channels.`);
     }
 
     attachVideo(videoElement) {
         this.video = videoElement;
+
+        this.textTracks = {};
+        if (this.subtitleTracks && this.subtitleTracks.length > 0) {
+            this.subtitleTracks.forEach((track, index) => {
+                const t = this.video.addTextTrack("subtitles", track.language, track.language);
+                t.mode = (index === 0) ? "showing" : "hidden"; 
+                
+                this.textTracks[track.track_number] = {
+                    htmlTrack: t,
+                    codec: track.codec_id
+                };
+            });
+        }
+        
         this.video.disableRemotePlayback = true;
         this.video.onseeking = () => this._onSeeking();
         this.video.ontimeupdate = () => this._onTimeUpdate();
@@ -409,27 +490,25 @@ class CoreEngine {
             this.mkvHeader.duration * 1000, videoTrack.codec_id
         );
 
+        // --- NEW SUBTITLE INJECTION ---
+        // 1. Find all text tracks that are pure SRT
+        console.log("🕵️ Raw MKV Tracks from Rust:", this.mkvHeader.tracks);
 
-        if (audioTrack) {
-            const audioMime = `audio/mp4; codecs="${audioTrack.codec_string}"`;
+        // 1. Expand the filter to catch SRT, ASS, and SSA
+        const supportedSubCodecs = ["S_TEXT/UTF8", "S_TEXT/ASS", "S_TEXT/SSA"];
+        
+        this.subtitleTracks = this.mkvHeader.tracks.filter(t => 
+            t.track_type === "subtitle" && supportedSubCodecs.includes(t.codec_id)
+        );
 
-            let canPlayNatively = false;
-            if (!MSE) return this.log("Error: MSE not supported.");
-            try { canPlayNatively = MSE.isTypeSupported(audioMime); } catch (e) { }
+        wasm._demuxer_clear_subtitle_tracks(this.demuxer.ptr);
+        this.subtitleTracks.forEach(track => {
+            wasm._demuxer_add_subtitle_track(this.demuxer.ptr, BigInt(track.track_number));
+            console.log(`✅ Subtitle Track #${track.track_number} (${track.codec_id}) sent to Rust parser.`);
+        });
 
-            // The absolute safety net for your Rust engine!
-            const strictlyUnsupported = ["A_TRUEHD", "A_DTS", "A_AC3", "A_EAC3"];
-
-            if (canPlayNatively && !strictlyUnsupported.includes(audioTrack.codec_id)) {
-                this.log(`Direct Play Supported! Bypassing Transcoder for: ${audioTrack.codec_id}`);
-                this.needsAudioTranscode = false;
-                this.demuxer.setTranscodeMode(false);
-            } else {
-                this.log(`Browser cannot direct-play ${audioTrack.codec_id}. Booting Transcoder`);
-                this.needsAudioTranscode = true;
-                this.demuxer.setTranscodeMode(true);
-                this._bootAudioEncoder(); // WAKE UP THE HARDWARE!
-            }
+        if (videoTrack && audioTrack) {
+            await this._configureAudioPipeline(videoTrack, audioTrack);
         }
 
         this.videoTrack = videoTrack;
@@ -437,6 +516,50 @@ class CoreEngine {
 
         this.mediaSource = new MSE();
         this.mediaSource.addEventListener('sourceopen', () => this._onSourceOpen());
+    }
+
+    async _configureAudioPipeline(videoTrack, audioTrack) {
+        // 1. If no audio track exists, shut the pipeline down.
+        if (!audioTrack) {
+            this.needsAudioTranscode = false;
+            if (this.demuxer) this.demuxer.setTranscodeMode(false);
+            return;
+        }
+
+        // 2. Check Native Browser Support
+        const audioMime = `video/mp4; codecs="${videoTrack.codec_string}, ${audioTrack.codec_string}"`;
+        let canPlayNatively = false;
+
+        const MSE = window.ManagedMediaSource || window.MediaSource;
+        if (MSE) {
+            try { canPlayNatively = MSE.isTypeSupported(audioMime); } catch (e) { }
+        }
+
+        // 3. The Transcoder Hit List
+        // - AC3/EAC3/DTS/TRUEHD: Browsers don't have licenses for these.
+        // - FLAC/OPUS: Browsers support them, but your Rust code currently only writes AAC MP4 boxes.
+        const strictlyUnsupported = ["A_TRUEHD", "A_DTS", "A_AC3", "A_EAC3", "A_FLAC", "A_OPUS"];
+
+        // 4. Route the Audio
+        if (canPlayNatively && !strictlyUnsupported.includes(audioTrack.codec_id)) {
+            this.log(`Direct Play Supported! Bypassing Transcoder for: ${audioTrack.codec_id}`);
+
+            this.needsAudioTranscode = false;
+            if (this.demuxer) this.demuxer.setTranscodeMode(false);
+
+            // Turn off the hardware encoder if it was running
+            if (this.audioEncoder && this.audioEncoder.state !== 'closed') {
+                try { this.audioEncoder.close(); } catch (e) { }
+            }
+        } else {
+            this.log(`Routing to Transcoder: ${audioTrack.codec_id}`);
+
+            this.needsAudioTranscode = true;
+            if (this.demuxer) this.demuxer.setTranscodeMode(true);
+
+            // Pass the explicitly provided track to the bootloader!
+            await this._bootAudioEncoder(audioTrack);
+        }
     }
 
     async _onSourceOpen() {
@@ -520,10 +643,43 @@ class CoreEngine {
                     const isFinal = (this.currentOffset + bytesProcessed + chunkData.length) >= this.sourceInput.size;
                     const framesStaged = this.demuxer.parse_chunk(chunkData, isFinal);
 
-                    // THE NEW, SAFE CODE inside _streamLoop
+                    if (this.subtitleTracks && this.subtitleTracks.length > 0) {
+                        // Ask Rust if there are any subtitles waiting (Fast C++ call)
+                        const pendingCues = wasm._demuxer_get_subtitle_count(this.demuxer.ptr);
+                        
+                        if (pendingCues > 0) {
+                            // Pull the JSON string from Rust
+                            const subJsonPtr = wasm._demuxer_pull_subtitles_json(this.demuxer.ptr);
+                            const subJsonStr = wasm.UTF8ToString(subJsonPtr);
+                            wasm._free_string(subJsonPtr); // Free the memory!
+                    
+                            const cues = JSON.parse(subJsonStr);
+                            
+                            for (let cueData of cues) {
+                                const trackObj = this.textTracks[cueData.track_id];
+                                if (trackObj && cueData.duration_ms > 0) {
+                                    // Convert milliseconds to seconds for the browser
+                                    const startTime = cueData.start_ms / 1000;
+                                    const endTime = startTime + (cueData.duration_ms / 1000);
+                                    const cleanText = cleanSubtitleText(trackObj.codec, cueData.text);
+                    
+                                    try {
+                                        // Create the native subtitle cue and inject it!
+                                        const cue = new VTTCue(startTime, endTime, cleanText);
+                                        trackObj.htmlTrack.addCue(cue);
+                                    } catch(e) { } // Ignore overlapping cue errors
+                                }
+                            }
+                        }
+                    }
+
                     if (this.audioTrack && this.needsAudioTranscode && this.audioEncoder?.state === 'configured') {
-                        let framesEncoded = 0;
-                        // THE NEW, SAFE CODE
+
+                        // 1. Read the negotiated limits (from our hardware handshake!)
+                        const numChannels = this.encoderChannels || 2;
+                        const sampleRate = this.audioTrack.sample_rate || 48000;
+                        const BYTES_PER_PLANE = 768000;
+
                         while (true) {
                             const samples = wasm._demuxer_decode_next_audio_frame(this.demuxer.ptr);
                             if (samples <= 0) break;
@@ -531,16 +687,32 @@ class CoreEngine {
                             const pcmPtr = wasm._get_audio_ptr();
                             const dtsBigInt = wasm._demuxer_get_last_audio_dts(this.demuxer.ptr);
 
-                            const leftChannel = new Float32Array(getWasmMemory(), pcmPtr, samples).slice();
-                            const rightChannel = new Float32Array(getWasmMemory(), pcmPtr + 768000, samples).slice();
+                            let planarData = [];
 
+                            // 2. Dynamically scoop the exact number of channels in the standard SMPTE order
+                            for (let ch = 0; ch < numChannels; ch++) {
+                                const planeOffset = pcmPtr + (ch * BYTES_PER_PLANE);
+                                const rawBytes = new Uint8Array(getWasmMemory(), planeOffset, samples * 4).slice();
+                                planarData.push(new Float32Array(rawBytes.buffer));
+                            }
+
+                            // 3. Flatten the multi-dimensional planes into one contiguous array for WebCodecs
+                            const totalLength = planarData.reduce((acc, arr) => acc + arr.length, 0);
+                            const combinedFloats = new Float32Array(totalLength);
+                            let offset = 0;
+                            for (let plane of planarData) {
+                                combinedFloats.set(plane, offset);
+                                offset += plane.length;
+                            }
+
+                            // 4. Build the AudioData object dynamically
                             const audioData = new AudioData({
                                 format: 'f32-planar',
-                                sampleRate: 48000,
-                                numberOfChannels: 2,
+                                sampleRate: sampleRate,
+                                numberOfChannels: numChannels,
                                 numberOfFrames: samples,
-                                timestamp: (Number(dtsBigInt) * 1000000) / 48000,
-                                data: new Float32Array([...leftChannel, ...rightChannel])
+                                timestamp: Number((BigInt(dtsBigInt) * 1000000n) / BigInt(sampleRate)),
+                                data: combinedFloats
                             });
 
                             this.audioEncoder.encode(audioData);
@@ -548,9 +720,7 @@ class CoreEngine {
                             this.audioFramesIn++;
                         }
 
-                        // Wait for the encoder queue to empty naturally WITHOUT forcing a flush.
-                        // Any leftover samples (like the 512 from AC3) will safely stay inside 
-                        // the encoder until the next chunk provides the rest of the frame!
+                        // Wait for the encoder queue to empty naturally
                         while (this.audioEncoder && this.audioEncoder.encodeQueueSize > 0 && this.audioEncoder.state === 'configured') {
                             await yieldThread();
                         }
@@ -584,13 +754,16 @@ class CoreEngine {
 
                                     // 2. Safe Gap Jump (Only jump true gaps, no artificial kicks!)
                                     if (!this.video.paused && this.video.readyState <= 2) {
-                                        for (let i = 0; i < this.sourceBuffer.buffered.length; i++) {
-                                            let start = this.sourceBuffer.buffered.start(i);
-                                            if (start > this.video.currentTime) {
-                                                this.video.currentTime = start + 0.01;
-                                                break;
+                                        try {
+                                            for (let i = 0; i < this.sourceBuffer.buffered.length; i++) {
+                                                let start = this.sourceBuffer.buffered.start(i);
+                                                if (start > this.video.currentTime) {
+                                                    this.video.currentTime = start + 0.01;
+                                                    break;
+                                                }
                                             }
                                         }
+                                        catch (e) { break; }
                                     }
                                 }
                             } catch (e) { }
@@ -622,8 +795,8 @@ class CoreEngine {
 
     _onTimeUpdate() {
         if (!this.sourceBuffer || !this.video || this.mediaSource.readyState !== 'open') return;
-        
-        this._runGarbageCollector(); 
+
+        this._runGarbageCollector();
         this._streamLoop();
     }
 
@@ -649,6 +822,18 @@ class CoreEngine {
         this.isSeeking = true;
         this.currentStreamId++;
 
+        if (this.textTracks) {
+            for (let trackId in this.textTracks) {
+                const track = this.textTracks[trackId].htmlTrack;
+                if (track && track.cues) {
+                    // Must iterate backwards when removing from an array
+                    for (let i = track.cues.length - 1; i >= 0; i--) {
+                        track.removeCue(track.cues[i]);
+                    }
+                }
+            }
+        }
+
         // 🛑 THE FATAL DOUBLE-WIPE FIX: Clean, single execution!
         try {
             if (this.sourceBuffer) {
@@ -663,9 +848,6 @@ class CoreEngine {
             }
         } catch (e) { }
 
-        if (this.demuxer) this.demuxer.reset();
-        if (this.audioTrack && this.needsAudioTranscode) this._bootAudioEncoder();
-
         let bestCue = this.cueMap[0];
         for (let i = 0; i < this.cueMap.length; i++) {
             if (this.cueMap[i].time <= this.video.currentTime) bestCue = this.cueMap[i];
@@ -674,6 +856,9 @@ class CoreEngine {
 
         const segmentPayloadStart = this.firstClusterOffset - Number(this.cueMap[0].offset);
         this.currentOffset = segmentPayloadStart + Number(bestCue.offset);
+
+        if (this.demuxer) this.demuxer.reset();
+        if (this.audioTrack && this.needsAudioTranscode) this._bootAudioEncoder(this.audioTrack);
 
         this.isFetching = false;
         this.isSeeking = false;
@@ -720,22 +905,8 @@ class CoreEngine {
         );
 
         // 4. Configure transcoding for the new track
-        if (this.audioTrack) {
-            const audioMime = `audio/mp4; codecs="${this.audioTrack.codec_string}"`;
-            const canPlayNatively = MSE.isTypeSupported(audioMime);
-            const strictlyUnsupported = ["A_TRUEHD", "A_DTS", "A_AC3", "A_EAC3"];
-
-            if (canPlayNatively && !strictlyUnsupported.includes(this.audioTrack.codec_id)) {
-                this.needsAudioTranscode = false;
-                this.demuxer.setTranscodeMode(false);
-                if (this.audioEncoder && this.audioEncoder.state !== 'closed') {
-                    try { this.audioEncoder.close(); } catch (e) { }
-                }
-            } else {
-                this.needsAudioTranscode = true;
-                this.demuxer.setTranscodeMode(true);
-                this._bootAudioEncoder(); // Boot it cleanly here
-            }
+        if (newAudioTrack) {
+            await this._configureAudioPipeline(this.videoTrack, newAudioTrack);
         }
 
         // 5. Send the new MP4 headers to the browser
@@ -769,6 +940,21 @@ class CoreEngine {
         try { await this.video.play(); } catch (e) { }
     }
 
+    // Inside CoreEngine
+    switchSubtitleTrack(trackNumber) {
+        if (!this.textTracks) return;
+        
+        // Pass 0 to turn subtitles off completely!
+        for (let id in this.textTracks) {
+            if (Number(id) === Number(trackNumber)) {
+                this.textTracks[id].htmlTrack.mode = "showing";
+                this.log(`Subtitles switched to track ${id}`);
+            } else {
+                this.textTracks[id].htmlTrack.mode = "hidden";
+            }
+        }
+    }
+
     // THE NEW, SAFE CODE
     async _appendToBuffer(data) {
         return new Promise((resolve, reject) => {
@@ -781,12 +967,6 @@ class CoreEngine {
                 return;
             }
             try {
-                // If we just reset the demuxer (e.g., after a seek), Rust's internal clock 
-                // is back to 0. We must tell the browser to offset the incoming chunks.
-                if (this.isSeeking && this.video) {
-                    this.sourceBuffer.timestampOffset = this.video.currentTime;
-                }
-
                 const onUpdate = () => { cleanup(); resolve(); };
                 const onError = (e) => { cleanup(); reject(e); };
                 const cleanup = () => {
@@ -837,8 +1017,7 @@ class CoreEngine {
 const streamDictionary = new Map();
 
 export async function feed(source) {
-    wasm = await initModule(); //Always make new space 
-
+    if (!wasm) wasm = await initModule();
 
     const dictKey = source instanceof File ? source.name : source;
 
@@ -900,6 +1079,9 @@ export class MKVPlayer {
     seek(timeInSeconds) { this.video.currentTime = timeInSeconds; }
     getAudioTracks() { return this.engine ? this.engine.audioTracks : []; }
     setAudioTrack(trackNumber) { if (this.engine) this.engine.switchAudioTrack(trackNumber); }
+
+    getSubtitleTracks() { return this.engine ? this.engine.subtitleTracks : []; }
+    setSubtitleTrack(trackNumber) { if (this.engine) this.engine.switchSubtitleTrack(trackNumber); }
 
     async toggleRecording(onStateChange, onProgress, customName = "Media") {
         if (!this.engine) return;

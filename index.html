@@ -11,55 +11,88 @@
     <link rel="apple-touch-icon" href="icon-512.png">
 
     <script src="artplayer.js"></script>
-    
+
     <link rel="stylesheet" href="style.css">
 </head>
 
 <body class="bg-slate-900 text-slate-100 font-sans pb-20">
 
     <div id="auth-screen"
-        class="hidden fixed inset-0 bg-slate-900 z-50 flex flex-col justify-center p-6 overflow-y-auto">
+        class="fixed inset-0 z-50 flex flex-col justify-center p-6 overflow-y-auto bg-slate-900 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black">
         <div class="max-w-md mx-auto w-full">
-            <div class="text-center mb-8">
-                <h1 class="text-3xl font-bold text-blue-500 mb-2">TorBox Theater</h1>
-                <p class="text-slate-400">Your cloud media, unblocked.</p>
+
+            <div class="text-center mb-10">
+                <h1
+                    class="text-4xl font-extrabold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent mb-2 tracking-tight">
+                    TorBox Theater
+                </h1>
+                <p class="text-slate-400 font-medium">Your cloud media, unblocked.</p>
             </div>
 
-            <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl mb-6">
-                <h2 class="text-xl font-bold text-white mb-4">Connect Cloud</h2>
-                <form onsubmit="event.preventDefault(); authenticateTorboxUser();">
+            <div
+                class="bg-slate-800/60 backdrop-blur-xl p-8 rounded-3xl border border-slate-700/50 shadow-2xl mb-8 relative overflow-hidden">
+                <div
+                    class="absolute -top-12 -right-12 w-40 h-40 bg-blue-500/10 blur-3xl rounded-full pointer-events-none">
+                </div>
+
+                <h2 class="text-2xl font-bold text-white mb-2">Welcome Back</h2>
+                <p class="text-sm text-slate-400 mb-6">Sign in to sync your library and history.</p>
+
+                <form id="app-auth-form" onsubmit="event.preventDefault(); /* Handle Supabase Auth */">
+                    <div class="space-y-4 mb-6">
+                        <div>
+                            <input id="app-email" type="email" placeholder="Email address" required
+                                class="w-full bg-slate-900/50 border border-slate-700 p-4 rounded-xl text-base text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-500">
+                        </div>
+                        <div>
+                            <input id="app-password" type="password" placeholder="Password" required
+                                class="w-full bg-slate-900/50 border border-slate-700 p-4 rounded-xl text-base text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-500">
+                        </div>
+                    </div>
+
+                    <button type="submit"
+                        class="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-bold p-4 rounded-xl text-lg transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)] active:scale-[0.98]">
+                        Sign In
+                    </button>
+
+                    <div class="mt-5 text-center">
+                        <span class="text-slate-400 text-sm">Don't have an account?</span>
+                        <button type="button" onclick="/* Toggle to Sign Up UI */"
+                            class="text-blue-400 hover:text-blue-300 font-bold text-sm ml-1 transition-colors outline-none">
+                            Sign Up
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="relative flex py-3 items-center mb-8">
+                <div class="flex-grow border-t border-slate-800"></div>
+                <span class="flex-shrink mx-4 text-slate-500 text-xs font-bold tracking-widest uppercase">Or connect
+                    directly</span>
+                <div class="flex-grow border-t border-slate-800"></div>
+            </div>
+
+            <div
+                class="bg-slate-800/30 p-5 rounded-2xl border border-dashed border-slate-700 hover:border-slate-600 transition-colors group">
+                <h2 class="text-sm font-bold text-slate-300 mb-3 flex items-center gap-2">
+                    <svg class="w-4 h-4 text-emerald-500 group-hover:text-emerald-400 transition-colors" fill="none"
+                        stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                    </svg>
+                    Provide TorBox Key
+                </h2>
+                <form onsubmit="event.preventDefault(); authenticateTorboxUser();" class="flex gap-2">
                     <input id="api-input" type="password" placeholder="Paste TorBox API Key"
                         autocomplete="one-time-code"
-                        class="w-full bg-slate-900 border border-slate-600 p-4 rounded-xl text-lg outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 mb-4 transition-all">
+                        class="w-full bg-slate-900/80 border border-slate-700 p-3 rounded-xl text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all text-white placeholder:text-slate-600">
                     <button type="submit" id="loggin-btn"
-                        class="w-full bg-blue-600 hover:bg-blue-500 font-bold p-4 rounded-xl text-lg transition-all shadow-lg shadow-blue-900/20">
-                        Log In
-                    </button>
-                </form>
-                <p class="text-xs text-center text-slate-500 mt-3">Key stored locally on device.</p>
-            </div>
-
-            <div class="relative flex py-2 items-center mb-6">
-                <div class="flex-grow border-t border-slate-700"></div>
-                <span class="flex-shrink mx-4 text-slate-500 text-sm font-bold">OR</span>
-                <div class="flex-grow border-t border-slate-700"></div>
-            </div>
-
-            <div class="bg-slate-800/50 p-6 rounded-2xl border border-dashed border-slate-700">
-                <h2 class="text-lg font-bold text-slate-300 mb-4">Paste & Play</h2>
-                <form onsubmit="event.preventDefault(); playDirect();" class="flex gap-2">
-                    <input id="direct-input" type="text" placeholder="https://..."
-                        class="w-full bg-slate-900 border border-slate-600 p-3 rounded-xl outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500">
-                    <button type="submit"
-                        class="bg-blue-600 hover:bg-blue-500 text-white font-bold px-4 rounded-xl transition-all flex items-center justify-center shadow-lg shadow-blue-900/20">
-                        <svg fill="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"
-                            class="w-5 h-5 pointer-events-none">
-                            <path stroke-linecap="round" stroke-linejoin="round"
-                                d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 0 1 0 1.971l-11.54 6.347a1.125 1.125 0 0 1-1.667-.985V5.653Z" />
-                        </svg>
+                        class="bg-slate-700 hover:bg-emerald-600 text-white font-bold px-5 rounded-xl transition-all shadow-lg active:scale-95">
+                        Link
                     </button>
                 </form>
             </div>
+
         </div>
     </div>
 
@@ -139,7 +172,7 @@
         <div class="flex p-1 bg-slate-800/80 backdrop-blur rounded-xl mb-8 shadow-inner border border-slate-700/50">
             <button id="tab-library" onclick="showLibraryTab()"
                 class="flex-1 py-2.5 rounded-lg bg-blue-600 text-white font-bold text-sm shadow transition-all">
-                My Lib</button>
+                My Library</button>
             <button id="tab-discover" onclick="showDiscoverTab()"
                 class="flex-1 py-2.5 rounded-lg text-slate-400 font-bold text-sm hover:text-white hover:bg-slate-700/50 transition-all">Discover
                 Movies</button>
@@ -183,9 +216,8 @@
 
                 <div id="local-empty-state"
                     class="bg-slate-800/50 border border-dashed border-slate-700 rounded-2xl p-8 text-center mt-4">
-                    <p class="text-slate-400 text-sm">No local files added yet.</p>
-                    <p class="text-slate-500 text-xs mt-1">Add a file from your device to start your persistent liry.
-                    </p>
+                    <p class="text-slate-400 text-sm">No downloaded content added yet.</p>
+                    <p class="text-slate-500 text-xs mt-1">Add a file from your device.</p>
                 </div>
             </div>
         </div>
@@ -201,48 +233,48 @@
                     </svg>
                     Search Results
                 </h2>
-                <div id="global-search-grid" class="flex overflow-x-auto gap-4 pb-4 scrollbar-hide">
+                <div id="global-search-grid" class="draggable-row flex overflow-x-auto gap-4 pb-4 scrollbar-hide">
                 </div>
             </div>
 
             <div>
                 <h2 class="text-xl font-bold text-white mb-4 pl-1">Trending This Week</h2>
-                <div id="trending-row" class="flex overflow-x-auto gap-4 pb-4 scrollbar-hide"></div>
+                <div id="trending-row" class="draggable-row flex overflow-x-auto gap-4 pb-4 scrollbar-hide"></div>
             </div>
 
             <div>
                 <h2 class="text-xl font-bold text-white mb-4 pl-1">In Theaters / New</h2>
-                <div id="new-row" class="flex overflow-x-auto gap-4 pb-4 scrollbar-hide"></div>
+                <div id="new-row" class="draggable-row flex overflow-x-auto gap-4 pb-4 scrollbar-hide"></div>
             </div>
 
             <div>
                 <h2 class="text-xl font-bold text-white mb-4 pl-1">Action Packed</h2>
-                <div id="action-row" class="flex overflow-x-auto gap-4 pb-4 scrollbar-hide"></div>
+                <div id="action-row" class="draggable-row flex overflow-x-auto gap-4 pb-4 scrollbar-hide"></div>
             </div>
 
             <div>
                 <h2 class="text-xl font-bold text-white mb-4 pl-1">Comedies</h2>
-                <div id="comedy-row" class="flex overflow-x-auto gap-4 pb-4 scrollbar-hide"></div>
+                <div id="comedy-row" class="draggable-row flex overflow-x-auto gap-4 pb-4 scrollbar-hide"></div>
             </div>
 
             <div>
                 <h2 class="text-xl font-bold text-white mb-4 pl-1">Edge of Your Seat (Thrillers)</h2>
-                <div id="thriller-row" class="flex overflow-x-auto gap-4 pb-4 scrollbar-hide"></div>
+                <div id="thriller-row" class="draggable-row flex overflow-x-auto gap-4 pb-4 scrollbar-hide"></div>
             </div>
 
             <div>
                 <h2 class="text-xl font-bold text-white mb-4 pl-1">Anime Features</h2>
-                <div id="anime-row" class="flex overflow-x-auto gap-4 pb-4 scrollbar-hide"></div>
+                <div id="anime-row" class="draggable-row flex overflow-x-auto gap-4 pb-4 scrollbar-hide"></div>
             </div>
 
             <div>
                 <h2 class="text-xl font-bold text-white mb-4 pl-1">All-Time Greats</h2>
-                <div id="top-row" class="flex overflow-x-auto gap-4 pb-4 scrollbar-hide"></div>
+                <div id="top-row" class="draggable-row flex overflow-x-auto gap-4 pb-4 scrollbar-hide"></div>
             </div>
 
             <div>
                 <h2 class="text-xl font-bold text-white mb-4 pl-1">Devs Picks</h2>
-                <div id="my-picks-row" class="flex overflow-x-auto gap-4 pb-4 scrollbar-hide"></div>
+                <div id="my-picks-row" class="draggable-row flex overflow-x-auto gap-4 pb-4 scrollbar-hide"></div>
             </div>
         </div>
 
@@ -287,91 +319,149 @@
         </div>
     </div>
 
-    <div id="movie-detail-view"
-        class="fixed inset-0 z-[60] bg-slate-900 translate-y-full transition-transform duration-500 ease-in-out overflow-y-auto">
+    <div id="full-detail-view"
+        class="fixed inset-0 z-50 h-screen overflow-y-auto bg-slate-900 transition-transform duration-300 ease-in-out translate-y-full">
         <button onclick="closeMovieDetail()"
-            class="fixed top-6 right-6 z-[70] bg-black/50 backdrop-blur-md p-3 rounded-full text-white hover:bg-blue-600 transition">
+            class="fixed top-6 right-6 z-[70] bg-slate-900/40 backdrop-blur-xl p-3 rounded-full text-slate-200 hover:text-white hover:bg-blue-600 border border-white/10 shadow-lg group">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                <path stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
         </button>
 
-        <div id="detail-backdrop" class="relative h-[40vh] md:h-[60vh] w-full bg-cover bg-center">
-            <div class="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/40 to-transparent"></div>
+        <div id="detail-backdrop" class="relative h-[45vh] md:h-[65vh] w-full bg-cover bg-[center_top_20%]">
+            <div
+                class="absolute bottom-0 left-0 w-full h-[50%] bg-gradient-to-t from-[#0f172a] via-[#0f172a]/60 to-transparent">
+            </div>
         </div>
 
-        <div class="max-w-7xl mx-auto px-6 -mt-32 relative z-10 pb-20">
-            <div class="flex flex-col md:flex-row gap-8">
-                <div class="w-48 md:w-64 flex-shrink-0 mx-auto md:mx-0">
-                    <img id="detail-poster" src="" class="w-full rounded-2xl shadow-2xl border border-white/10"
-                        alt="Poster">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 relative z-10 -mt-32 md:-mt-48 pb-20">
+            <div class="flex flex-col md:flex-row gap-8 md:gap-12 items-center md:items-start">
+
+                <div id="media-poster"
+                    class="shrink-0 w-[60vw] sm:w-[220px] md:w-[260px] lg:w-[320px] aspect-[2/3] relative rounded-2xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] border border-slate-700/50 bg-slate-800">
+
+                    <div id="poster-skeleton" class="absolute inset-0 bg-slate-800"></div>
+                    <img id="detail-poster" src="" class="absolute inset-0 w-full h-full object-cover" alt="Poster">
                 </div>
 
-                <div class="flex-1 text-center md:text-left pt-10 md:pt-32">
-                    <h1 id="detail-title" class="text-4xl md:text-6xl font-black text-white mb-4 leading-tight">Movie
-                        Title</h1>
+                <div class="flex-1 text-center md:text-left w-full mt-4 md:mt-0">
+                    <h1 id="media-title"
+                        class="text-4xl md:text-5xl lg:text-6xl font-black text-white mb-4 tracking-tight leading-tight drop-shadow-md">
+                        Title
+                    </h1>
 
-                    <div
-                        class="flex flex-wrap justify-center md:justify-start items-center gap-4 text-slate-300 mb-6 font-semibold">
-                        <span id="detail-year"
-                            class="bg-slate-800 px-3 py-1 rounded-md text-sm border border-slate-700">Year</span>
-                        <span id="detail-runtime" class="text-sm">Runtime</span>
-                        <span id="detail-rating" class="text-yellow-500 flex items-center gap-1">★ 0.0</span>
+                    <div id="media-badges"
+                        class="flex flex-wrap justify-center md:justify-start items-center gap-3 text-slate-300 mb-6 font-medium">
+                        <span id="detail-genre"
+                            class="bg-slate-800/80 backdrop-blur-sm px-3 py-1 rounded-md text-sm border border-slate-700/50 shadow-sm text-white">Genre</span>
+                        <span id="detail-runtime"
+                            class="text-sm bg-slate-800/50 px-3 py-1 rounded-md border border-slate-700/30">Year</span>
+                        <span id="detail-rating"
+                            class="bg-yellow-500/10 text-yellow-500 px-3 py-1 rounded-md border border-yellow-500/20 flex items-center gap-1.5 text-sm font-bold">
+                            <svg class="w-4 h-4 fill-current" viewBox="0 0 20 20">
+                                <path
+                                    d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                            </svg>
+                            Rating
+                        </span>
                     </div>
 
-                    <p id="detail-tagline" class="text-blue-400 italic mb-4 text-lg"></p>
-                    <p id="detail-overview" class="text-slate-300 text-lg leading-relaxed max-w-3xl mb-8">Description
-                        goes here...</p>
-
-                    <div id="tv-controls" class="hidden w-full max-w-2xl mt-6 flex-col gap-4">
-                        <div class="relative w-full z-20">
-                            <button id="custom-season-trigger"
-                                class="w-full bg-slate-800/80 backdrop-blur text-white px-4 py-3 rounded-xl border border-slate-700 outline-none focus:border-blue-500 transition shadow-lg font-bold flex justify-between items-center text-left">
-                                <span id="custom-season-text">Season 1</span>
-                                <svg class="w-5 h-5 text-slate-400 transition-transform duration-200"
-                                    id="season-chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M19 9l-7 7-7-7" />
-                                </svg>
-                            </button>
-
-                            <div id="custom-season-menu"
-                                class="hidden absolute top-full left-0 right-0 mt-2 bg-slate-800/95 backdrop-blur-xl border border-slate-700 rounded-xl shadow-2xl overflow-hidden max-h-60 overflow-y-auto">
-                            </div>
-
-                            <input type="hidden" id="season-select" value="1">
-                        </div>
-
-                        <div>
-                            <p class="text-[10px] text-slate-400 uppercase font-bold tracking-wider ml-1 mb-2">Select
-                                Episode</p>
-                            <input type="hidden" id="selected-episode" value="1">
-                            <div id="episode-list" class="flex overflow-x-auto gap-3 pb-2 hide-scrollbar">
-                            </div>
-                        </div>
+                    <div id="media-desc" class="">
+                        <p id="detail-tagline" class="text-blue-400 font-medium italic mb-4 text-lg"></p>
+                        <p id="detail-overview"
+                            class="text-slate-300 text-base md:text-lg leading-relaxed max-w-4xl mb-8">
+                            Loading Description
+                        </p>
                     </div>
 
-                    <div class="flex flex-wrap gap-4 mt-6 w-full max-w-2xl">
+                    <div id="media-cast" class="">
+                        <p id="detail-cast" class="text-slate-300 text-base font-medium italic mb-4 text-lg">
+                            Cast
+                        </p>
+                    </div>
+
+                    <div id="media-seasons" class="w-full max-w-4xl mt-2 text-left">
+                        <div id="dynamic-seasons-container"></div>
+                    </div>
+
+                    <div id="season-loading-indicator"
+                        class="hidden items-center gap-3 mb-3 px-4 py-2.5 bg-blue-900/20 border border-blue-500/30 rounded-xl w-fit shadow-[0_0_15px_rgba(59,130,246,0.1)] transition-all">
+                        <svg class="animate-spin h-4 w-4 text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none"
+                            viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4">
+                            </circle>
+                            <path class="opacity-75" fill="currentColor"
+                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                            </path>
+                        </svg>
+                        <span
+                            class="text-[12px] font-bold text-blue-400 tracking-widest uppercase animate-pulse">Fetching
+                            Anime Seasons</span>
+                    </div>
+
+                    <div id="media-action"
+                        class="flex flex-wrap justify-center md:justify-start gap-4 mt-8 w-full max-w-4xl">
                         <button id="btn-torrent"
-                            class="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-xl font-bold text-lg transition transform hover:scale-105 shadow-xl shadow-blue-900/20 flex items-center gap-2">
+                            class="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white px-8 py-3.5 rounded-xl font-bold text-lg flex items-center gap-2 hover:shadow-[0_10px_20px_rgba(37,99,235,0.3)]">
                             <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24">
                                 <path d="M8 5v14l11-7z" />
                             </svg>
-                            Play (High Quality)
-                        </button>
-
-                        <button id="btn-scraper"
-                            class="bg-slate-700 hover:bg-slate-600 text-white px-8 py-3 rounded-xl font-bold text-lg transition transform hover:scale-105 border border-slate-600 flex items-center gap-2">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                            </svg>
-                            Play (Direct Stream)
+                            Add to library
                         </button>
                     </div>
+
                 </div>
             </div>
         </div>
+
+        <template id="tv-controls-template">
+            <div class="tv-controls-container flex flex-col w-full">
+                <div class="tmdb-season-wrapper relative w-fit mb-3">
+
+                    <button
+                        class="tmdb-season-trigger bg-slate-800/80 backdrop-blur text-white px-3 py-2 rounded-lg border border-slate-700 outline-none hover:border-blue-500 focus:border-blue-500 shadow shadow-black/20 font-semibold flex justify-between items-center gap-4 text-left group transition-colors">
+
+                        <span class="tmdb-season-text text-m whitespace-nowrap">Season 1</span>
+
+                        <svg class="tmdb-season-chevron w-6 h-6 text-slate-400 group-hover:text-white flex-shrink-0 transition-transform duration-200"
+                            fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7">
+                            </path>
+                        </svg>
+                    </button>
+
+                    <div
+                        class="tmdb-season-menu hidden absolute top-full left-0 min-w-full mt-1.5 bg-slate-800/95 backdrop-blur-xl border border-slate-700 rounded-lg shadow-xl overflow-hidden max-h-60 overflow-y-auto z-50 custom-scrollbar">
+                    </div>
+                </div>
+
+                <div class="tmdb-episode-list flex gap-3 overflow-x-auto pb-4 custom-scrollbar draggable-row w-full">
+                </div>
+            </div>
+        </template>
+
+        <template id="episode-card-template">
+            <div
+                class="episode-card relative flex-none w-48 md:w-64 rounded-xl border-2 border-slate-700/50 overflow-hidden flex flex-col bg-slate-800/40 shrink-0 cursor-pointer hover:border-blue-400 hover:shadow-[0_0_15px_rgba(59,130,246,0.3)] group select-none">
+
+                <div class="relative aspect-video w-full bg-slate-900 flex-shrink-0">
+                    <div class="ep-skeleton absolute inset-0 bg-slate-700"></div>
+                    <img class="ep-thumbnail absolute inset-0 w-full h-full object-cover" draggable="false">
+
+                    <span
+                        class="ep-duration hidden absolute bottom-1.5 right-1.5 bg-black/80 backdrop-blur-md text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-md z-10"></span>
+                </div>
+
+                <div class="p-3 h-14 flex flex-col justify-start">
+                    <p class="ep-title text-xs text-slate-300 line-clamp-2 font-medium leading-tight"></p>
+
+                    <div class="ep-text-skeleton space-y-1.5 mt-0.5">
+                        <div class="h-2 bg-slate-700 rounded w-3/4"></div>
+                        <div class="h-2 bg-slate-700 rounded w-1/2"></div>
+                    </div>
+                </div>
+            </div>
+        </template>
     </div>
 
     <div id="external-player-modal"
@@ -446,131 +536,7 @@
         </div>
     </div>
 
-    <div id="iframe-player-view" class="fixed inset-0 z-[80] bg-black/95 hidden overflow-y-auto backdrop-blur-sm">
-
-        <div class="min-h-screen w-full flex flex-col items-center justify-center p-4 md:p-10">
-
-            <div class="w-full max-w-5xl flex justify-between items-center mb-4 z-10 mt-8 md:mt-0">
-                <div class="flex items-center gap-4">
-                    <h3 id="iframe-title"
-                        class="text-white font-bold text-xl drop-shadow-md truncate max-w-[200px] md:max-w-none">Direct
-                        Stream</h3>
-                    <div id="iframe-header-injection-point"></div>
-                </div>
-
-                <button onclick="closeIframePlayer()"
-                    class="bg-slate-800 hover:bg-red-600 text-white p-2.5 rounded-full transition shadow-lg border border-slate-700">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                            d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                </button>
-            </div>
-
-            <div
-                class="w-full max-w-5xl aspect-video bg-slate-900 md:rounded-xl shadow-[0_0_50px_rgba(0,0,0,0.8)] border-y md:border border-slate-700 relative overflow-hidden flex-shrink-0">
-                <iframe id="scraper-iframe" class="absolute inset-0 w-full h-full border-none bg-black" scrolling="no"
-                    allowfullscreen></iframe>
-            </div>
-
-            <div class="mt-8 max-w-3xl mx-auto px-4 pb-12">
-                <div class="bg-blue-900/20 border border-blue-500/30 rounded-2xl p-6 backdrop-blur-md">
-                    <h3 class="text-blue-400 font-bold text-lg mb-3 flex items-center gap-2">
-                        🎬 Optimize Your Experience
-                    </h3>
-
-                    <p class="text-slate-300 text-sm mb-4 leading-relaxed">
-                        Note: These streams are hosted by third-party servers, not by Theater.
-                        We have no control over the quality, buffering, or ads shown by these providers. Because these
-                        are
-                        free public servers, they may contain aggressive popup ads or hidden overlays.
-                        We highly reccomend following the instuctions below for a better experience.
-                    </p>
-
-                    <button onclick="toggleSetupLayer()"
-                        class="w-full bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 text-xs font-bold py-3 rounded-lg border border-blue-500/30 transition">
-                        View Connection & iOS Ad-Shield Guide
-                    </button>
-                </div>
-            </div>
-
-        </div>
-    </div>
-
-    <div id="setup-layer" class="fixed inset-0 z-[100] bg-slate-900 hidden overflow-y-auto">
-        <div class="max-w-md mx-auto px-6 pt-10 pb-20">
-
-            <div class="flex justify-between items-start mb-8">
-                <div>
-                    <h2 class="text-2xl font-bold text-white">iOS Ad-Shield</h2>
-                    <p class="text-blue-400 text-xs font-bold uppercase tracking-wider mt-1">Required for Home Screen
-                        App</p>
-                </div>
-                <button onclick="toggleSetupLayer()" class="text-slate-500 hover:text-white p-2">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                </button>
-            </div>
-
-            <div class="bg-amber-900/20 border border-amber-500/30 rounded-xl p-4 mb-8">
-                <p class="text-amber-200 text-xs leading-relaxed">
-                    <b>⚠️ Crucial:</b> Do <u>not</u> just download the AdGuard App. Apple disables app-blockers inside
-                    PWAs. You must follow the <b>Manual Profile</b> steps below.
-                </p>
-            </div>
-
-            <div class="space-y-10">
-                <div class="relative pl-8 border-l-2 border-slate-800">
-                    <div
-                        class="absolute -left-[11px] top-0 w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-lg shadow-blue-600/40">
-                        1</div>
-                    <h3 class="text-white font-bold mb-2">Get the Profile</h3>
-                    <p class="text-slate-400 text-xs mb-4">Click below, scroll to <b>"Method 2"</b>, select <b>iOS</b>,
-                        and tap <b>"Download Configuration Profile"</b>.</p>
-                    <a href="https://adguard-dns.io/en/public-dns.html#instruction-ios" target="_blank"
-                        class="inline-flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white text-sm font-bold py-3 px-6 rounded-xl border border-slate-700 transition w-full justify-center">
-                        <span>Open Setup Page</span>
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-width="2"
-                                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                        </svg>
-                    </a>
-                </div>
-
-                <div class="relative pl-8 border-l-2 border-slate-800">
-                    <div
-                        class="absolute -left-[11px] top-0 w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-lg shadow-blue-600/40">
-                        2</div>
-                    <h3 class="text-white font-bold mb-2">Approve Download</h3>
-                    <p class="text-slate-400 text-xs">When prompted by iOS, tap <b>"Allow"</b> to download the
-                        configuration file. You will see a "Profile Downloaded" message.</p>
-                </div>
-
-                <div class="relative pl-8">
-                    <div
-                        class="absolute -left-[11px] top-0 w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-lg shadow-blue-600/40">
-                        3</div>
-                    <h3 class="text-white font-bold mb-2">Activate Profile</h3>
-                    <p class="text-slate-400 text-xs leading-relaxed">
-                        1. Open iPhone <b>Settings</b><br>
-                        2. Tap <b>Profile Downloaded</b> (near the top)<br>
-                        3. Tap <b>Install</b> (top right) and enter passcode<br>
-                        4. Tap <b>Install</b> again to confirm
-                    </p>
-                </div>
-            </div>
-
-            <div class="mt-12 p-6 bg-green-900/10 border border-green-500/20 rounded-2xl text-center">
-                <p class="text-green-400 text-sm font-bold">Done! Theater is now shielded.</p>
-                <p class="text-slate-500 text-[10px] mt-1">Popup ads are now blocked at the network level (Not only in
-                    Theater).</p>
-                <button onclick="toggleSetupLayer()"
-                    class="mt-4 bg-slate-800 text-white text-xs font-bold py-2 px-8 rounded-lg">Close</button>
-            </div>
-        </div>
-    </div>
-
+    <script type="module" src="layout.js"></script>
     <script type="module" src="script.js"></script>
     <script>
         if ('serviceWorker' in navigator) {

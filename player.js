@@ -41,7 +41,31 @@ export function stopPlayback() {
     if (wrapper) wrapper.classList.add('hidden');
 }
 
-// --- SECURE LINK REQUESTER ---
+// --- SECURE PURE LINK FETCHER ---
+// 1. We detach the API call so it has ZERO side effects on the player or UI.
+export async function getTorboxLink(tid, fid) {
+    const key = localStorage.getItem('tb_api_key');
+    const targetUrl = `https://api.torbox.app/v1/api/torrents/requestdl?token=${key}&torrent_id=${tid}&file_id=${fid}&zip=false`;
+    
+    try {
+        const res = await smartFetch(targetUrl);
+        const data = await res.json();
+        
+        if (!data.success) {
+            throw new Error(data.detail || "Unknown API Error");
+        }
+        
+        return data.data; // Returns just the raw CDN URL string
+        
+    } catch (e) {
+        console.error("API Fetch Error:", e);
+        showToast("Link Error: " + e.message, 'error');
+        return null;
+    }
+}
+
+// --- SECURE PLAYBACK ORCHESTRATOR ---
+// 2. This function now uses the pure fetcher, then boots the player.
 export async function requestLink(tid, fid, torrentName, fileName) {
     stopPlayback();
 
@@ -52,35 +76,21 @@ export async function requestLink(tid, fid, torrentName, fileName) {
 
     abortPlayback = false;
 
-    const key = localStorage.getItem('tb_api_key');
     const list = document.getElementById('file-list');
     if (list) list.style.opacity = '0.5';
 
-    try {
-        const targetUrl = `https://api.torbox.app/v1/api/torrents/requestdl?token=${key}&torrent_id=${tid}&file_id=${fid}&zip=false`;
-        const res = await smartFetch(targetUrl);
-        const data = await res.json();
+    // Call our detached fetcher
+    const streamUrl = await getTorboxLink(tid, fid);
+    
+    if (list) list.style.opacity = '1';
 
-        if (!data.success) {
-            showToast("Link Error: " + data.detail, 'error');
-            if (list) list.style.opacity = '1';
-            return;
-        }
-
-        // Did the user click another movie while we were fetching?
-        if (abortPlayback) {
-            console.log("Ghost playback prevented! User clicked something else.");
-            return;
-        }
-
-        startPlayer(data.data, fileName || torrentName);
-
-    } catch (e) {
-        console.error("Network Fetch Crash:", e);
-        showToast("Error requesting link. Network timeout.", 'error');
-    } finally {
-        if (list) list.style.opacity = '1';
+    // If the fetch failed, or the user clicked another movie while we were waiting, abort.
+    if (!streamUrl || abortPlayback) {
+        if (abortPlayback) console.log("Ghost playback prevented! User clicked something else.");
+        return;
     }
+
+    startPlayer(streamUrl, fileName || torrentName);
 }
 
 // --- PLAYER INITIALIZATION ---
@@ -117,6 +127,7 @@ export function startPlayer(url, name) {
         autoPlayback: true,
         miniProgressBar: false,
         screenshot: false,
+        subtitles: false,
         subtitleOffset: false,
         playbackRate: false,
 
