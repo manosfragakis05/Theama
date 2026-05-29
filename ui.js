@@ -1,0 +1,147 @@
+/**
+ * ==========================================
+ * ui.js
+ * Handles Navigation, Search, and External Players
+ * ==========================================
+ */
+
+import { appState, showToast } from './services/config.js';
+import { renderList } from './pages/library.js';
+import { searchTMDB, loadDiscover } from './api.js';
+import { stopPlayback } from './streaming/player.js';
+
+// --- NAVIGATION & TABS ---
+
+export function goHome() {
+    stopPlayback();
+
+    document.getElementById('player-wrapper').classList.add('hidden');
+    document.getElementById('search-input').value = '';
+    switchTab('library-page');
+}
+
+export function switchTab(targetId) {
+    // 1. Hide ALL pages
+    document.querySelectorAll('.page-view').forEach(page => {
+        page.classList.add('hidden');
+    });
+
+    // 2. Show the TARGET page
+    const targetPage = document.getElementById(targetId);
+    if (targetPage) {
+        targetPage.classList.remove('hidden');
+    }
+
+    // 3. Remove 'active' state from ALL navigation buttons
+    document.querySelectorAll('.nav-link').forEach(btn => {
+        btn.classList.remove('active');
+    });
+
+    // 4. Add 'active' state to the matching buttons (both PC and Mobile)
+    document.querySelectorAll(`.nav-link[data-target="${targetId}"]`).forEach(btn => {
+        btn.classList.add('active');
+    });
+
+    // 5. Page-Specific Logic
+    handlePageSpecificLogic(targetId);
+}
+
+function handlePageSpecificLogic(pageId) {
+    switch (pageId) {
+        case 'library-page':
+            // E.g., refresh library or reset views
+            break;
+        case 'discover-page':
+            // Only fetch from the API if the grid is empty!
+            if (document.getElementById('trending-movies-row').innerHTML.trim() === '') {
+                loadDiscover();
+            }
+            break;
+        case 'settings-tab':
+            // E.g., load user preferences
+            break;
+    }
+}
+
+// Close profile dropdown when clicking outside
+window.addEventListener('click', function (event) {
+    if (!event.target.closest('.w-10') && !event.target.closest('#profile-dropdown')) {
+        const dropdown = document.getElementById('profile-dropdown');
+        if (dropdown) {
+            dropdown.classList.add('hidden');
+        }
+    }
+});
+
+// --- SEARCH LOGIC ---
+
+let searchTimeout = null;
+
+export function handleSearch() {
+    const query = document.getElementById('search-input').value.toLowerCase().trim();
+
+    // Filter the local TorBox library instantly
+    const filtered = appState.allTorrents.filter(t => t.name.toLowerCase().includes(query));
+    renderList(filtered);
+
+    clearTimeout(searchTimeout);
+
+    // If the query is 3 letters or more, trigger the TMDB global search
+    if (query.length >= 3) {
+        searchTimeout = setTimeout(() => {
+            switchTab('discover-page');
+            searchTMDB(query);
+        }, 800);
+    } else {
+        const globalResults = document.getElementById('global-search-results');
+        if (globalResults) globalResults.classList.add('hidden');
+    }
+}
+
+// --- EXTERNAL PLAYERS ---
+
+export function openExternalPlayer(player) {
+    const videoUrl = appState.currentStreamUrl;
+
+    if (!videoUrl) {
+        showToast("No video stream selected yet.", "error");
+        return;
+    }
+
+    if (videoUrl.startsWith('blob:')) {
+        showToast("Local device files cannot be cast to external players. Please play them directly in the browser.", "error");
+        document.getElementById('external-player-modal').classList.add('hidden');
+        return;
+    }
+
+    const encodedUrl = encodeURIComponent(videoUrl);
+    let deepLink = '';
+
+    switch (player) {
+        case 'vlc':
+            deepLink = videoUrl.replace(/^https?:\/\//i, 'vlc://');
+            break;
+
+        case 'infuse':
+            deepLink = `infuse://x-callback-url/play?url=${encodedUrl}`;
+            break;
+
+        case 'outplayer':
+            deepLink = `outplayer://${encodedUrl}`;
+            break;
+
+        case 'mxplayer':
+            deepLink = `intent:${videoUrl}#Intent;package=com.mxtech.videoplayer.ad;S.title=${encodeURIComponent("TorBox Stream")};end`;
+            break;
+
+        case 'iina':
+            deepLink = `iina://weblink?url=${encodedUrl}`;
+            break;
+    }
+
+    // Hide the modal
+    document.getElementById('external-player-modal').classList.add('hidden');
+
+    // Trigger the OS app
+    window.location.href = deepLink;
+}

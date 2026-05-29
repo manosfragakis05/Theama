@@ -1,11 +1,9 @@
-import { smartFetch, showToast, MY_PROXY } from './script.js';
-import { parseTorrentio } from './parseMedia.js';
-
-export const TMDB_KEY = 'ee7a32cee36ed0cd1f028f10c32fa0cf';
+import { smartFetch, showToast, MY_PROXY, getTbKey, TMDB_KEY } from './services/config.js';
+import { parseTorrentio } from './utils/parseMedia.js';
 
 const rowState = {
-    'trending-row': { page: 1, endpoint: 'trending/all/week', loading: false, hasMore: true },
-    'new-row': { page: 1, endpoint: 'movie/now_playing', loading: false, hasMore: true },
+    'trending-movies-row': { page: 1, endpoint: 'trending/movie/week', loading: false, hasMore: true },
+    'trending-shows-row': { page: 1, endpoint: 'trending/tv/week', loading: false, hasMore: true },
     'top-row': { page: 1, endpoint: 'movie/top_rated', loading: false, hasMore: true },
     'action-row': { page: 1, endpoint: 'discover/movie?with_genres=28&sort_by=vote_count.desc&vote_average.gte=7&vote_count.gte=3000', loading: false, hasMore: true },
     'comedy-row': { page: 1, endpoint: 'discover/movie?with_genres=35&sort_by=vote_count.desc&vote_average.gte=6.5&vote_count.gte=2000', loading: false, hasMore: true },
@@ -25,8 +23,12 @@ let startX;
 let scrollLeft;
 let isTicking = false;
 
+
+let isDragInitialized = false;
 export function initGlobalDrag() {
-    // 1. The Global Mouse Down (Delegated)
+    if (isDragInitialized) return;
+    isDragInitialized = true;
+
     document.addEventListener('mousedown', (e) => {
         // Look for our specific class instead of an ID
         const slider = e.target.closest('.draggable-row');
@@ -80,37 +82,65 @@ export function initGlobalDrag() {
             activeSlider = null;
         }, 50);
     });
+    window.addEventListener('mouseleave', () => {
+        if (!isDown || !activeSlider) return;
+
+        isDown = false;
+
+        activeSlider.classList.remove('cursor-grabbing', 'pointer-events-none');
+        document.body.classList.remove('select-none', 'cursor-grabbing');
+
+        setTimeout(() => {
+            isDragging = false;
+            activeSlider = null;
+        }, 50);
+    });
 }
 
-// 👀 --- MODERN SCROLL PAGINATION ---
-const paginationObserver = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-        // If the sentinel is visible on screen...
-        if (entry.isIntersecting) {
-            const containerId = entry.target.dataset.targetRow;
+const rowObservers = {};
 
-            // Un-observe it so we don't trigger multiple times while loading
-            paginationObserver.unobserve(entry.target);
+function getObserverFor(containerId) {
+    // If we already created an observer for this row, just return it
+    if (rowObservers[containerId]) {
+        return rowObservers[containerId];
+    }
 
-            // Fetch the next page!
-            renderRow(null, containerId);
-        }
+    // Otherwise, create a new one specifically locked to this row's boundaries
+    const rowElement = document.getElementById(containerId);
+
+    rowObservers[containerId] = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                const targetId = entry.target.dataset.targetRow;
+
+                // Un-observe it so we don't trigger multiple times
+                rowObservers[targetId].unobserve(entry.target);
+
+                // Fetch the next page
+                renderRow(null, targetId);
+            }
+        });
+    }, {
+        root: rowElement,
+        rootMargin: '0px 1000px 0px 0px',
+        threshold: 0
     });
-}, {
-    root: null,
-    rootMargin: '0px 600px 0px 0px',
-    threshold: 0
-});
 
+    return rowObservers[containerId];
+}
 
 //#region TMDB LOGIC
 
 // Fetch card data
 async function fetchTMDBEndpoint(endpoint, page = 1) {
-    const separator = endpoint.includes('?') ? '&' : '?';
-    const url = `https://api.themoviedb.org/3/${endpoint}${separator}api_key=${TMDB_KEY}&language=en-US&page=${page}`;
+    const base = `https://api.themoviedb.org/3/`;
+    const url = new URL(endpoint.startsWith('http') ? endpoint : base + endpoint);
 
-    const response = await fetch(url);
+    url.searchParams.append('api_key', TMDB_KEY);
+    url.searchParams.append('language', 'en-US');
+    url.searchParams.append('page', page.toString());
+
+    const response = await fetch(url.toString());
     if (!response.ok) throw new Error(`TMDB Fetch Failed: ${response.status}`);
     return await response.json();
 }
@@ -124,17 +154,20 @@ function createCardHTML(movie) {
     const year = displayDate.split('-')[0] || 'N/A';
 
     return `
-        <div class="media-card relative flex-none w-32 md:w-40 cursor-pointer transition-transform hover:scale-105 select-none"
+        <div class="media-card relative flex-none w-32 md:w-40 cursor-pointer transition-all duration-150 ease-out hover:scale-105 hover:-translate-1 select-none group"
              data-id="${movie.id}"
              data-type="${detectedType}"
              data-title="${displayTitle}"
              data-backdrop="${movie.backdrop_path || ''}"
              data-poster="${movie.poster_path}">
              
-            <img src="https://image.tmdb.org/t/p/w500${movie.poster_path}" 
-                 class="rounded-lg shadow-lg w-full h-auto object-cover border border-slate-700/50 bg-slate-800 aspect-[2/3]"
-                 loading="lazy" draggable="false" alt="${displayTitle}">
-            <p class="text-xs text-slate-300 mt-2 truncate font-semibold pl-1">${displayTitle}</p>
+            <div class="rounded-lg overflow-hidden border border-slate-700/50 bg-slate-800 shadow-md aspect-[2/3] transform-gpu">
+                <img src="https://image.tmdb.org/t/p/w500${movie.poster_path}" 
+                     class="w-full h-full object-cover"
+                     loading="lazy" draggable="false" alt="${displayTitle}">
+            </div>
+            
+            <p class="text-xs text-slate-300 mt-2 truncate font-semibold pl-1 group-hover:text-white transition-colors">${displayTitle}</p>
             <p class="text-[10px] text-slate-500 pl-1">${year}</p>
         </div>
     `;
@@ -145,14 +178,20 @@ function renderCardsToRow(movies, containerId) {
     if (!row) return;
 
     const oldSentinel = row.querySelector('.scroll-sentinel');
-    if (oldSentinel) oldSentinel.remove();
+    if (oldSentinel) {
+        // Clean up the old observer reference before removing the element
+        getObserverFor(containerId).unobserve(oldSentinel);
+        oldSentinel.remove();
+    }
 
     const htmlContent = movies.map(createCardHTML).join('');
     row.insertAdjacentHTML('beforeend', htmlContent);
 
     if (rowState[containerId].hasMore) {
         row.insertAdjacentHTML('beforeend', `<div class="scroll-sentinel w-1 flex-none" data-target-row="${containerId}"></div>`);
-        paginationObserver.observe(row.querySelector('.scroll-sentinel:last-child'));
+
+        // 👇 USE THE NEW OBSERVER FUNCTION HERE 👇
+        getObserverFor(containerId).observe(row.querySelector('.scroll-sentinel:last-child'));
     }
 }
 
@@ -184,7 +223,7 @@ async function renderRow(initialEndpoint = null, containerId) {
         showRowLoading(containerId);
 
         let startPage = 1;
-        if (!['trending-row', 'new-row'].includes(containerId)) {
+        if (!['trending-movies-row', 'trending-shows-row'].includes(containerId)) {
             startPage = Math.floor(Math.random() * 3) + 1;
         }
 
@@ -207,7 +246,14 @@ async function renderRow(initialEndpoint = null, containerId) {
 
         if (initialEndpoint) {
             const row = document.getElementById(containerId);
-            if (row) row.innerHTML = '';
+            if (row) {
+                const oldSentinel = row.querySelector('.scroll-sentinel');
+
+                // 👇 Update this line to use the new observer system!
+                if (oldSentinel) getObserverFor(containerId).unobserve(oldSentinel);
+
+                row.innerHTML = '';
+            }
         }
 
         if (data.results.length === 0 || data.page >= data.total_pages) {
@@ -223,6 +269,16 @@ async function renderRow(initialEndpoint = null, containerId) {
     } finally {
         state.loading = false;
     }
+}
+
+function createSkeletonCard() {
+    return `
+        <div class="relative flex-none w-32 md:w-40 animate-pulse select-none">
+            <div class="rounded-lg w-full bg-slate-800 border border-slate-700/50 aspect-[2/3]"></div>
+            <div class="h-3 bg-slate-700/50 rounded mt-3 w-3/4"></div>
+            <div class="h-2 bg-slate-800 rounded mt-2 w-1/4"></div>
+        </div>
+    `;
 }
 
 // 🎨 --- UI RENDERERS ---
@@ -251,7 +307,7 @@ export async function loadDiscover() {
     });
 
     // 2. Automatically fetch data for standard rows using their predefined endpoints
-    const standardRows = ['trending-row', 'new-row', 'top-row', 'action-row', 'comedy-row', 'thriller-row', 'anime-row'];
+    const standardRows = ['trending-movies-row', 'trending-shows-row', 'top-row', 'action-row', 'comedy-row', 'thriller-row', 'anime-row'];
     standardRows.forEach(rowId => {
         renderRow(rowState[rowId].endpoint, rowId);
     });
@@ -305,8 +361,6 @@ export async function searchTMDB(query) {
 export async function loadMyPicks() {
     const containerId = 'my-picks-row';
 
-    showRowLoading(containerId);
-
     const myFavorites = [
         // THE GOATS
         { id: 1396, type: 'tv' },     // Breaking Bad
@@ -337,21 +391,25 @@ export async function loadMyPicks() {
 
     try {
         const movieData = await Promise.all(myFavorites.map(async (item) => {
-            const url = `https://api.themoviedb.org/3/${item.type}/${item.id}?api_key=${TMDB_KEY}&language=en-US`;
-            const res = await fetch(url);
-            const data = await res.json();
-            return {
-                ...data,
-                title: data.title || data.name,
-                release_date: data.release_date || data.first_air_date,
-                media_type: item.type
-            };
+            try {
+                const url = `https://api.themoviedb.org/3/${item.type}/${item.id}?api_key=${TMDB_KEY}&language=en-US`;
+                const res = await fetch(url);
+                if (!res.ok) return null; // Gracefully fail this one item
+                const data = await res.json();
+                return {
+                    ...data,
+                    title: data.title || data.name,
+                    release_date: data.release_date || data.first_air_date,
+                    media_type: item.type
+                };
+            } catch (e) {
+                return null;
+            }
         }));
 
-        const row = document.getElementById(containerId);
-        if (row) row.innerHTML = '';
-
-        renderCardsToRow(movieData, containerId);
+        // Filter out any nulls before rendering
+        const successfulMovies = movieData.filter(movie => movie !== null);
+        renderCardsToRow(successfulMovies, containerId);
     } catch (e) {
         console.error("Couldnt load row:", e);
         showRowError(containerId);
@@ -590,19 +648,21 @@ export async function loadTMDBSeason(seasonNumber) {
 }
 
 // Fetch kitsu seasons
-export async function buildKitsuSeasons(baseKitsuId) {
+async function buildKitsuSeasons(baseKitsuId) {
     let currentId = baseKitsuId;
     const visited = new Set();
     const timeline = [];
     let fakeSeasonCounter = 1;
+    let maxDepth = 15; // Failsafe to prevent infinite loops
 
     try {
-        while (currentId && !visited.has(currentId)) {
+        while (currentId && !visited.has(currentId) && maxDepth > 0) {
             visited.add(currentId);
 
-            const url = `https://kitsu.io/api/edge/anime/${currentId}?include=mediaRelationships.destination`;
-            const res = await fetch(url);
+            // ⚡ THE FIX: Use Sparse Fieldsets (fields[anime]=titles) to make the download tiny
+            const url = `https://kitsu.io/api/edge/anime/${currentId}?include=mediaRelationships.destination&fields[anime]=titles,canonicalTitle`;
 
+            const res = await fetch(url);
             if (!res.ok) break;
 
             const json = await res.json();
@@ -615,7 +675,7 @@ export async function buildKitsuSeasons(baseKitsuId) {
                 kitsuId: animeData.id
             });
 
-            // 3. THE NEXT LINK: Find the sequel
+            // Find the sequel
             const relationships = included.filter(item => item.type === 'mediaRelationships');
             const sequelRel = relationships.find(rel => rel.attributes.role === 'sequel');
 
@@ -626,8 +686,7 @@ export async function buildKitsuSeasons(baseKitsuId) {
                 currentId = null; // End of the line
             }
 
-            // Breathe to avoid hitting API rate limits
-            await new Promise(resolve => setTimeout(resolve, 200));
+            maxDepth--;
         }
 
         mediaStore.set({ seasons: timeline });
@@ -635,6 +694,7 @@ export async function buildKitsuSeasons(baseKitsuId) {
 
     } catch (error) {
         console.error(`[KITSU] Timeline spider crashed:`, error);
+        return timeline; // Return whatever we managed to scrape before the crash!
     }
 }
 
@@ -657,42 +717,67 @@ export async function loadKitsuSeason(kitsuId) {
 
         let anizipData = {};
         if (aniRes && aniRes.ok) {
-            const aniJson = await aniRes.json();
-            anizipData = aniJson.episodes || {};
-        }
-
-        const formattedEpisodes = [];
-        let currentKitsuData = await kitsuRes.json();
-        let nextUrl = null;
-
-        while (currentKitsuData) {
-            const kitsuEpisodes = currentKitsuData.data || [];
-
-            kitsuEpisodes.forEach(ep => {
-                const attrs = ep.attributes;
-                const epNum = attrs.number;
-                const zipEp = anizipData[epNum] || {};
-                let thumbUrl = zipEp.image || attrs.thumbnail?.original || fallbackBackdrop;
-
-                formattedEpisodes.push({
-                    episodeNumber: epNum,
-                    title: attrs.canonicalTitle || attrs.titles?.en_jp || zipEp.title?.en || `Episode ${epNum}`,
-                    overview: attrs.synopsis || zipEp.summary || "No overview available.",
-                    duration: attrs.length || zipEp.runtime || 24,
-                    thumbnail: thumbUrl,
-                    tmdbSeason: zipEp.seasonNumber,
-                    tmdbEpisode: zipEp.episodeNumber
-                });
-            });
-
-            nextUrl = currentKitsuData.links?.next || null;
-            if (nextUrl) {
-                const nextRes = await fetch(nextUrl);
-                currentKitsuData = nextRes.ok ? await nextRes.json() : null;
-            } else {
-                currentKitsuData = null;
+            try {
+                const aniJson = await aniRes.json();
+                anizipData = aniJson.episodes || {};
+            } catch (e) {
+                console.warn("AniZIP failed to parse JSON (likely rate limited or offline):", e);
             }
         }
+
+        let currentKitsuData = await kitsuRes.json();
+        const kitsuEpisodes = currentKitsuData.data || [];
+
+        const totalEpisodes = currentKitsuData.meta?.count || kitsuEpisodes.length;
+        const totalPages = Math.ceil(totalEpisodes / 20);
+
+        let nextUrl = null;
+        const formattedEpisodes = [];
+
+        if (totalPages > 1) {
+            const pagePromises = [];
+
+            for (let i = 2; i <= totalPages; i++) {
+                const offset = (i - 1) * 20;
+                const pageUrl = `https://kitsu.io/api/edge/anime/${kitsuId}/episodes?page[limit]=20&page[offset]=${offset}`;
+
+                pagePromises.push(fetch(pageUrl).then(res => res.ok ? res.json() : null));
+            }
+
+            const additionalPages = await Promise.all(pagePromises);
+
+            additionalPages.forEach(pageData => {
+                if (pageData && pageData.data) {
+                    kitsuEpisodes.push(...pageData.data);
+                }
+            });
+        }
+
+        kitsuEpisodes.forEach(ep => {
+            const attrs = ep.attributes;
+            const epNum = attrs.number;
+            const zipEp = anizipData[epNum] || {};
+            let thumbUrl = zipEp.image || attrs.thumbnail?.original || fallbackBackdrop;
+
+            formattedEpisodes.push({
+                episodeNumber: epNum,
+                title: attrs.canonicalTitle || attrs.titles?.en_jp || zipEp.title?.en || zipEp.title?.['x-jat'] || `Episode ${epNum}`,
+                overview: attrs.synopsis || zipEp.summary || "No overview available.",
+                duration: attrs.length || zipEp.runtime || 24,
+                thumbnail: thumbUrl,
+                tmdbSeason: zipEp.seasonNumber,
+                tmdbEpisode: zipEp.episodeNumber
+            });
+        });
+
+        nextUrl = currentKitsuData.links?.next || null;
+        if (nextUrl) {
+            const nextRes = await fetch(nextUrl);
+            currentKitsuData = nextRes.ok ? await nextRes.json() : null;
+        } else {
+            currentKitsuData = null;
+        }
+
 
         formattedEpisodes.sort((a, b) => a.episodeNumber - b.episodeNumber);
 
@@ -754,19 +839,23 @@ export async function handlePlayAction() {
     `;
 
     try {
+        showStreamPicker(state.title);    // Always show the picker
+
         // Fetch the streams
-        const streamData = await fetchTorrentioStreams(type, id, reqSeason, reqEpisode);
-        console.log(streamData);
+        fetchTorrentioStreams(type, id, reqSeason, reqEpisode)
+            .then(streamData => {
+                if (streamData && streamData.uniqueStreams && streamData.uniqueStreams.length > 0) {
+                    const categorizedStreams = filterAndSortStreams(streamData.uniqueStreams);
 
-        if (streamData && streamData.uniqueStreams) {
-            const categorizedStreams = filterAndSortStreams(streamData.uniqueStreams, "western");
-            console.log(categorizedStreams);
+                    renderAddonData(categorizedStreams);
+                    console.log(categorizedStreams);
+                } else {
+                    console.log("📭 Torrentio found no streams.");
+                }
+            })
+            .catch(e => console.error("Torrentio crashed:", e));
 
-            const mainTitle = state.title;
-            showStreamPicker(categorizedStreams, mainTitle);
-        } else {
-            showToast("No streams found.", "error");
-        }
+        loadAllAddonsParallel(type, id, reqSeason, reqEpisode);
     } catch (e) {
         console.error("Failed to load streams:", e);
         showToast("Error fetching streams.", "error");
@@ -777,7 +866,7 @@ export async function handlePlayAction() {
 }
 
 //#region Render Details
-export function renderMasterDetailView() {
+function renderMasterDetailView() {
     const viewContainer = document.getElementById('full-detail-view');
     if (!viewContainer) return;
 
@@ -1003,8 +1092,8 @@ window.closeMovieDetail = () => {
 };
 //#endregion
 
-//#region Filter
-function filterAndSortStreams(streams, type) {
+//#region Filter & Sort
+function filterAndSortStreams(streams) {
     const losslessAudio = ['atmos', 'truehd', 'dts-hd', 'dts:x', 'flac', 'lossless'];
     const premiumAudio = ['dts', 'dd5.1', 'ac3', 'eac3', 'dolby digital', '5.1', '7.1'];
     const premiumVideo = ['remux', 'bluray', 'web-dl'];
@@ -1128,94 +1217,308 @@ function filterAndSortStreams(streams, type) {
     bucket1080p.sort(sortStreams);
     bucketOther.sort(sortStreams);
 
-    return { bucket4K, bucket1080p, bucketOther };
+    return { addonName: "Torrentio", bucket4K, bucket1080p, bucketOther };
 }
 
-// --- MODAL UI BUILDER ---
-function showStreamPicker(categorizedStreams, mainTitle) {
+export function filterAndSortCustomStreams(streams, addonName) {
+    let parsedStreams = streams.map(stream => {
+        const rawTitle = stream.description || stream.title || '';
+        const streamName = (stream.name || "").toLowerCase();
+        const rawText = `${streamName} ${rawTitle}`;
+
+        const isCached = rawText.includes('rd+') ||
+            rawText.includes('torbox+') ||
+            rawText.includes('tb+') ||
+            rawText.includes('cached') ||
+            rawText.includes('⚡');
+
+        // 📺 Resolution Detection
+        let resolution = "Unknown";
+        let resScore = 0;
+
+        if (rawText.includes('4k') || rawText.includes('2160p')) {
+            resolution = "4K";
+            resScore = 3;
+        } else if (rawText.includes('1080p')) {
+            resolution = "1080p";
+            resScore = 2;
+        } else if (rawText.includes('720p') || rawText.includes('sd') || rawText.includes('480p')) {
+            resolution = "720p";
+            resScore = 1;
+        }
+
+        return {
+            rawStream: stream,
+            isCached: isCached,
+            resolution: resolution,
+        };
+    });
+
+    // 2. SORT: Clean, unified sorting
+    parsedStreams.sort((a, b) => {
+        // Rule 1: Cached ALWAYS goes to the top
+        if (a.isCached !== b.isCached) {
+            return a.isCached ? -1 : 1;
+        }
+
+        // Rule 2: Sort by Resolution Score (Highest to lowest)
+        if (a.resScore !== b.resScore) {
+            return b.resScore - a.resScore;
+        }
+
+        // Rule 3: Leave them in the order the add-on provided
+        return 0;
+    });
+
+    // Hard cap at 40 streams to protect mobile performance
+    parsedStreams = parsedStreams.slice(0, 40);
+
+    // 3. BUCKET: Exact same format as your Torrentio sorter
+    const bucket4K = [];
+    const bucket1080p = [];
+    const bucketOther = [];
+
+    parsedStreams.forEach(stream => {
+        if (stream.resolution === "4K") {
+            bucket4K.push(stream);
+        } else if (stream.resolution === "1080p") {
+            bucket1080p.push(stream);
+        } else {
+            bucketOther.push(stream);
+        }
+    });
+
+    return {
+        addonName: addonName, // 👈 Just inject the name here!
+        bucket4K,
+        bucket1080p,
+        bucketOther
+    };
+}
+//#endregion
+
+
+//#region Render Streams
+const streamState = {
+    addons: {}
+};
+
+function showStreamPicker(mainTitle) {
     const modal = document.getElementById('stream-picker-modal');
+    const tabsContainer = document.getElementById('addon-tabs-container');
     const list = document.getElementById('stream-picker-list');
 
     document.getElementById('stream-picker-title').innerText = `${mainTitle}`;
 
+    // 1. --- RESET THE STATE CACHE ---
+    streamState.addons = {
+        'Torrentio': { status: 'loading', streams: [] }
+    };
+
+    const userAddons = JSON.parse(localStorage.getItem('user_addons')) || [];
+
+    userAddons.forEach(addon => {
+        const shortName = addon.name.split(' ')[0];
+        streamState.addons[shortName] = { status: 'loading', streams: [] };
+    });
+
+    // 2. --- BUILD THE ADD-ON TABS (ALL IN JS) ---
+    tabsContainer.innerHTML = '';
+
+    // Helper to build a tab button
+    const createTabButton = (name, isActive) => {
+        const btn = document.createElement('button');
+        btn.id = `tab-${name}`;
+
+        if (isActive) {
+            btn.className = "addon-tab flex-shrink-0 rounded-full px-4 py-1.5 text-xs font-bold whitespace-nowrap transition-all bg-blue-600 text-white shadow-md shadow-blue-900/20 active:scale-95";
+        } else {
+            btn.className = "addon-tab flex-shrink-0 rounded-full px-4 py-1.5 text-xs font-bold whitespace-nowrap transition-all bg-slate-700/50 text-slate-400 hover:bg-slate-700 hover:text-slate-200 border border-slate-600/50 active:scale-95";
+        }
+
+        btn.innerText = name;
+
+        // Safely attach the click listener!
+        btn.addEventListener('click', () => {
+            switchTab(name);
+        });
+
+        tabsContainer.appendChild(btn);
+    };
+
+    if (userAddons.length > 0) {
+        tabsContainer.classList.remove('hidden');
+
+        // Build Torrentio (Active)
+        createTabButton('Torrentio', true);
+
+        // Build Custom Addons (Inactive)
+        userAddons.forEach(addon => {
+            const shortName = addon.name.split(' ')[0];
+            createTabButton(shortName, false);
+        });
+    } else {
+        tabsContainer.classList.add('hidden');
+    }
+
+    // 3. --- STAMP OUT THE PANELS ---
     list.innerHTML = '';
+    const template = document.getElementById('addon-panel-template');
+
+    const mountPanel = (addonName, isFirstTab) => {
+        const clone = template.content.cloneNode(true);
+        const panel = clone.querySelector('.addon-panel');
+
+        panel.id = `panel-${addonName}`;
+
+        // 👇 Inject the custom loading text here!
+        const loadingText = panel.querySelector('.loading-text');
+        if (loadingText) {
+            loadingText.innerText = `Searching ${addonName}...`;
+        }
+
+        if (isFirstTab) {
+            panel.classList.remove('hidden');
+            panel.classList.add('flex');
+        }
+
+        list.appendChild(clone);
+    };
+
+    // Stamp Torrentio first
+    mountPanel('Torrentio', true);
+
+    // Stamp the rest
+    userAddons.forEach(addon => {
+        const shortName = addon.name.split(' ')[0];
+        mountPanel(shortName, false);
+    });
+
+    // 4. --- REVEAL MODAL ---
     modal.classList.remove('hidden');
+}
+// TAB SWITCHER
+function switchTab(addonName) {
+    const allTabs = document.querySelectorAll('.addon-tab');
 
-    const sliceBucket = (bucket) => {
-        return {
-            top: bucket.slice(0, 3),
-            more: bucket.slice(3)
-        };
-    };
+    allTabs.forEach(tab => {
+        // Reset all tabs to the gray, inactive style
+        tab.className = "addon-tab flex-shrink-0 rounded-full px-4 py-1.5 text-xs font-bold whitespace-nowrap transition-all bg-slate-700/50 text-slate-400 hover:bg-slate-700 hover:text-slate-200 border border-slate-600/50 active:scale-95";
+    });
 
-    const streams4K = sliceBucket(categorizedStreams.bucket4K || []);
-    const streams1080p = sliceBucket(categorizedStreams.bucket1080p || []);
-    const streamsOther = sliceBucket(categorizedStreams.bucketOther || []);
-
-    // Helper to create beautiful category headers
-    const createHeader = (title, colorClass, borderClass, bgClass) => {
-        const header = document.createElement('div');
-        header.className = `flex items-center gap-1.5 mb-1.5 mt-1`;
-        header.innerHTML = `
-            <div class="px-2 py-0.7 rounded-md ${bgClass} border ${borderClass}">
-                <span class="${colorClass} font-bold text-[12px] uppercase tracking-wider">${title}</span>
-            </div>
-            <span class="h-[1px] flex-1 ${bgClass}"></span>
-        `;
-        return header;
-    };
-
-    // Container for 4K
-    if (streams4K.top.length > 0) {
-        const container4K = document.createElement('div');
-        container4K.id = 'stream-container-4k';
-        container4K.className = 'flex flex-col gap-2.5 mb-6';
-
-        list.appendChild(createHeader('4K UHD', 'text-amber-400', 'border-amber-400/20', 'bg-amber-400/10'));
-        list.appendChild(container4K);
-        renderStreamCategory('stream-container-4k', streams4K.top, streams4K.more);
+    const activeTab = document.getElementById(`tab-${addonName}`);
+    if (activeTab) {
+        // Highlight the clicked tab in blue
+        activeTab.className = "addon-tab flex-shrink-0 rounded-full px-4 py-1.5 text-xs font-bold whitespace-nowrap transition-all bg-blue-600 text-white shadow-md shadow-blue-900/20 active:scale-95";
     }
 
-    // Container for 1080p
-    if (streams1080p.top.length > 0) {
-        const container1080p = document.createElement('div');
-        container1080p.id = 'stream-container-1080p';
-        container1080p.className = 'flex flex-col gap-2.5 mb-6';
+    // 2. --- SWAP THE PANELS ---
+    const allPanels = document.querySelectorAll('.addon-panel');
 
-        list.appendChild(createHeader('1080p HD', 'text-blue-400', 'border-blue-400/20', 'bg-blue-400/10'));
-        list.appendChild(container1080p);
-        renderStreamCategory('stream-container-1080p', streams1080p.top, streams1080p.more);
+    allPanels.forEach(panel => {
+        // Hide every panel
+        panel.classList.add('hidden');
+        panel.classList.remove('flex');
+    });
+
+    const targetPanel = document.getElementById(`panel-${addonName}`);
+    if (targetPanel) {
+        // Reveal only the panel that matches the clicked tab
+        targetPanel.classList.remove('hidden');
+        targetPanel.classList.add('flex');
     }
+};
 
-    // Container for Standard / Legacy (720p / SD)
-    if (streamsOther.top.length > 0) {
-        const containerStandard = document.createElement('div');
-        containerStandard.id = 'stream-container-standard';
-        containerStandard.className = 'flex flex-col gap-2.5 mb-6';
+// Helper to create beautiful category headers dynamically
+const createHeader = (title, colorClass, borderClass, bgClass) => {
+    const header = document.createElement('div');
+    header.className = `flex items-center gap-1.5 mb-1.5 mt-2`;
+    header.innerHTML = `
+        <div class="px-2 py-[3px] rounded-md ${bgClass} border ${borderClass}">
+            <span class="${colorClass} font-bold text-[12px] uppercase tracking-wider">${title}</span>
+        </div>
+        <span class="h-[1px] flex-1 ${bgClass}"></span>
+    `;
+    return header;
+};
 
-        list.appendChild(createHeader('Standard / 720p', 'text-slate-400', 'border-slate-500/20', 'bg-slate-500/10'));
-        list.appendChild(containerStandard);
-        renderStreamCategory('stream-container-standard', streamsOther.top, streamsOther.more);
-    }
+// 🎨 THE PARENT RENDERER
+export function renderAddonData(packedData) {
+    // 1. Unpack the data
+    const { addonName, bucket4K, bucket1080p, bucketOther } = packedData;
 
-    // Empty State Handling
-    if (streams4K.top.length === 0 && streams1080p.top.length === 0 && streamsOther.top.length === 0) {
-        list.innerHTML = `
+    const isCustom = addonName !== 'Torrentio';
+
+    // 2. Find the specific universe for this add-on
+    const panel = document.getElementById(`panel-${addonName}`);
+    if (!panel) return; // Failsafe
+
+    const loadingSpinner = panel.querySelector('.panel-loading');
+    const contentContainer = panel.querySelector('.panel-content');
+
+    // 3. Hide the spinner, show and clean the content area
+    if (loadingSpinner) loadingSpinner.classList.add('hidden');
+    contentContainer.classList.remove('hidden');
+    contentContainer.innerHTML = '';
+
+    // 4. Check for Empty State
+    const totalStreams = bucket4K.length + bucket1080p.length + bucketOther.length;
+
+    if (totalStreams === 0) {
+        contentContainer.innerHTML = `
             <div class="p-6 text-center flex flex-col items-center justify-center bg-red-900/10 border border-red-500/20 rounded-xl mt-4">
-                <span class="text-red-400 font-bold text-m">No streams found.</span>
+                <span class="text-red-400 font-bold text-sm">No streams found for ${addonName}.</span>
             </div>`;
+        return;
+    }
+
+    const sliceTopAndMore = (bucket) => ({ top: bucket.slice(0, 3), more: bucket.slice(3) });
+
+    if (bucket4K.length > 0) {
+        contentContainer.appendChild(createHeader('4K UHD', 'text-amber-400', 'border-amber-400/20', 'bg-amber-400/10'));
+
+        const container4K = document.createElement('div');
+        container4K.className = 'flex flex-col gap-2.5 mb-4';
+        container4K.id = `container-4k-${addonName}`;
+        contentContainer.appendChild(container4K);
+
+        const sliced = sliceTopAndMore(bucket4K);
+        renderStreamCategory(container4K.id, sliced.top, sliced.more, isCustom);
+    }
+
+    if (bucket1080p.length > 0) {
+        contentContainer.appendChild(createHeader('1080p HD', 'text-blue-400', 'border-blue-400/20', 'bg-blue-400/10'));
+
+        const container1080p = document.createElement('div');
+        container1080p.className = 'flex flex-col gap-2.5 mb-4';
+        container1080p.id = `container-1080p-${addonName}`;
+        contentContainer.appendChild(container1080p);
+
+        const sliced = sliceTopAndMore(bucket1080p);
+        renderStreamCategory(container1080p.id, sliced.top, sliced.more, isCustom);
+    }
+
+    if (bucketOther.length > 0) {
+        contentContainer.appendChild(createHeader('Others / 720p', 'text-slate-400', 'border-slate-500/20', 'bg-slate-500/10'));
+
+        const containerOther = document.createElement('div');
+        containerOther.className = 'flex flex-col gap-2.5 mb-4';
+        containerOther.id = `container-other-${addonName}`;
+        contentContainer.appendChild(containerOther);
+
+        const sliced = sliceTopAndMore(bucketOther);
+        renderStreamCategory(containerOther.id, sliced.top, sliced.more, isCustom);
     }
 }
 
-// --- RENDER HELPER WITH "LOAD MORE" ---
-function renderStreamCategory(containerId, topStreams, moreStreams) {
+function renderStreamCategory(containerId, topStreams, moreStreams, isCustom) {
     const container = document.getElementById(containerId);
     if (!container) return;
     container.innerHTML = '';
 
     topStreams.forEach((stream, index) => {
         const isRecommended = index === 0;
-        container.appendChild(createStreamCard(stream, isRecommended));
+        container.appendChild(createStreamCard(stream, isRecommended, isCustom));
     });
 
     if (moreStreams.length > 0) {
@@ -1223,7 +1526,7 @@ function renderStreamCategory(containerId, topStreams, moreStreams) {
         moreContainer.className = "hidden flex-col gap-2.5 w-full mt-1";
 
         moreStreams.forEach(stream => {
-            moreContainer.appendChild(createStreamCard(stream, false, false));
+            moreContainer.appendChild(createStreamCard(stream, false, isCustom));
         });
 
         const loadBtn = document.createElement('button');
@@ -1275,7 +1578,6 @@ function buildStreamBlueprint(stream) {
         }
     }
 
-    // 2. THE BLUEPRINT: Define exactly what lives on each line
     const uiData = {
         // Line 1: Tracker Name and Cached Status
         line1: [
@@ -1303,7 +1605,7 @@ function buildStreamBlueprint(stream) {
 }
 
 // HELPER FUNCTION TO BUILD UI CARDS
-function createStreamCard(stream, isRecommended) {
+function createStreamCard(stream, isRecommended, isCustom) {
     // 1. Get our clean data blueprint from Step 1
     const blueprint = buildStreamBlueprint(stream);
 
@@ -1327,13 +1629,11 @@ function createStreamCard(stream, isRecommended) {
         : raw.url;
 
     // 1. Safely grab the raw strings (fallback if rawStream is missing)
-    const rawName = raw?.name;
-    let rawTitle = raw?.title;
+    const rawName = raw.name;
+    let rawTitle = raw.description || raw.title;
 
     rawTitle = rawTitle.replace(/(?:\r\n|\r|\n|\\n)/g, '<br>');
     let rawInfo = `${rawName}<br>${rawTitle}`;
-
-    // 3. The Bulletproof Regex: Catches literal "\n" text, actual newlines, and carriage returns
 
     // 3. Define the UI rendering rules (How to draw each piece of data)
     const renderBadge = (item) => {
@@ -1382,6 +1682,24 @@ function createStreamCard(stream, isRecommended) {
     if (isRecommended) {
         colorClasses = "bg-emerald-900/10 hover:bg-emerald-900/20 border-emerald-500/30 hover:border-emerald-500/60 shadow-[0_0_15px_rgba(16,185,129,0.05)] hover:shadow-[0_0_20px_rgba(16,185,129,0.1)]";
         buttonHover = "bg-emerald-900/50 text-emerald-400 border border-emerald-500/30 group-hover:bg-emerald-600 group-hover:text-white group-hover:border-transparent";
+    }
+
+    if (isCustom) {
+        const btn = document.createElement('button');
+        btn.className = `${baseClasses} ${colorClasses}`;
+
+        btn.innerHTML = `
+        <div class="w-full flex justify-between items-start text-left cursor-default">            
+            <span class="text-[14px] font-semibold text-slate-300 break-words block">${rawInfo}</span>
+            <span class="text-[10px] whitespace-nowrap font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg transition-colors flex-shrink-0 mt-0.5 ${buttonHover}">Send to Torbox</span>
+        </div>
+        `;
+
+        btn.onclick = (e) => {
+            closeStreamPicker();
+            sendMagnetToTorbox(finalLink);
+        };
+        return btn;
     }
 
     // 6. Create the actual DOM Element
@@ -1447,7 +1765,7 @@ function createStreamCard(stream, isRecommended) {
     return btn;
 }
 
-//#region Torrent Services
+//#region Torrentio
 function getTorrentioConfigUrl(tbKey) {
     if (!tbKey) throw new Error("TorBox API key is missing.");
 
@@ -1480,7 +1798,7 @@ function getTorrentioConfigUrl(tbKey) {
 async function fetchTorrentioStreams(type, id, season = null, episode = null) {
     console.log(`Fetching Torrentio streams for: ${type} ${id}`);
 
-    const tbKey = localStorage.getItem('tb_api_key');
+    const tbKey = getTbKey();
     if (!tbKey) {
         console.error("❌ No TorBox key found.");
         return null;
@@ -1527,13 +1845,10 @@ async function fetchTorrentioStreams(type, id, season = null, episode = null) {
     }
 }
 
-window.closeStreamPicker = () => {
-    document.getElementById('stream-picker-modal').classList.add('hidden');
-};
 
 // Add a link to users library  
 async function sendMagnetToTorbox(magnetLink) {
-    const tbKey = localStorage.getItem('tb_api_key');
+    const tbKey = getTbKey();
     if (!tbKey) return;
 
     try {
@@ -1551,14 +1866,8 @@ async function sendMagnetToTorbox(magnetLink) {
         const tbData = await tbRes.json();
 
         if (tbData.success) {
-            window.closeMovieDetail();
-
-            // Allow 1.5 seconds for TorBox to parse the file before switching to the library
-            setTimeout(() => {
-                if (typeof window.showLibraryTab === 'function') window.showLibraryTab();
-                if (typeof window.refreshLibrary === 'function') window.refreshLibrary();
-                else location.reload();
-            }, 1500);
+            window.closeStreamPicker();
+            showToast("Successfully added", "success")
 
         } else {
             throw new Error(tbData.detail || "TorBox rejected the magnet.");
@@ -1568,6 +1877,184 @@ async function sendMagnetToTorbox(magnetLink) {
         showToast(`Failed to add: ${e.message}`, 'error');
     }
 }
+
+window.closeStreamPicker = () => {
+    document.getElementById('stream-picker-modal').classList.add('hidden');
+};
+//#endregion
+
+//#region Custom Addons
+function loadAllAddonsParallel(type, streamId, season = null, episode = null) {
+    const userAddons = JSON.parse(localStorage.getItem('user_addons')) || [];
+
+    // Format the ID once for everyone
+    let pathId = streamId;
+    if (type === 'anime' && !String(pathId).startsWith('kitsu:')) pathId = `kitsu:${pathId}`;
+    if (type === 'series') pathId = `${pathId}:${season}:${episode}`;
+    else if (type === 'anime') pathId = `${pathId}:${episode}`;
+
+    // FIRE THEM ALL IN PARALLEL WITHOUT BLOCKING
+    userAddons.forEach(addon => {
+        fetchSingleAddon(addon, type, pathId)
+            .then(streams => {
+                if (streams === null) {
+                    console.log(`🚨 ${addon.name} is offline or failed.`);
+                }
+                else if (streams.length === 0) {
+                    console.log(`📭 ${addon.name} found 0 streams.`);
+                }
+                else {
+                    const shortName = addon.name.split(' ')[0]; // 👈 Fix 1: Get the clean name!
+
+                    // 1. Filter and pack the data
+                    const packedData = filterAndSortCustomStreams(streams, shortName);
+
+                    // 2. 🧠 Save it to the cache! (Crucial for tab switching)
+                    streamState.addons[shortName] = packedData;
+
+                    // 3. Draw it to the screen
+                    renderAddonData(packedData);
+                    console.log(packedData);
+                }
+            });
+
+    });
+}
+
+async function fetchSingleAddon(addon, type, pathId) {
+    console.log(`🕵️‍♂️ Fetching ${addon.name}...`);
+
+    try {
+        const streamUrl = addon.url.replace('/manifest.json', `/stream/${type}/${pathId}.json`);
+        const res = await fetch(streamUrl);
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const data = await res.json();
+        return data.streams || []; // Return the array of streams!
+
+    } catch (e) {
+        console.warn(`🔴 [${addon.name}] Failed:`, e.message);
+        return null;
+    }
+}
+
+/**
+ * Detects and validates a Stremio Add-on Manifest.
+ * @param {string} rawUrl - The URL pasted by the user.
+ * @returns {object} - { success: boolean, manifest: object, url: string, error: string }
+ */
+export async function detectAndValidateAddon(rawUrl) {
+    // 1. Sanitize the URL
+    let url = rawUrl.trim();
+
+    // Auto-fix if the user pasted the base URL without manifest.json
+    if (!url.endsWith('manifest.json')) {
+        url = url.endsWith('/') ? `${url}manifest.json` : `${url}/manifest.json`;
+    }
+
+    // Replace stremio:// protocol with https:// if the user copied a deep link
+    url = url.replace('stremio://', 'https://');
+
+    try {
+        // 2. Fetch the Manifest (With CORS Fallback)
+        // Stremio add-ons *should* have CORS enabled by default, but if a browser 
+        // blocks it, we catch the failure and route it through your proxy!
+        let response;
+        try {
+            response = await fetch(url);
+        } catch (e) {
+            console.warn("Direct fetch blocked by CORS. Using proxy...");
+            const proxyUrl = MY_PROXY.replace('/?url=', ''); // Clean base proxy URL
+            response = await fetch(`${proxyUrl}/?url=${encodeURIComponent(url)}`);
+        }
+
+        if (!response.ok) {
+            throw new Error(`Server returned status: ${response.status}`);
+        }
+
+        const manifest = await response.json();
+
+        // 3. Schema Validation: Is it actually a Stremio Add-on?
+        if (!manifest.id || !manifest.name || !manifest.resources || !Array.isArray(manifest.resources)) {
+            throw new Error("Invalid format. This is not a recognized Stremio add-on.");
+        }
+
+        // 4. The "Streams Only" Enforcer
+        // Resources can be an array of strings ["stream"] or objects [{name: "stream", types: ["movie"]}]
+        const providesStreams = manifest.resources.some(resource => {
+            if (typeof resource === 'string') return resource === 'stream';
+            if (typeof resource === 'object') return resource.name === 'stream';
+            return false;
+        });
+
+        if (!providesStreams) {
+            throw new Error(`Rejected: '${manifest.name}' is a catalog/metadata scraper. We only accept stream providers.`);
+        }
+
+        // 5. Success! Return the clean data.
+        return {
+            success: true,
+            manifest: manifest,
+            url: url
+        };
+
+    } catch (error) {
+        console.error("Detector Failed:", error);
+        return {
+            success: false,
+            error: error.message || "Failed to parse the add-on manifest."
+        };
+    }
+}
+
+
+window.submitNewAddon = async () => {
+    const inputField = document.getElementById('addon-url-input');
+    const submitBtn = inputField.nextElementSibling; // Grabs the save button
+    const rawUrl = inputField.value;
+
+    if (!rawUrl) return;
+
+    // UI Feedback: Show loading state
+    const originalText = submitBtn.innerText;
+    submitBtn.innerText = "Verifying...";
+    submitBtn.disabled = true;
+
+    // Call our new detector!
+    const result = await detectAndValidateAddon(rawUrl);
+
+    submitBtn.innerText = originalText;
+    submitBtn.disabled = false;
+
+    if (result.success) {
+        // Save it to the user's browser
+        let userAddons = JSON.parse(localStorage.getItem('user_addons')) || [];
+
+        // Prevent duplicates by checking the add-on ID
+        if (!userAddons.some(a => a.id === result.manifest.id)) {
+            userAddons.push({
+                id: result.manifest.id,
+                name: result.manifest.name,
+                url: result.url,
+                version: result.manifest.version
+            });
+            localStorage.setItem('user_addons', JSON.stringify(userAddons));
+
+            alert(`Success! ${result.manifest.name} was added.`); // Swap for your toast later
+            inputField.value = '';
+            window.toggleAddonInput();
+        } else {
+            alert("You already have this add-on installed.");
+        }
+    } else {
+        alert(`Error: ${result.error}`);
+    }
+};
+window.toggleAddonInput = () => {
+    const container = document.getElementById('addon-input-container');
+    container.classList.toggle('hidden');
+};
 
 document.addEventListener('click', async (event) => {
     const playBtn = event.target.closest('#btn-torrent');

@@ -11,7 +11,6 @@
     <link rel="apple-touch-icon" href="icon-512.png">
 
     <script src="artplayer.js"></script>
-
     <link rel="stylesheet" href="style.css">
 </head>
 
@@ -96,68 +95,68 @@
         </div>
     </div>
 
-    <nav class="sticky top-0 z-40 bg-slate-900/95 backdrop-blur border-b border-slate-800 p-3">
-        <div class="max-w-7xl mx-auto flex items-center justify-between gap-3">
+    <header class="fixed top-0 left-0 w-full z-40 bg-slate-900/95 backdrop-blur border-b border-slate-800 h-[72px]">
 
-            <button onclick="goHome()"
-                class="p-2.5 rounded-xl text-slate-400 hover:text-blue-500 hover:bg-slate-800 transition-colors flex-shrink-0">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div
+            class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md px-16 md:px-4 z-10 flex gap-2">
+            <form onsubmit="event.preventDefault()" class="relative flex-1">
+                <input id="search-input" type="text" placeholder="Search or Paste Link..." oninput="handleSearch()"
+                    class="w-full bg-slate-800 border border-slate-700 text-white pl-10 pr-4 py-2.5 rounded-xl text-sm focus:ring-2 focus:ring-blue-600 outline-none transition-all shadow-inner">
+                <svg class="absolute left-3 top-3 w-5 h-5 text-slate-400 pointer-events-none" fill="none"
+                    stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6">
-                    </path>
+                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                </svg>
+            </form>
+        </div>
+
+        <div class="absolute top-1/2 right-6 -translate-y-1/2 z-20">
+            <button onclick="toggleProfile(event)"
+                class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold border-2 border-slate-800 focus:outline-none hover:bg-blue-500 transition shadow-lg shadow-blue-900/20">
+                <svg class="w-5 h-5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
                 </svg>
             </button>
 
-            <div class="flex-1 flex gap-2 max-w-lg">
-                <form onsubmit="event.preventDefault(); handleSearchSubmit();" class="relative flex-1">
-                    <input id="search-input" type="text" placeholder="Search or Paste Link..." oninput="handleSearch()"
-                        class="w-full bg-slate-800 border border-slate-700 text-white pl-10 pr-4 py-2.5 rounded-xl text-sm focus:ring-2 focus:ring-blue-600 outline-none transition-all">
-                    <svg class="absolute left-3 top-3 w-4 h-4 text-slate-400 pointer-events-none" fill="none"
-                        stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                    </svg>
-                </form>
-                <button onclick="handleSearchSubmit()"
-                    class="bg-slate-800 border border-slate-700 p-2.5 rounded-xl text-slate-400 active:bg-slate-700 hover:text-white transition flex-shrink-0">
-                    <svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
-                    </svg>
-                </button>
+            <div id="profile-dropdown"
+                class="hidden absolute right-0 mt-2 w-64 bg-slate-800 rounded-xl shadow-2xl border border-slate-700 z-50 p-4">
+                <h3 class="text-xs font-bold text-slate-500 uppercase mb-3">Account</h3>
             </div>
+        </div>
 
-            <div class="relative flex-shrink-0">
-                <button onclick="toggleProfile(event)"
-                    class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold border-2 border-slate-800 focus:outline-none hover:bg-blue-500 transition shadow-lg shadow-blue-900/20">
-                    <svg class="w-5 h-5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
-                    </svg>
-                </button>
+    </header>
 
-                <div id="profile-dropdown"
-                    class="hidden absolute right-0 mt-2 w-64 bg-slate-800 rounded-xl shadow-2xl border border-slate-700 z-50 p-4">
-                    <h3 class="text-xs font-bold text-slate-500 uppercase mb-3">Settings</h3>
-                    <div class="mb-4">
-                        <div class="flex justify-between items-center mb-1">
-                            <span class="font-bold text-sm">TorBox</span>
-                            <span class="w-2 h-2 bg-green-500 rounded-full"></span>
-                        </div>
-                        <button onclick="logoutTorBox()"
-                            class="w-full text-xs bg-slate-700 hover:bg-red-900/50 text-slate-300 hover:text-red-400 py-2 rounded transition">Disconnect
-                            API</button>
-                    </div>
-                    <div>
-                        <div class="flex justify-between items-center mb-1">
-                            <span class="font-bold text-sm">Trakt</span>
-                            <span id="trakt-status-dot" class="w-2 h-2 bg-red-500 rounded-full"></span>
-                        </div>
-                        <button id="trakt-action-btn" onclick="handleTraktAuth()"
-                            class="w-full text-xs bg-slate-700 hover:bg-blue-600 text-slate-300 hover:text-white py-2 rounded transition">Connect
-                            Trakt</button>
-                    </div>
-                </div>
-            </div>
+    <!--PC-->
+    <nav
+        class="hidden md:flex flex-col fixed top-0 left-0 h-screen w-64 bg-slate-900/95 border-r border-slate-800 z-50">
+        <div class="p-6 border-b border-slate-800">
+            <button onclick="goHome()" class="text-2xl font-extrabold text-white">Theater</button>
+        </div>
+        <div class="flex-1 px-4 mt-4 space-y-2">
+            <button onclick="switchTab('library-page')" data-target="library-page"
+                class="nav-link active w-full text-center px-4 py-3 rounded-xl font-bold transition-all text-slate-400 hover:bg-slate-800 hover:text-white [&.active]:bg-blue-600 [&.active]:text-white [&.active]:hover:bg-blue-600">
+                Library
+            </button>
+
+            <button onclick="switchTab('discover-page')" data-target="discover-page"
+                class="nav-link w-full text-center px-4 py-3 rounded-xl font-bold transition-all text-slate-400 hover:bg-slate-800 hover:text-white [&.active]:bg-blue-600 [&.active]:text-white [&.active]:hover:bg-blue-600">
+                Discover
+            </button>
+            <button onclick="switchTab('settings-page')" data-target="settings-page"
+                class="nav-link w-full text-center px-4 py-3 rounded-xl font-bold transition-all text-slate-400 hover:bg-slate-800 hover:text-white [&.active]:bg-blue-600 [&.active]:text-white [&.active]:hover:bg-blue-600">Settings</button>
+        </div>
+    </nav>
+
+    <!--MOBILE-->
+    <nav class="md:hidden fixed bottom-0 left-0 w-full bg-slate-900/95 backdrop-blur border-t border-slate-800 z-50">
+        <div class="flex justify-around items-center h-16">
+            <button onclick="switchTab('library-page')" data-target="library-page"
+                class="nav-link flex-1 h-full text-blue-500 font-bold text-sm">Library</button>
+            <button onclick="switchTab('discover-page')" data-target="discover-page"
+                class="nav-link flex-1 h-full text-slate-400 font-bold text-sm">Discover</button>
+            <button onclick="switchTab('settings-page')" data-target="settings-page"
+                class="flex-1 h-full text-slate-400 font-bold text-sm">Settings</button>
         </div>
     </nav>
 
@@ -167,18 +166,9 @@
         </div>
     </div>
 
-    <main class="max-w-7xl mx-auto w-full p-4 pt-6">
+    <main class="max-w-7xl mx-auto w-full p-4 pt-24 pb-24 md:pb-6 transition-all">
 
-        <div class="flex p-1 bg-slate-800/80 backdrop-blur rounded-xl mb-8 shadow-inner border border-slate-700/50">
-            <button id="tab-library" onclick="showLibraryTab()"
-                class="flex-1 py-2.5 rounded-lg bg-blue-600 text-white font-bold text-sm shadow transition-all">
-                My Library</button>
-            <button id="tab-discover" onclick="showDiscoverTab()"
-                class="flex-1 py-2.5 rounded-lg text-slate-400 font-bold text-sm hover:text-white hover:bg-slate-700/50 transition-all">Discover
-                Movies</button>
-        </div>
-
-        <div id="dashboard" class="min-h-[50vh]">
+        <div id="library-page" class="page-view min-h-[50vh]">
             <div id="loading" class="text-center text-slate-500 mt-10 hidden">Loading your cloud...</div>
 
             <div id="file-list" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4"></div>
@@ -222,7 +212,7 @@
             </div>
         </div>
 
-        <div id="discover-tab" class="hidden flex flex-col gap-10">
+        <div id="discover-page" class="page-view hidden flex flex-col gap-10">
 
             <div id="global-search-results"
                 class="hidden bg-slate-800/50 p-4 rounded-xl border border-blue-500/30 shadow-lg shadow-blue-900/10">
@@ -238,44 +228,206 @@
             </div>
 
             <div>
-                <h2 class="text-xl font-bold text-white mb-4 pl-1">Trending This Week</h2>
-                <div id="trending-row" class="draggable-row flex overflow-x-auto gap-4 pb-4 scrollbar-hide"></div>
+                <h2 class="text-xl font-bold text-white mb-4 pl-1">Trending Movies</h2>
+                <div id="trending-movies-row"
+                    class="draggable-row flex overflow-x-auto gap-4 py-4 -mt-1 scrollbar-hide items-center"></div>
             </div>
 
             <div>
-                <h2 class="text-xl font-bold text-white mb-4 pl-1">In Theaters / New</h2>
-                <div id="new-row" class="draggable-row flex overflow-x-auto gap-4 pb-4 scrollbar-hide"></div>
+                <h2 class="text-xl font-bold text-white mb-4 pl-1">Trending Shows</h2>
+                <div id="trending-shows-row"
+                    class="draggable-row flex overflow-x-auto gap-4 py-4 -mt-1 scrollbar-hide items-center"></div>
             </div>
 
             <div>
                 <h2 class="text-xl font-bold text-white mb-4 pl-1">Action Packed</h2>
-                <div id="action-row" class="draggable-row flex overflow-x-auto gap-4 pb-4 scrollbar-hide"></div>
+                <div id="action-row"
+                    class="draggable-row flex overflow-x-auto gap-4 py-4 -mt-1 scrollbar-hide items-center"></div>
             </div>
 
             <div>
                 <h2 class="text-xl font-bold text-white mb-4 pl-1">Comedies</h2>
-                <div id="comedy-row" class="draggable-row flex overflow-x-auto gap-4 pb-4 scrollbar-hide"></div>
+                <div id="comedy-row"
+                    class="draggable-row flex overflow-x-auto gap-4 py-4 -mt-1 scrollbar-hide items-center"></div>
             </div>
 
             <div>
                 <h2 class="text-xl font-bold text-white mb-4 pl-1">Edge of Your Seat (Thrillers)</h2>
-                <div id="thriller-row" class="draggable-row flex overflow-x-auto gap-4 pb-4 scrollbar-hide"></div>
+                <div id="thriller"
+                    class="draggable-row flex overflow-x-auto gap-4 py-4 -mt-1 scrollbar-hide items-center"></div>
             </div>
 
             <div>
                 <h2 class="text-xl font-bold text-white mb-4 pl-1">Anime Features</h2>
-                <div id="anime-row" class="draggable-row flex overflow-x-auto gap-4 pb-4 scrollbar-hide"></div>
+                <div id="anime-row"
+                    class="draggable-row flex overflow-x-auto gap-4 py-4 -mt-1 scrollbar-hide items-center"></div>
             </div>
 
             <div>
                 <h2 class="text-xl font-bold text-white mb-4 pl-1">All-Time Greats</h2>
-                <div id="top-row" class="draggable-row flex overflow-x-auto gap-4 pb-4 scrollbar-hide"></div>
+                <div id="top-row"
+                    class="draggable-row flex overflow-x-auto gap-4 py-4 -mt-1 scrollbar-hide items-center"></div>
             </div>
 
             <div>
                 <h2 class="text-xl font-bold text-white mb-4 pl-1">Devs Picks</h2>
-                <div id="my-picks-row" class="draggable-row flex overflow-x-auto gap-4 pb-4 scrollbar-hide"></div>
+                <div id="my-picks-row"
+                    class="draggable-row flex overflow-x-auto gap-4 py-4 -mt-1 scrollbar-hide items-center"></div>
             </div>
+        </div>
+
+        <div id="settings-page" class="page-view hidden max-w-4xl mx-auto w-full flex flex-col gap-10">
+
+            <div>
+                <h1 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight">Settings</h1>
+                <p class="text-slate-400 mt-2">Manage your integrations, accounts, and extensions.</p>
+            </div>
+
+            <section>
+                <h2 class="text-xl font-bold text-white mb-4 pl-1 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                    </svg>
+                    Theater Account
+                </h2>
+
+                <div
+                    class="bg-slate-800/40 backdrop-blur border border-slate-700/50 p-6 rounded-2xl shadow-lg flex flex-col md:flex-row gap-8">
+
+                    <form id="account-form" onsubmit="updateTheaterAccount(event)" class="flex-1 space-y-4" novalidate>
+
+                        <div>
+                            <label
+                                class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 pl-1">Email
+                                Address</label>
+                            <input id="settings-email" type="email" placeholder="your@email.com" autocomplete="email"
+                                required
+                                class="w-full bg-slate-900 border border-slate-700 p-3.5 rounded-xl text-sm text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600">
+
+                            <p id="email-error" class="hidden text-red-500 text-xs mt-1.5 pl-1 font-medium"></p>
+                        </div>
+
+                        <div>
+                            <label
+                                class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 pl-1">Change
+                                Password</label>
+                            <input id="settings-password" type="password" placeholder="••••••••"
+                                autocomplete="new-password" required minlength="7"
+                                class="w-full bg-slate-900 border border-slate-700 p-3.5 rounded-xl text-sm text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600">
+
+                            <p id="password-error" class="hidden text-red-500 text-xs mt-1.5 pl-1 font-medium"></p>
+                        </div>
+
+                        <button type="submit"
+                            class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-xl transition-all font-bold text-sm shadow-[0_0_15px_rgba(37,99,235,0.2)]">
+                            Update Profile
+                        </button>
+
+                    </form>
+
+                    <div
+                        class="md:w-72 flex flex-col justify-center border-t md:border-t-0 md:border-l border-slate-700/50 pt-6 md:pt-0 md:pl-8">
+                        <div class="mb-4">
+                            <h3 class="font-bold text-white text-lg">Sign Out</h3>
+                            <p class="text-sm text-slate-400 mt-1">Disconnect this device and clear local data.</p>
+                        </div>
+
+                        <button
+                            class="w-full bg-red-500/10 hover:bg-red-500/20 text-red-500 py-3 rounded-xl transition-all font-bold text-sm border border-red-500/20 hover:border-red-500/40">
+                            Log Out of Theater
+                        </button>
+                    </div>
+
+                </div>
+            </section>
+
+            <section>
+                <h2 class="text-xl font-bold text-white mb-4 pl-1 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1">
+                        </path>
+                    </svg>
+                    Integrations
+                </h2>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                    <div
+                        class="bg-slate-800/40 backdrop-blur border border-slate-700/50 p-6 rounded-2xl flex flex-col justify-between gap-6 shadow-lg">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h3 class="font-bold text-white text-lg">TorBox API</h3>
+                                <p class="text-sm text-slate-400 mt-1">Your core cloud provider</p>
+                            </div>
+                            <span
+                                class="flex items-center gap-1.5 bg-green-500/10 text-green-500 px-2.5 py-1 rounded-md text-xs font-bold border border-green-500/20">
+                                <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> Connected
+                            </span>
+                        </div>
+                        <button onclick="logoutTorBox()"
+                            class="w-full bg-slate-800 hover:bg-red-500/20 text-slate-300 hover:text-red-400 py-3 rounded-xl transition-all font-bold text-sm border border-slate-700 hover:border-red-500/30">
+                            Disconnect TorBox
+                        </button>
+                    </div>
+
+                    <div
+                        class="bg-slate-800/40 backdrop-blur border border-slate-700/50 p-6 rounded-2xl flex flex-col justify-between gap-6 shadow-lg">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h3 class="font-bold text-white text-lg">Trakt.tv</h3>
+                                <p class="text-sm text-slate-400 mt-1">Sync your watch history</p>
+                            </div>
+                            <span
+                                class="flex items-center gap-1.5 bg-slate-900/50 text-slate-300 px-2.5 py-1 rounded-md text-xs font-bold border border-slate-700">
+                                <span id="trakt-status-dot" class="w-2 h-2 bg-red-500 rounded-full"></span> Status
+                            </span>
+                        </div>
+                        <button id="trakt-action-btn" onclick="handleTraktAuth()"
+                            class="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl transition-all font-bold text-sm shadow-[0_0_15px_rgba(37,99,235,0.2)]">
+                            Connect Trakt
+                        </button>
+                    </div>
+
+                </div>
+            </section>
+
+            <section>
+                <h2 class="text-xl font-bold text-white mb-4 pl-1 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4">
+                        </path>
+                    </svg>
+                    Scrapers & Add-ons
+                </h2>
+
+                <div class="bg-slate-800/40 backdrop-blur border border-slate-700/50 p-6 rounded-2xl shadow-lg">
+
+                    <p class="text-sm text-slate-400 mb-6">Install community add-ons by pasting their manifest URL
+                        below.</p>
+
+                    <button onclick="toggleAddonInput()"
+                        class="w-full sm:w-auto text-sm bg-slate-700 hover:bg-slate-600 text-white px-6 py-3 rounded-xl transition-all font-bold mb-4 border border-slate-600 shadow-sm">
+                        + Add New Scraper
+                    </button>
+
+                    <div id="addon-input-container" class="hidden mt-2">
+                        <div class="flex flex-col sm:flex-row gap-3">
+                            <input id="addon-url-input" type="text" placeholder="https://example.com/manifest.json"
+                                class="flex-1 bg-slate-900 border border-slate-600 p-3.5 rounded-xl text-sm text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600">
+
+                            <button onclick="submitNewAddon()"
+                                class="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3.5 rounded-xl transition-all font-bold text-sm shrink-0 shadow-[0_0_15px_rgba(37,99,235,0.2)]">
+                                Install Add-on
+                            </button>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+
         </div>
 
     </main>
@@ -295,7 +447,7 @@
         <div
             class="bg-slate-900 rounded-t-xl sm:rounded-2xl max-h-[85vh] h-full flex flex-col max-w-5xl mx-auto w-full shadow-2xl border border-slate-700">
             <div class="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-800/50">
-                <h3 id="picker-title" class="font-bold text-xl text-white truncate pr-4">Select File</h3>
+                <h3 id="picker-title" class="font-bold text-xl text-white truncate pr-4"></h3>
                 <button onclick="closePicker()"
                     class="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-full transition flex-shrink-0">✕</button>
             </div>
@@ -308,14 +460,27 @@
     <div id="stream-picker-modal"
         class="hidden fixed inset-0 z-[90] bg-black/90 flex flex-col justify-end sm:justify-center p-4">
         <div
-            class="bg-slate-800 rounded-t-xl sm:rounded-xl max-h-[80vh] flex flex-col max-w-2xl mx-auto w-full border border-slate-700 shadow-2xl">
-            <div class="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800/50">
-                <h3 id="stream-picker-title" class="font-bold text-lg text-white">Select a Stream</h3>
-                <button onclick="closeStreamPicker()" class="p-2 text-slate-400 hover:text-white transition">✕</button>
+            class="bg-slate-800 rounded-t-xl sm:rounded-xl max-h-[80vh] flex flex-col max-w-2xl mx-auto w-full shadow-2xl overflow-hidden">
+
+            <div class="flex flex-col shrink-0 bg-slate-800/50">
+
+                <div class="px-4 pt-4 pb-2 flex justify-between items-center w-full">
+                    <h3 id="stream-picker-title" class="font-bold text-lg text-white leading-none">Enter Title</h3>
+
+                    <button onclick="closeStreamPicker()"
+                        class="p-1 -mr-1 text-slate-400 hover:text-white transition flex items-center justify-center">✕</button>
+                </div>
+
+                <div id="addon-tabs-container"
+                    class="hidden flex overflow-x-auto px-4 pb-4 gap-2 hide-scrollbar w-full mask-fade-edges">
+                </div>
+
             </div>
+
             <div id="stream-picker-list"
-                class="overflow-y-auto p-4 flex-1 flex flex-col gap-3 bg-slate-900/50 hide-scrollbar">
+                class="overflow-y-auto flex-1 flex flex-col p-4 gap-3 bg-slate-900/50 hide-scrollbar">
             </div>
+
         </div>
     </div>
 
@@ -414,14 +579,35 @@
             </div>
         </div>
 
+        <template id="addon-panel-template">
+            <div class="addon-panel flex-col w-full hidden">
+                <div
+                    class="panel-loading flex flex-col items-center justify-center py-12 mt-4 bg-slate-800/20 border border-slate-700/30 rounded-xl">
+                    <svg class="animate-spin h-8 w-8 text-blue-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none"
+                        viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4">
+                        </circle>
+                        <path class="opacity-75" fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                        </path>
+                    </svg>
+                    <span
+                        class="loading-text text-xs font-bold text-slate-400 tracking-widest uppercase animate-pulse">Searching
+                        Sources...</span>
+                </div>
+
+                <div class="panel-content flex flex-col gap-3 w-full hidden"></div>
+            </div>
+        </template>
+
         <template id="tv-controls-template">
             <div class="tv-controls-container flex flex-col w-full">
-                <div class="tmdb-season-wrapper relative w-fit mb-3">
+                <div class="tmdb-season-wrapper relative w-fit max-w-full mb-3">
 
                     <button
-                        class="tmdb-season-trigger bg-slate-800/80 backdrop-blur text-white px-3 py-2 rounded-lg border border-slate-700 outline-none hover:border-blue-500 focus:border-blue-500 shadow shadow-black/20 font-semibold flex justify-between items-center gap-4 text-left group transition-colors">
+                        class="tmdb-season-trigger w-full bg-slate-800/80 backdrop-blur text-white px-3 py-2 rounded-lg border border-slate-700 outline-none hover:border-blue-500 focus:border-blue-500 shadow shadow-black/20 font-semibold flex justify-between items-center gap-4 text-left group transition-colors">
 
-                        <span class="tmdb-season-text text-m whitespace-nowrap">Season 1</span>
+                        <span class="tmdb-season-text text-m break-words">Season 1</span>
 
                         <svg class="tmdb-season-chevron w-6 h-6 text-slate-400 group-hover:text-white flex-shrink-0 transition-transform duration-200"
                             fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -536,17 +722,7 @@
         </div>
     </div>
 
-    <script type="module" src="layout.js"></script>
-    <script type="module" src="script.js"></script>
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js')
-                    .then((reg) => console.log('Service Worker Registered!', reg))
-                    .catch((err) => console.error('Service Worker Failed', err));
-            });
-        }
-    </script>
+    <script type="module" src="/main.js"></script>
 </body>
 
 </html>

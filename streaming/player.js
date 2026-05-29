@@ -1,5 +1,5 @@
-import { MKVPlayer } from './engine/mkv_lib.js';
-import { smartFetch, appState, showToast } from './script.js';
+import { MKVPlayer } from '../engine/mkv_lib.js';
+import { smartFetch, appState, showToast } from '../services/config.js';
 
 export let art = null;
 export let currentStreamUrl = "";
@@ -46,17 +46,17 @@ export function stopPlayback() {
 export async function getTorboxLink(tid, fid) {
     const key = localStorage.getItem('tb_api_key');
     const targetUrl = `https://api.torbox.app/v1/api/torrents/requestdl?token=${key}&torrent_id=${tid}&file_id=${fid}&zip=false`;
-    
+
     try {
         const res = await smartFetch(targetUrl);
         const data = await res.json();
-        
+
         if (!data.success) {
             throw new Error(data.detail || "Unknown API Error");
         }
-        
+
         return data.data; // Returns just the raw CDN URL string
-        
+
     } catch (e) {
         console.error("API Fetch Error:", e);
         showToast("Link Error: " + e.message, 'error');
@@ -69,9 +69,6 @@ export async function getTorboxLink(tid, fid) {
 export async function requestLink(tid, fid, torrentName, fileName) {
     stopPlayback();
 
-    // 🛑 THE NETWORK BREAKER: 
-    // Give the browser 150ms to physically drop the heavy MKV download streams 
-    // before we hammer the TorBox API for a new link. Prevents timeouts!
     await new Promise(r => setTimeout(r, 150));
 
     abortPlayback = false;
@@ -81,7 +78,7 @@ export async function requestLink(tid, fid, torrentName, fileName) {
 
     // Call our detached fetcher
     const streamUrl = await getTorboxLink(tid, fid);
-    
+
     if (list) list.style.opacity = '1';
 
     // If the fetch failed, or the user clicked another movie while we were waiting, abort.
@@ -138,17 +135,17 @@ export function startPlayer(url, name) {
                 tooltip: '1-Click Download',
                 click: function () {
                     art.notice.show = "Opening Downloader...";
-                    
+
                     // The "Ugly" 1-Click Escape Hatch
                     const a = document.createElement('a');
                     a.href = url;
-                    
+
                     // CRITICAL: We FORCE a new tab. In an iOS PWA, this forces the "mini-browser" overlay to open.
                     a.target = '_blank';
-                    
+
                     // We request a download. The TorBox API headers will do the rest of the heavy lifting.
                     a.download = name || 'movie.mkv';
-                    
+
                     document.body.appendChild(a);
                     a.click();
                     document.body.removeChild(a);
