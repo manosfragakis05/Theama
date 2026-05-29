@@ -1,4 +1,4 @@
-import { parse as pttParse } from '../ptt.js';
+import { parse as pttParse } from './ptt.js';
 
 export function parseTorrentio(fullTitle) {
 

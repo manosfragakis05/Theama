@@ -11,12 +11,6 @@ export default defineConfig({
                 // and put it into your offline cache automatically!
                 globPatterns: ['**/*.{js,css,html,ico,png,svg}']
             },
-            resolve: {
-                // Vite will stop trying to process ptt.js as a source-mapped file
-                alias: {
-                    'ptt.js': '/ptt.js'
-                }
-            },
             manifest: {
                 "name": "TorBox Theater",
                 "short_name": "Theater",
@@ -28,7 +22,7 @@ export default defineConfig({
                 "orientation": "any",
                 "icons": [
                     {
-                        "src": "PWA Icon.png",
+                        "src": "pwa-icon.png",
                         "sizes": "512x512",
                         "type": "image/png",
                         "purpose": "any maskable"

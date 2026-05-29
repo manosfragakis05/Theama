@@ -11,6 +11,8 @@
     <link rel="apple-touch-icon" href="icon-512.png">
 
     <script src="artplayer.js"></script>
+
+    <link rel="icon" type="image/png" href="/pwa-icon.png" />
     <link rel="stylesheet" href="style.css">
 </head>
 
@@ -40,11 +42,11 @@
                 <form id="app-auth-form" onsubmit="event.preventDefault(); /* Handle Supabase Auth */">
                     <div class="space-y-4 mb-6">
                         <div>
-                            <input id="app-email" type="email" placeholder="Email address" required
+                            <input id="app-email" type="email" autocomplete="username" placeholder="Email address" required
                                 class="w-full bg-slate-900/50 border border-slate-700 p-4 rounded-xl text-base text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-500">
                         </div>
                         <div>
-                            <input id="app-password" type="password" placeholder="Password" required
+                            <input id="app-password" type="password" autocomplete="current-password" placeholder="Password" required
                                 class="w-full bg-slate-900/50 border border-slate-700 p-4 rounded-xl text-base text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-500">
                         </div>
                     </div>
