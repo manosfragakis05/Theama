@@ -2,18 +2,15 @@ import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
-    base: '/TorBox-Theater/',
     plugins: [
         VitePWA({
             registerType: 'autoUpdate',
             workbox: {
-                // This tells Vite to automatically find every js, css, html, and image file 
-                // and put it into your offline cache automatically!
                 globPatterns: ['**/*.{js,css,html,ico,png,svg}']
             },
             manifest: {
-                "name": "TorBox Theater",
-                "short_name": "Theater",
+                "name": "Theama",
+                "short_name": "Theama",
                 "description": "Your cloud media, unblocked.",
                 "start_url": "./index.html",
                 "display": "standalone",

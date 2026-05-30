@@ -7,7 +7,7 @@
 
 // 1. Import from our newly created modules
 import { authenticateTorboxUser, checkAuth, logoutTorBox, toggleProfile } from './services/torbox.js';
-import { updateTheaterAccount } from './services/db.js';
+import { signUpNewUser, logInUser } from './services/db.js';
 import { goHome, switchTab, handleSearch, openExternalPlayer } from './ui.js';
 import { deleteTorrent } from './pages/library.js';
 import { closePicker } from './streaming/picker.js';
@@ -26,7 +26,8 @@ import {
 // This maps our modular, protected code back to the global window
 // so that your `<button onclick="functionName()">` tags still work perfectly.
 window.authenticateTorboxUser = authenticateTorboxUser;
-window.updateTheaterAccount = updateTheaterAccount;
+window.signUpNewUser = signUpNewUser;
+window.logInUser = logInUser;
 window.playDirect = playDirect;
 window.goHome = goHome;
 window.switchTab = switchTab;

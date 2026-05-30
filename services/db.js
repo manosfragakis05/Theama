@@ -1,109 +1,85 @@
-// 1. Initialize the connection
-const supabaseUrl = 'YOUR_PROJECT_URL'
-const supabaseKey = 'YOUR_ANON_KEY'
-//const supabase = createClient(supabaseUrl, supabaseKey)
+import { createClient } from '@supabase/supabase-js';
+import { SUPABASEURL, SUPABASEKEY } from './config.js';
 
-// 2. How to Sign Up a New User
-async function signUpNewUser(email, password) {
-  const { data, error } = await supabase.auth.signUp({
-    email: email,
-    password: password,
-  })
-  
-  if (error) console.log("Error signing up:", error.message)
-  else console.log("Success! User created:", data.user)
-}
+const supabase = createClient(SUPABASEURL, SUPABASEKEY);
 
-// 3. How to Log In an Existing User
-async function logInUser(email, password) {
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: email,
-    password: password,
-  })
 
-  if (error) console.log("Error logging in:", error.message)
-  else console.log("Success! User logged in:", data.user)
-}
-
-// Auth
-export async function updateTheaterAccount(event) {
+// UI HELPER
+async function handleAuthForm(event, loadingText, supabaseCallback) {
     event.preventDefault();
 
-    // 1. Get Inputs and Error text elements
-    const emailInput = document.getElementById('settings-email');
-    const passwordInput = document.getElementById('settings-password');
-    const emailError = document.getElementById('email-error');
-    const passwordError = document.getElementById('password-error');
+    const form = event.target;
+    const emailInput = form.querySelector('input[type="email"]');
+    const passwordInput = form.querySelector('input[type="password"]');
+    const submitBtn = form.querySelector('button[type="submit"]');
 
     const email = emailInput.value.trim();
     const password = passwordInput.value;
 
-    // 2. Reset Errors visually
-    emailError.classList.add('hidden');
-    passwordError.classList.add('hidden');
-    emailInput.classList.remove('border-red-500', 'focus:ring-red-500');
-    passwordInput.classList.remove('border-red-500', 'focus:ring-red-500');
-
-    let isValid = true;
-
-    // 3. Email Validation
-    const strictEmailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!strictEmailRegex.test(email)) {
-        emailError.textContent = "Please enter a valid email address.";
-        emailError.classList.remove('hidden');
-        emailInput.classList.add('border-red-500', 'focus:ring-red-500'); 
-        isValid = false;
-    }
-
-    // 4. Password Validation
-    if (password.length <= 6) {
-        passwordError.textContent = "Password must be more than 6 characters.";
-        passwordError.classList.remove('hidden');
-        passwordInput.classList.add('border-red-500', 'focus:ring-red-500'); 
-        isValid = false;
-    }
-
-    // Stop here if there were any errors
-    if (!isValid) return;
-
-    // 5. Supabase Update Logic
-    const submitBtn = event.target.querySelector('button[type="submit"]');
+    // Save the original button state so we can restore it later
     const originalText = submitBtn.textContent;
-    
-    // Show a loading state so the user knows something is happening
-    submitBtn.textContent = "Updating...";
-    submitBtn.disabled = true; // Prevent them from clicking twice
+    // Optional: save original classes to swap colors (assuming Tailwind)
+    const originalClasses = submitBtn.className;
 
-    // TRIGGER SUPABASE HERE
-    const { data, error } = await supabase.auth.updateUser({
-        email: email,
-        password: password
-    });
+    // Update UI to loading state
+    submitBtn.textContent = loadingText;
+    submitBtn.disabled = true;
 
-    // Re-enable the button once Supabase replies
-    submitBtn.disabled = false;
+    // Execute the actual Supabase logic
+    const { data, error } = await supabaseCallback(email, password);
 
-    // 6. Handle Errors from Supabase (e.g., weak password, or network issue)
     if (error) {
-        console.error("Supabase Error:", error.message);
-        // You can reuse your password error text to show the Supabase error!
-        passwordError.textContent = error.message;
-        passwordError.classList.remove('hidden');
+        // If it fails, restore the button immediately so they can try again
         submitBtn.textContent = originalText;
-        return; 
+        submitBtn.disabled = false;
+    } else {
+        // 🎉 If it succeeds, show the Success state!
+        submitBtn.textContent = "Success!";
+
+        // Optional Tailwind flair: Make the button green
+        submitBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+        submitBtn.classList.add('bg-green-600', 'hover:bg-green-700');
+
+        // Wait 2 seconds, then reset the form and the button
+        setTimeout(() => {
+            submitBtn.textContent = originalText;
+            submitBtn.className = originalClasses; // Restore original colors
+            submitBtn.disabled = false;
+            form.reset(); // Clears out the email and password fields
+        }, 2000);
     }
 
-    // 7. Success State
-    console.log("✅ Success! Account updated in database.", data);
-    
-    submitBtn.textContent = "Saved!";
-    submitBtn.classList.replace('bg-blue-600', 'bg-green-600');
-    
-    setTimeout(() => {
-        submitBtn.textContent = originalText;
-        submitBtn.classList.replace('bg-green-600', 'bg-blue-600');
-        
-        // Optional: clear the password field after a successful save
-        passwordInput.value = ''; 
-    }, 2000);
+    // Return the result back to app.js to show the error message if needed
+    return { data, error };
+}
+
+// 2. SIGN UP FUNCTION
+export async function signUpNewUser(event) {
+    // We pass the event, the loading text, and the specific Supabase command
+    return await handleAuthForm(event, "Creating Account...", async (email, password) => {
+        return await supabase.auth.signUp({
+            email: email,
+            password: password,
+        });
+    });
+}
+
+// 3. LOG IN FUNCTION
+export async function logInUser(event) {
+    return await handleAuthForm(event, "Logging In...", async (email, password) => {
+        return await supabase.auth.signInWithPassword({
+            email: email,
+            password: password,
+        });
+    });
+}
+
+// 4. UPDATE ACCOUNT FUNCTION
+export async function updateTheamaAccount(event) {
+    return await handleAuthForm(event, "Saving...", async (email, password) => {
+        return await supabase.auth.updateUser({
+            email: email,
+            password: password,
+        });
+    });
 }

@@ -1,6 +1,6 @@
 {
-  "name": "TorBox Theater",
-  "short_name": "Theater",
+  "name": "Theama",
+  "short_name": "Theama",
   "description": "Your cloud media, unblocked.",
   "start_url": "./index.html",
   "display": "standalone",

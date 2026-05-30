@@ -6,12 +6,18 @@
  */
 
 //#region Constants
-export const TMDB_KEY = 'ee7a32cee36ed0cd1f028f10c32fa0cf';
+if (!import.meta.env.VITE_TMDB_KEY) {
+    console.warn("Missing TMDB Key in .env file!");
+}
 
-export const TRAKT_CLIENT_ID = '027c95542a22d861d8a4e82b7535560b457639527f09b5526315682c611488c9';
+export const TMDB_KEY = import.meta.env.VITE_TMDB_KEY;
 
-// PASTE YOUR CLOUDFLARE URL BELOW (keep the /?url= at the end!)
-export const MY_PROXY = "https://bt-kd-8478.manosfragakis05.workers.dev/?url=";
+export const TRAKT_CLIENT_ID = import.meta.env.VITE_TRAKT_CLIENT_ID;
+
+export const MY_PROXY = import.meta.env.VITE_MY_PROXY;
+
+export const SUPABASEURL = import.meta.env.VITE_SUPABASE_URL;
+export const SUPABASEKEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 //#endregion
 
 //#region Global State
