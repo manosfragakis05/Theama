@@ -7,7 +7,7 @@
 
 // 1. Import from our newly created modules
 import { authenticateTorboxUser, checkAuth, logoutTorBox, toggleProfile } from './services/torbox.js';
-import { signUpNewUser, logInUser } from './services/db.js';
+import { initializeSupabase, changeAuthState } from './services/db.js';
 import { goHome, switchTab, handleSearch, openExternalPlayer } from './ui.js';
 import { deleteTorrent } from './pages/library.js';
 import { closePicker } from './streaming/picker.js';
@@ -26,8 +26,7 @@ import {
 // This maps our modular, protected code back to the global window
 // so that your `<button onclick="functionName()">` tags still work perfectly.
 window.authenticateTorboxUser = authenticateTorboxUser;
-window.signUpNewUser = signUpNewUser;
-window.logInUser = logInUser;
+window.changeAuthState = changeAuthState;
 window.playDirect = playDirect;
 window.goHome = goHome;
 window.switchTab = switchTab;
@@ -45,21 +44,56 @@ window.processLocalFile = processLocalFile;
 window.deleteLocalGhost = deleteLocalGhost;
 window.renderLocalLibrary = renderLocalLibrary;
 
-
-// 3. Application Initialization 
-// These run the moment the user opens the web page.
-
-// Check if the user is logged into TorBox (shows Auth screen if not)
-checkAuth();
-
-// Check the device's local storage for downloaded files
-scanLocalOPFSDirectory();
-
-// Render the local "Ghost" library if they switch to that tab
-renderLocalLibrary();
-
-// Attach the file input listener for the Local File picker
 const fileInput = document.getElementById('local-file-input');
 if (fileInput) {
     fileInput.addEventListener('change', processLocalFile);
 }
+
+// --- PWA BOOT SEQUENCE & FAILSAFE ---
+window.addEventListener('load', () => {
+    const splash = document.getElementById('pwa-splash');
+
+    // Helper function to gracefully kill the splash screen
+    const dropShield = () => {
+        if (splash && splash.style.opacity !== '0') {
+            splash.style.opacity = '0';
+            setTimeout(() => splash.remove(), 500);
+        }
+    };
+
+    // 1. THE FAILSAFE (Your 4-second rule)
+    // If the network hangs, kill the splash screen anyway so the user isn't trapped.
+    const failsafeTimer = setTimeout(() => {
+        console.warn("Network is slow. Dropping splash screen via failsafe.");
+        dropShield();
+    }, 4000);
+
+    // 2. THE ACTUAL BOOT LOGIC
+    async function bootApp() {
+        try {
+            // Run your local setup 
+            await checkAuth(); 
+            
+            await initializeSupabase();
+            
+            await scanLocalOPFSDirectory();
+            renderLocalLibrary();
+
+            // Add any TorBox API network checks here if you have them!
+
+            // If we successfully get to this line before 4 seconds, 
+            // cancel the failsafe timer and drop the shield immediately!
+            clearTimeout(failsafeTimer);
+            dropShield();
+
+        } catch (error) {
+            console.error("Boot error:", error);
+            // Even if the app crashes, drop the shield so the user can see what broke
+            clearTimeout(failsafeTimer);
+            dropShield();
+        }
+    }
+
+    // Start the boot process
+    bootApp();
+});

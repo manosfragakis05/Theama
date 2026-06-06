@@ -52,15 +52,13 @@ export async function authenticateTorboxUser() {
     }
 }
 
-export function checkAuth() {
+export async function checkAuth() {
     const key = getTbKey();
-    const authScreen = document.getElementById('auth-screen');
 
     if (!key) {
-        authScreen.classList.remove('hidden');
+        // Log out
     } else {
-        authScreen.classList.add('hidden');
-        loadLibrary(key);
+        await loadLibrary(key);
     }
 }
 

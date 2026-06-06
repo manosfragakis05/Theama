@@ -41,40 +41,43 @@ export async function smartFetch(targetUrl, options = {}) {
 
 // GLOBAL NOTIFICATION UI
 export function showToast(message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+
     const toast = document.createElement('div');
 
-    // Set colors and icons based on the type
-    let bgColors = "bg-blue-600 border-blue-500";
+    // 1. Premium frosted-glass colored backgrounds tailored for dark mode
+    let bgColors = "bg-blue-600/60 border-blue-400/30 shadow-blue-900/50";
     let icon = 'ℹ️';
 
     if (type === 'success') {
-        bgColors = "bg-emerald-700 border-emerald-500";
+        bgColors = "bg-emerald-600/60 border-emerald-400/30 shadow-emerald-900/50";
         icon = '✅';
     } else if (type === 'error') {
-        bgColors = "bg-red-700 border-red-500";
+        bgColors = "bg-red-600/60 border-red-400/30 shadow-red-900/50";
         icon = '❌';
     }
 
-    // Modern, sliding, premium UI
-    toast.className = `fixed top-5 right-5 ${bgColors} text-white border p-4 rounded-xl shadow-2xl z-[9999] transition-all duration-300 transform translate-y-[-20px] opacity-0 flex items-center gap-3 backdrop-blur-md`;
-
+    // 2. Build the UI
+    toast.className = `${bgColors} text-white border p-4 rounded-xl shadow-lg transition-all duration-300 transform translate-y-[-20px] opacity-0 flex items-center gap-3 backdrop-blur-md pointer-events-auto w-max max-w-sm`;
+    
     toast.innerHTML = `
         <span class="text-xl drop-shadow-md">${icon}</span> 
         <span class="text-sm font-bold tracking-wide leading-tight">${message}</span>
     `;
 
-    document.body.appendChild(toast);
+    container.appendChild(toast);
 
-    // 1. Animate In
-    requestAnimationFrame(() => {
+    // 3. Animate In
+    setTimeout(() => {
         toast.classList.remove('translate-y-[-20px]', 'opacity-0');
         toast.classList.add('translate-y-0', 'opacity-100');
-    });
+    }, 10);
 
-    // 2. Wait 3 seconds, Animate Out, then Delete
+    // 4. Animate Out
     setTimeout(() => {
         toast.classList.remove('translate-y-0', 'opacity-100');
-        toast.classList.add('translate-y-[-20px]', 'opacity-0');
+        toast.classList.add('opacity-0', 'scale-95');
         setTimeout(() => toast.remove(), 300);
     }, 3000);
 }

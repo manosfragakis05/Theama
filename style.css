@@ -3,6 +3,16 @@
 @tailwind utilities;
 
 /* --- YOUR CUSTOM CSS --- */
+@keyframes snappy-spin {
+    0% { transform: rotate(0deg); }
+    50% { transform: rotate(360deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.animate-fun-spin {
+    /* 2s total duration, ease-in-out makes it start and stop smoothly */
+    animation: snappy-spin 2s ease-in-out infinite;
+}
 
 .artplayer-app {
     width: 100%;
