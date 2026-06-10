@@ -6,7 +6,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Theama</title>
 
-    <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#0f172a">
     <link rel="apple-touch-icon" href="pwa-icon.png">
 
@@ -50,7 +49,6 @@
 
             <div id="profile-dropdown"
                 class="hidden absolute right-0 mt-2 w-64 bg-slate-800 rounded-xl shadow-2xl border border-slate-700 z-50 p-4">
-                <h3 class="text-xs font-bold text-slate-500 uppercase mb-3">Account</h3>
             </div>
         </div>
     </header>
@@ -71,8 +69,16 @@
                 class="nav-link w-full text-center px-4 py-3 rounded-xl font-bold transition-all text-slate-400 hover:bg-slate-800 hover:text-white [&.active]:bg-blue-600 [&.active]:text-white [&.active]:hover:bg-blue-600">
                 Discover
             </button>
+
+            <button onclick="switchTab('profile-page')" data-target="profile-page"
+                class="nav-link w-full text-center px-4 py-3 rounded-xl font-bold transition-all text-slate-400 hover:bg-slate-800 hover:text-white [&.active]:bg-blue-600 [&.active]:text-white [&.active]:hover:bg-blue-600">
+                Profile
+            </button>
+
             <button onclick="switchTab('settings-page')" data-target="settings-page"
-                class="nav-link w-full text-center px-4 py-3 rounded-xl font-bold transition-all text-slate-400 hover:bg-slate-800 hover:text-white [&.active]:bg-blue-600 [&.active]:text-white [&.active]:hover:bg-blue-600">Settings</button>
+                class="nav-link w-full text-center px-4 py-3 rounded-xl font-bold transition-all text-slate-400 hover:bg-slate-800 hover:text-white [&.active]:bg-blue-600 [&.active]:text-white [&.active]:hover:bg-blue-600">
+                Settings
+            </button>
         </div>
     </nav>
 
@@ -204,6 +210,88 @@
                 <div id="my-picks-row"
                     class="draggable-row flex overflow-x-auto gap-4 py-4 -mt-1 scrollbar-hide items-center"></div>
             </div>
+        </div>
+
+        <div id="profile-page" class="page-view hidden flex flex-col gap-10 max-w-6xl mx-auto w-full pt-4">
+
+            <div
+                class="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-800/40 backdrop-blur-md p-6 md:p-8 rounded-3xl border border-slate-700/50 shadow-xl gap-6">
+                <div>
+                    <h1 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight">
+                        Welcome, <span id="profile-username-display"
+                            class="text-blue-500 drop-shadow-[0_0_5px_rgba(59,130,246,0.3)]">Guest</span>!
+                    </h1>
+                    <p class="text-slate-400 mt-2 text-sm sm:text-base">Your personal space for watchlists and stats.
+                    </p>
+                </div>
+
+                <button onclick="switchTab('settings-page')"
+                    class="p-4 bg-slate-900/50 hover:bg-blue-600 text-slate-300 hover:text-white rounded-2xl transition-all border border-slate-700/50 hover:border-blue-500 shadow-sm group shrink-0 self-start sm:self-auto">
+                    <svg class="w-6 h-6 group-hover:rotate-90 transition-transform duration-300" fill="none"
+                        stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
+                        </path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <section class="flex flex-col gap-6">
+
+                <div class="flex items-center justify-between px-2">
+                    <h2 class="text-2xl font-bold text-white flex items-center gap-3">
+                        <div
+                            class="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center text-emerald-500 border border-emerald-500/20 shadow-inner">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path>
+                            </svg>
+                        </div>
+                        My Watchlists
+                    </h2>
+
+                    <button onclick="document.getElementById('create-list-modal').classList.remove('hidden')"
+                        class="bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold px-5 py-2.5 rounded-xl border border-blue-500 transition-all shadow-[0_0_15px_rgba(37,99,235,0.2)] hover:shadow-[0_0_20px_rgba(37,99,235,0.4)] flex items-center gap-2 group">
+                        <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4">
+                            </path>
+                        </svg>
+                        New List
+                    </button>
+                </div>
+
+                <div
+                    class="bg-slate-800/30 backdrop-blur border border-slate-700/50 rounded-3xl p-6 sm:p-8 flex flex-col gap-10 shadow-lg">
+
+                    <div id="profile-watchlists-container" class="flex flex-col gap-10">
+                    </div>
+
+                    <div id="default-watchlists-container" class="w-full">
+                        <h3 class="text-xl font-bold text-slate-100 mb-4 flex items-center gap-3">
+                            <div
+                                class="w-8 h-8 bg-red-500/10 rounded-lg flex items-center justify-center text-red-500 shadow-sm border border-red-500/20">
+                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                    <path
+                                        d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                                </svg>
+                            </div>
+                            Favorites
+                        </h3>
+
+                        <div id="watchlist-track-favorites"
+                            class="draggable-row flex overflow-x-auto gap-4 pb-2 scrollbar-hide items-center min-h-[160px]">
+                            <div id="favorites-empty-state"
+                                class="flex-none w-full text-center py-12 bg-slate-900/50 border border-dashed border-slate-700/50 rounded-2xl">
+                                <p class="text-slate-400 font-medium">No favorites added yet.</p>
+                                <p class="text-slate-500 text-sm mt-1">Start exploring and save your top picks!</p>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
         </div>
 
         <div id="settings-page" class="page-view hidden max-w-4xl mx-auto w-full flex flex-col gap-10">
@@ -373,20 +461,42 @@
 
                     <div
                         class="bg-slate-800/40 backdrop-blur border border-slate-700/50 p-6 rounded-2xl flex flex-col justify-between gap-6 shadow-lg">
+
                         <div class="flex justify-between items-start">
                             <div>
                                 <h3 class="font-bold text-white text-lg">TorBox API</h3>
                                 <p class="text-sm text-slate-400 mt-1">Your core cloud provider</p>
                             </div>
-                            <span
-                                class="flex items-center gap-1.5 bg-green-500/10 text-green-500 px-2.5 py-1 rounded-md text-xs font-bold border border-green-500/20">
+
+                            <span id="tb-status-connected"
+                                class="hidden items-center gap-1.5 bg-green-500/10 text-green-500 px-2.5 py-1 rounded-md text-xs font-bold border border-green-500/20">
                                 <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> Connected
                             </span>
+
+                            <span id="tb-status-disconnected"
+                                class="flex items-center gap-1.5 bg-slate-900/50 text-slate-300 px-2.5 py-1 rounded-md text-xs font-bold border border-slate-700">
+                                <span class="w-2 h-2 bg-red-500 rounded-full"></span> Disconnected
+                            </span>
                         </div>
-                        <button onclick="logoutTorBox()"
-                            class="w-full bg-slate-800 hover:bg-red-500/20 text-slate-300 hover:text-red-400 py-3 rounded-xl transition-all font-bold text-sm border border-slate-700 hover:border-red-500/30">
-                            Disconnect TorBox
-                        </button>
+
+                        <form id="torbox-auth-form" class="flex flex-col gap-3"
+                            onsubmit="event.preventDefault(); authenticateTorboxUser();">
+                            <input id="api-input" type="text" placeholder="Enter TorBox API Key" autocomplete="off"
+                                class="w-full bg-slate-900 border border-slate-700 p-3.5 rounded-xl text-sm text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600">
+
+                            <button id="loggin-btn" type="submit"
+                                class="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl transition-all font-bold text-sm shadow-[0_0_15px_rgba(37,99,235,0.2)]">
+                                Connect TorBox
+                            </button>
+                        </form>
+
+                        <div id="torbox-connected-actions" class="hidden">
+                            <button onclick="logoutTorBox()"
+                                class="w-full bg-slate-800 hover:bg-red-500/20 text-slate-300 hover:text-red-400 py-3 rounded-xl transition-all font-bold text-sm border border-slate-700 hover:border-red-500/30">
+                                Disconnect TorBox
+                            </button>
+                        </div>
+
                     </div>
 
                     <div
@@ -590,6 +700,14 @@
                             </svg>
                             Add to library
                         </button>
+                        <button id="btn-add-watchlist" onclick="openWatchlists()" title="Save to Watchlist"
+                            class="bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white px-5 py-3.5 rounded-xl border border-slate-700/50 shadow-lg backdrop-blur transition-all group flex items-center justify-center">
+                            <svg class="w-6 h-6 group-hover:scale-110 transition-transform duration-200" fill="none"
+                                stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                            </svg>
+                        </button>
                     </div>
 
                 </div>
@@ -666,6 +784,153 @@
             </div>
         </template>
     </div>
+
+    <div id="create-list-modal"
+        class="hidden fixed inset-0 z-[110] bg-black/90 flex flex-col justify-end sm:justify-center p-4 backdrop-blur-sm">
+
+        <div
+            class="bg-slate-800 rounded-t-xl sm:rounded-xl max-h-[80vh] flex flex-col max-w-sm mx-auto w-full border border-slate-700 shadow-2xl overflow-hidden">
+
+            <div class="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800/50">
+                <h3 class="font-bold text-lg text-white">Create New List</h3>
+
+                <button onclick="document.getElementById('create-list-modal').classList.add('hidden')"
+                    class="p-2 -mr-2 text-slate-400 hover:text-white transition rounded-full hover:bg-slate-700/50">
+                    ✕
+                </button>
+            </div>
+
+            <div class="p-5 flex flex-col gap-5 bg-slate-900/50">
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 pl-1">
+                        List Name
+                    </label>
+                    <input id="new-list-input" type="text" placeholder="e.g. Sci-Fi Binge" autocomplete="off"
+                        class="w-full bg-slate-900 border border-slate-700 p-3.5 rounded-xl text-sm text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600">
+                </div>
+
+                <label for="new-list-private"
+                    class="flex items-center gap-3 bg-slate-900 border border-slate-700 p-3.5 rounded-xl cursor-pointer hover:border-slate-600 transition-colors group">
+
+                    <input id="new-list-private" type="checkbox"
+                        class="w-4 h-4 text-blue-600 bg-slate-800 border-slate-600 rounded cursor-pointer">
+
+                    <div class="flex flex-col">
+                        <span class="text-sm font-bold text-slate-200 group-hover:text-white transition-colors">Private
+                            List</span>
+                    </div>
+
+                </label>
+
+                <button onclick="createNewList()"
+                    class="w-full bg-blue-600 hover:bg-blue-500 text-white py-3.5 rounded-xl transition-all font-bold text-sm shadow-[0_0_15px_rgba(37,99,235,0.2)]">
+                    Create List
+                </button>
+
+            </div>
+        </div>
+    </div>
+
+    <div id="watchlist-picker-modal"
+        class="hidden fixed inset-0 z-[100] bg-black/90 flex flex-col justify-end sm:justify-center p-4 backdrop-blur-sm">
+
+        <div
+            class="bg-slate-800 rounded-t-xl sm:rounded-xl max-h-[80vh] flex flex-col max-w-sm mx-auto w-full border border-slate-700 shadow-2xl overflow-hidden">
+
+            <div class="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800/50">
+                <h3 class="font-bold text-lg text-white">Save to Watchlist</h3>
+
+                <button onclick="document.getElementById('watchlist-picker-modal').classList.add('hidden')"
+                    class="p-2 -mr-2 text-slate-400 hover:text-white transition rounded-full hover:bg-slate-700/50">
+                    ✕
+                </button>
+            </div>
+
+            <div id="watchlist-options-container"
+                class="p-4 flex flex-col gap-3 bg-slate-900/50 overflow-y-auto hide-scrollbar">
+
+                <button onclick="addToWatchlist('history')"
+                    class="flex items-center justify-between p-3 rounded-xl bg-slate-800 hover:bg-blue-600/20 border border-slate-700 hover:border-blue-500 transition text-left group">
+
+                    <div class="flex items-center gap-4">
+                        <div
+                            class="w-12 h-12 bg-slate-700 group-hover:bg-blue-600 rounded-lg flex items-center justify-center text-slate-300 group-hover:text-white transition shadow-sm">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                        </div>
+
+                        <div>
+                            <div class="font-bold text-white group-hover:text-blue-400 transition">History</div>
+                            <div class="text-xs text-slate-400">Default List</div>
+                        </div>
+                    </div>
+
+                    <svg class="w-5 h-5 text-slate-500 group-hover:text-blue-400 transition" fill="none"
+                        stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                    </svg>
+
+                </button>
+
+            </div>
+        </div>
+    </div>
+
+    <template id="watchlist-row-template">
+        <div class="watchlist-section mb-2">
+
+            <h3 class="text-lg font-bold text-slate-200 mb-1 pl-1 flex items-center gap-2">
+                <div
+                    class="wl-row-icon w-6 h-6 bg-slate-800 rounded flex items-center justify-center text-slate-400 font-black text-xs uppercase shadow-sm">
+                </div>
+                <span class="wl-row-name">List Name</span>
+                <span
+                    class="wl-row-privacy hidden text-[9px] uppercase tracking-wider bg-slate-800 border border-slate-700 text-slate-400 px-2 py-0.5 rounded-md ml-2 font-bold shadow-sm">
+                    Private
+                </span>
+            </h3>
+
+            <div
+                class="wl-row-track draggable-row flex overflow-x-auto gap-4 py-2 scrollbar-hide items-center min-h-[160px]">
+
+                <div
+                    class="wl-row-empty flex-none w-full text-center py-10 bg-slate-800/30 border border-dashed border-slate-700/50 rounded-2xl">
+                    <p class="text-slate-500 text-sm">Nothing added yet.</p>
+                </div>
+
+            </div>
+        </div>
+    </template>
+
+    <template id="poster-card-template">
+        <div
+            class="poster-card relative flex-none w-32 md:w-40 flex flex-col gap-2 shrink-0 cursor-pointer group select-none">
+
+            <div
+                class="relative w-full aspect-[2/3] rounded-xl overflow-hidden bg-slate-800 border border-slate-700/50 group-hover:border-blue-500 group-hover:shadow-[0_0_15px_rgba(59,130,246,0.3)] transition-all">
+
+                <div class="poster-skeleton absolute inset-0 bg-slate-700 animate-pulse"></div>
+                <img class="poster-img absolute inset-0 w-full h-full object-cover opacity-0 transition-opacity duration-300"
+                    draggable="false" alt="Poster">
+
+                <button
+                    class="remove-btn absolute top-2 right-2 w-7 h-7 bg-black/60 hover:bg-red-600 backdrop-blur rounded-full flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-all z-10"
+                    title="Remove from list">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                        </path>
+                    </svg>
+                </button>
+
+            </div>
+
+            <p class="poster-title text-xs text-slate-300 line-clamp-2 font-medium leading-tight text-center px-1">Title
+            </p>
+        </div>
+    </template>
 
     <div id="external-player-modal"
         class="hidden fixed inset-0 z-[100] bg-black/90 flex flex-col justify-end sm:justify-center p-4 backdrop-blur-sm">

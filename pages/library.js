@@ -14,9 +14,12 @@ import { openPicker } from '../streaming/picker.js';
 
 // --- DATA FETCHING ---
 
-export async function loadLibrary(key) {
+export async function loadLibrary() {
     document.getElementById('loading').classList.remove('hidden');
     document.getElementById('file-list').innerHTML = '';
+
+    const key = getTbKey();
+    if(!key) return;
 
     try {
         const res = await smartFetch('https://api.torbox.app/v1/api/torrents/mylist?bypass_cache=true', {
@@ -38,8 +41,7 @@ export async function loadLibrary(key) {
 }
 
 export function refreshLibrary() {
-    const key = getTbKey();
-    if (key) loadLibrary(key);
+    if (key) loadLibrary();
 }
 
 // --- API ACTIONS ---

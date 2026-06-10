@@ -21,13 +21,12 @@ export const SUPABASEKEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 //#endregion
 
 //#region Global State
-// By keeping all variables inside an object, other modules can safely update them 
-// without triggering read-only ES6 import errors.
 export const appState = {
     currentStreamUrl: "",
     clickCooldown: false,
     allTorrents: [],
-    currentTorrentId: null
+    currentTorrentId: null,
+    currentUser: null
 };
 //#endregion
 

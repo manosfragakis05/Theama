@@ -6,12 +6,14 @@
  */
 
 // 1. Import from our newly created modules
-import { authenticateTorboxUser, checkAuth, logoutTorBox, toggleProfile } from './services/torbox.js';
+import { authenticateTorboxUser, checkAuth, logoutTorBox } from './services/torbox.js';
 import { initializeSupabase, changeAuthState } from './services/db.js';
-import { goHome, switchTab, handleSearch, openExternalPlayer } from './ui.js';
+import { goHome, toggleProfile, switchTab, handleSearch, openExternalPlayer } from './ui.js';
+import { initGlobalDrag } from './api.js';
 import { deleteTorrent } from './pages/library.js';
 import { closePicker } from './streaming/picker.js';
 import { playDirect } from './streaming/player.js';
+import { updateProfilePage, addToWatchlist, createNewList, openWatchlists } from './profile.js';
 import {
     downloadToOPFS,
     triggerLocalFilePicker,
@@ -22,9 +24,7 @@ import {
 } from './services/offline.js';
 
 
-// 2. Global Bindings for HTML Inline Functions
-// This maps our modular, protected code back to the global window
-// so that your `<button onclick="functionName()">` tags still work perfectly.
+// Global Bindings
 window.authenticateTorboxUser = authenticateTorboxUser;
 window.changeAuthState = changeAuthState;
 window.playDirect = playDirect;
@@ -37,6 +37,13 @@ window.closePicker = closePicker;
 window.deleteTorrent = deleteTorrent;
 window.openExternalPlayer = openExternalPlayer;
 window.downloadToOPFS = downloadToOPFS;
+
+window.updateProfilePage = updateProfilePage;
+//window.renderWatchlistRows = renderWatchlistRows;
+window.openWatchlists = openWatchlists;
+window.addToWatchlist = addToWatchlist;
+window.createNewList = createNewList;
+
 
 // Offline & Local File Bindings
 window.triggerLocalFilePicker = triggerLocalFilePicker;
@@ -72,7 +79,9 @@ window.addEventListener('load', () => {
     async function bootApp() {
         try {
             // Run your local setup 
-            await checkAuth(); 
+            await checkAuth();
+
+            initGlobalDrag();
             
             await initializeSupabase();
             

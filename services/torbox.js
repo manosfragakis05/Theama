@@ -15,7 +15,7 @@ export async function authenticateTorboxUser() {
     const button = document.getElementById('loggin-btn');
     const key = input.value.trim();
 
-    if (!key) return showToast("Please enter an API key.", 'error');
+    if (!key) return;
 
     button.innerText = "Verifying...";
     button.disabled = true;
@@ -55,10 +55,25 @@ export async function authenticateTorboxUser() {
 export async function checkAuth() {
     const key = getTbKey();
 
-    if (!key) {
-        // Log out
+    const connectedBadge = document.getElementById('tb-status-connected');
+    const disconnectedBadge = document.getElementById('tb-status-disconnected');
+    const authForm = document.getElementById('torbox-auth-form');
+    const connectedActions = document.getElementById('torbox-connected-actions');
+
+    if (key) {
+        // User is authenticated
+        await loadLibrary();
+        
+        connectedBadge.classList.replace('hidden', 'flex');
+        disconnectedBadge.classList.replace('flex', 'hidden');
+        authForm.classList.add('hidden');
+        connectedActions.classList.remove('hidden');
     } else {
-        await loadLibrary(key);
+        // User is disconnected
+        connectedBadge.classList.replace('flex', 'hidden');
+        disconnectedBadge.classList.replace('hidden', 'flex');
+        authForm.classList.remove('hidden');
+        connectedActions.classList.add('hidden');
     }
 }
 
@@ -67,10 +82,4 @@ export function logoutTorBox() {
         localStorage.removeItem('tb_api_key');
         location.reload();
     }
-}
-
-export function toggleProfile(event) {
-    if (event) event.stopPropagation();
-    const menu = document.getElementById('profile-dropdown');
-    menu.classList.toggle('hidden');
 }

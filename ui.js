@@ -63,6 +63,56 @@ function handlePageSpecificLogic(pageId) {
     }
 }
 
+// Profile Dropdown
+export function toggleProfile(event) {
+    if (event) event.stopPropagation();
+    const menu = document.getElementById('profile-dropdown');
+    menu.classList.toggle('hidden');
+}
+
+function updateProfileDropdown() {
+    const dropdown = document.getElementById('profile-dropdown');
+    if (!dropdown) return;
+
+    // Start with your base header that is always there
+    let htmlContent = `<h3 class="text-xs font-bold text-slate-500 uppercase mb-3">Account</h3>`;
+
+    // Check our Single Source of Truth
+    if (appState.currentUser) {
+        // Logged In State
+        const username = appState.currentUser.user_metadata?.username || 'User';
+        const email = appState.currentUser.email || '';
+
+        htmlContent += `
+            <div class="mb-4">
+                <p class="font-bold text-white text-lg truncate">Welcome ${username}!</p>
+                ${email ? `<p class="text-xs text-slate-400 truncate">${email}</p>` : ''}
+            </div>
+            <hr class="border-slate-700 my-2">
+            <button onclick="logOutUser()" class="w-full text-left px-3 py-2 hover:bg-red-500/20 hover:text-red-400 rounded-lg text-sm text-slate-400 transition-colors mt-1">
+                Log Out
+            </button>
+            <button onclick="switchTab('settings-page')" class="w-full text-left px-3 py-2 hover:bg-slate-700 rounded-lg text-sm text-slate-300 transition-colors">
+                Manage Account
+            </button>
+        `;
+    } else {
+        // Logged Out State
+        htmlContent += `
+            <div class="mb-4">
+                <p class="font-bold text-white text-lg">Guest</p>
+                <p class="text-xs text-slate-400">Not logged in</p>
+            </div>
+            <button onclick="switchTab('settings-page')" class="w-full text-center bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold transition-all shadow-lg">
+                Log In / Sign Up
+            </button>
+        `;
+    }
+
+    // Inject the new HTML
+    dropdown.innerHTML = htmlContent;
+}
+
 // Close profile dropdown when clicking outside
 window.addEventListener('click', function (event) {
     if (!event.target.closest('.w-10') && !event.target.closest('#profile-dropdown')) {
@@ -99,7 +149,6 @@ export function handleSearch() {
 }
 
 // --- EXTERNAL PLAYERS ---
-
 export function openExternalPlayer(player) {
     const videoUrl = appState.currentStreamUrl;
 
@@ -145,3 +194,8 @@ export function openExternalPlayer(player) {
     // Trigger the OS app
     window.location.href = deepLink;
 }
+
+// Auth Listener
+window.addEventListener('auth-state-changed', (event) => {
+    updateProfileDropdown();
+});

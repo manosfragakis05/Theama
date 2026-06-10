@@ -464,11 +464,9 @@ export const mediaStore = (() => {
         exportForLibrary: () => {
             return {
                 id: state.id,
-                title: state.title,
                 type: state.type,
+                title: state.title,
                 poster: state.poster,
-                anilistId: state.anilistId,
-                kitsuId: state.kitsuId
             };
         }
     };
@@ -476,7 +474,7 @@ export const mediaStore = (() => {
 
 
 // Detect media type (Western or Anime)
-async function openMasterDetail(tmdbId, TMDBTitle, type, posterImage, backdropImage) {
+export async function openMasterDetail(tmdbId, TMDBTitle, type, posterImage, backdropImage) {
     mediaStore.clear();
 
     // Save the main data
@@ -535,6 +533,7 @@ async function openTMDBDetail() {
 
     try {
         const url = `https://api.themoviedb.org/3/${state.type}/${state.id}?api_key=${TMDB_KEY}&language=en-US&append_to_response=credits,external_ids`;
+        console.log(url);
         const res = await fetch(url);
 
         if (!res.ok) throw new Error("TMDB item fetch failed");

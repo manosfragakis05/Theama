@@ -1,14 +1,30 @@
 import { createClient } from '@supabase/supabase-js';
-import { SUPABASEURL, SUPABASEKEY, showToast } from './config.js';
+import { SUPABASEURL, SUPABASEKEY, showToast, appState } from './config.js';
 
-const supabase = createClient(SUPABASEURL, SUPABASEKEY);
+export const supabase = createClient(SUPABASEURL, SUPABASEKEY);
 
 let currentSession = null;
 let signUp = true;
 let updateDetails = false;
 
+function setAuthState(user) {
+    appState.currentUser = user; 
+    
+    const authEvent = new CustomEvent('auth-state-changed', {
+        detail: { user: user }
+    });
+    
+    window.dispatchEvent(authEvent);
+}
+
 export async function initializeSupabase() {
-    // 1. Check local storage for an existing session
+    supabase.auth.onAuthStateChange((event, session) => {
+        console.log(`Supabase Auth Event: ${event}`);
+        currentSession = session;
+        setAuthState(session ? session.user : null);
+        updateSettingsUI();
+    });
+
     const { data: { session } } = await supabase.auth.getSession();
 
     if (session) {
@@ -17,20 +33,8 @@ export async function initializeSupabase() {
         if (error || !user) {
             console.log("User no longer exists on server. Clearing session...");
             await supabase.auth.signOut();
-            currentSession = null;
-        } else {
-            // User is valid!
-            currentSession = session;
         }
-    } else {
-        currentSession = null;
     }
-
-    supabase.auth.onAuthStateChange((event, session) => {
-        currentSession = session;
-        console.log("Supabase Auth Event:", event);
-        updateSettingsUI();
-    });
 }
 
 // Set UI according to current state
@@ -68,7 +72,6 @@ function updateSettingsUI() {
         usernameInput.placeholder = currentUsername;
 
         toggleUpdateDiv.classList.remove('hidden');
-        console.log(updateDetails)
         if (!updateDetails) {
             usernameDiv.classList.add('hidden');
             emailDiv.classList.add('hidden');
