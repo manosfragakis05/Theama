@@ -6,6 +6,8 @@
  */
 
 // 1. Import from our newly created modules
+import { registerSW } from 'virtual:pwa-register';
+
 import { authenticateTorboxUser, checkAuth, logoutTorBox } from './services/torbox.js';
 import { initializeSupabase, changeAuthState } from './services/db.js';
 import { goHome, toggleProfile, switchTab, handleSearch, openExternalPlayer } from './ui.js';
@@ -55,6 +57,18 @@ const fileInput = document.getElementById('local-file-input');
 if (fileInput) {
     fileInput.addEventListener('change', processLocalFile);
 }
+
+// --- PWA AUTO-UPDATE TRIGGER ---
+const updateSW = registerSW({
+  immediate: true, // Forces the page to reload instantly when a new update is ready
+  onRegistered(r) {
+    // Check for new commits every 15 minutes while the app is open
+    r && setInterval(() => {
+      console.log('Checking for PWA updates...');
+      r.update();
+    }, 15 * 60 * 1000);
+  }
+});
 
 // --- PWA BOOT SEQUENCE & FAILSAFE ---
 window.addEventListener('load', () => {

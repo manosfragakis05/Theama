@@ -12,6 +12,15 @@ export default {
       });
     }
 
+    if (url.pathname === '/sw.js') {
+      const response = await env.ASSETS.fetch(request);
+      const modifiedResponse = new Response(response.body, response);
+      modifiedResponse.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      modifiedResponse.headers.set('Pragma', 'no-cache');
+      modifiedResponse.headers.set('Expires', '0');
+      return modifiedResponse;
+    }
+
     const url = new URL(request.url);
 
     if (url.pathname === '/map') {
@@ -78,9 +87,9 @@ export default {
         });
       }
     }
-    
-    let targetUrl = url.searchParams.get("url"); 
-    
+
+    let targetUrl = url.searchParams.get("url");
+
     if (!targetUrl && url.pathname.length > 1) {
       const possibleUrl = url.pathname.substring(1) + url.search;
       if (possibleUrl.startsWith("http")) {
@@ -95,7 +104,7 @@ export default {
     const proxyHeaders = new Headers(request.headers);
     proxyHeaders.delete("Origin");
     proxyHeaders.delete("Referer");
-    proxyHeaders.delete("Host"); 
+    proxyHeaders.delete("Host");
 
     const proxyRequest = new Request(targetUrl, {
       method: request.method,
@@ -106,16 +115,16 @@ export default {
 
     try {
       const proxyResponse = await fetch(proxyRequest);
-      
+
       const finalResponse = new Response(proxyResponse.body, proxyResponse);
       finalResponse.headers.set("Access-Control-Allow-Origin", "*");
       finalResponse.headers.set("Access-Control-Allow-Methods", "GET, HEAD, POST, OPTIONS");
-      
+
       return finalResponse;
     } catch (error) {
-      return new Response(JSON.stringify({ error: "Proxy Fetch Error", details: error.message }), { 
+      return new Response(JSON.stringify({ error: "Proxy Fetch Error", details: error.message }), {
         status: 502,
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } 
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
       });
     }
   }
