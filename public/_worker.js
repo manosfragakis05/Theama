@@ -11,7 +11,9 @@ export default {
         }
       });
     }
-
+    
+    const url = new URL(request.url);
+    
     if (url.pathname === '/sw.js') {
       const assetRequest = new Request(request);
       assetRequest.headers.delete('If-None-Match');
@@ -31,7 +33,6 @@ export default {
       return modifiedResponse;
     }
 
-    const url = new URL(request.url);
 
     if (url.pathname === '/map') {
       const tmdbIdParam = url.searchParams.get("tmdb_id");
