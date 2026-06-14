@@ -13,11 +13,21 @@ export default {
     }
 
     if (url.pathname === '/sw.js') {
-      const response = await env.ASSETS.fetch(request);
-      const modifiedResponse = new Response(response.body, response);
+      const assetRequest = new Request(request);
+      assetRequest.headers.delete('If-None-Match');
+      assetRequest.headers.delete('If-Modified-Since');
+
+      const response = await env.ASSETS.fetch(assetRequest);
+      
+      // 2. Safely handle the body. If it's a 204 or 304, pass null to prevent runtime crashes
+      const cleanBody = [204, 304].includes(response.status) ? null : response.body;
+      const modifiedResponse = new Response(cleanBody, response);
+      
+      // 3. Apply the absolute no-cache headers
       modifiedResponse.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
       modifiedResponse.headers.set('Pragma', 'no-cache');
       modifiedResponse.headers.set('Expires', '0');
+      
       return modifiedResponse;
     }
 
