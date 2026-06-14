@@ -361,7 +361,7 @@ export async function searchTMDB(query) {
 export async function loadMyPicks() {
     const containerId = 'my-picks-row';
 
-    const myFavorites = [
+    const myFavourites = [
         // THE GOATS
         { id: 1396, type: 'tv' },     // Breaking Bad
         { id: 1607, type: 'movie' },  // A Bronx Tale
@@ -390,7 +390,7 @@ export async function loadMyPicks() {
     ];
 
     try {
-        const movieData = await Promise.all(myFavorites.map(async (item) => {
+        const movieData = await Promise.all(myFavourites.map(async (item) => {
             try {
                 const url = `https://api.themoviedb.org/3/${item.type}/${item.id}?api_key=${TMDB_KEY}&language=en-US`;
                 const res = await fetch(url);

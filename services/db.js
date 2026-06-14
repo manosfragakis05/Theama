@@ -8,12 +8,12 @@ let signUp = true;
 let updateDetails = false;
 
 function setAuthState(user) {
-    appState.currentUser = user; 
-    
+    appState.currentUser = user;
+
     const authEvent = new CustomEvent('auth-state-changed', {
         detail: { user: user }
     });
-    
+
     window.dispatchEvent(authEvent);
 }
 
@@ -33,6 +33,10 @@ export async function initializeSupabase() {
         if (error || !user) {
             console.log("User no longer exists on server. Clearing session...");
             await supabase.auth.signOut();
+        } else {
+            currentSession.user = user;
+            setAuthState(user);
+            updateSettingsUI();
         }
     }
 }
@@ -50,6 +54,7 @@ function updateSettingsUI() {
     const toggleAuthDiv = document.getElementById('settings-auth-toggle');
     const toggleText = document.getElementById('toggle-text');
     const toggleBtn = document.getElementById('toggle-btn');
+    const forgotPasswordBtn = document.getElementById('forgotPassword-btn');
 
     const toggleUpdateDiv = document.getElementById('edit-profile-toggle');
 
@@ -61,7 +66,7 @@ function updateSettingsUI() {
     if (currentSession) {   // Logged in
         const currentUsername = currentSession.user.user_metadata.username;
         const currentEmail = currentSession.user.email;
-        const hasEmail = currentSession.user.user_metadata.hasEmail;
+        const hasEmail = !currentEmail.endsWith('@theama.app');
 
         accountMessage.textContent = `Welcome, ${currentUsername}!`;
         multiDiv.classList.add('hidden');
@@ -91,6 +96,7 @@ function updateSettingsUI() {
     } else {
         toggleAuthDiv.classList.remove('hidden');
         passwordDiv.classList.remove('hidden');
+        submitBtn.classList.remove('hidden');
         toggleUpdateDiv.classList.add('hidden');
 
         accountMessage.textContent = "Log in to optimize your experience";
@@ -105,6 +111,7 @@ function updateSettingsUI() {
 
             submitBtn.textContent = 'Log In';
 
+            forgotPasswordBtn.classList.remove('hidden');
             toggleText.textContent = "Don't have an account?";
             toggleBtn.textContent = "Sign Up";
         }
@@ -115,6 +122,7 @@ function updateSettingsUI() {
 
             submitBtn.textContent = 'Sign Up';
 
+            forgotPasswordBtn.classList.add('hidden');
             toggleText.textContent = "Already have an account?";
             toggleBtn.textContent = "Log In";
         }
@@ -143,7 +151,7 @@ export async function changeAuthState(event) {
     let response;
 
     if (currentSession) {
-        const hasEmail = currentSession.user.user_metadata.hasEmail;
+        const hasEmail = !currentSession.user.email.endsWith('@theama.app');
         const currentUsername = currentSession.user.user_metadata.username;
 
         if (username && username !== currentUsername) {
@@ -153,13 +161,14 @@ export async function changeAuthState(event) {
             if (!validUsernameRegex.test(username)) {
                 return showInputError('username', "Usernames can only contain letters and numbers.");
             }
+        } else if (username && username == currentUsername) {
+            return showInputError('username', "You can't change to the same username.");
         }
-        
+
         if (password && password.length < 6) {
             return showInputError('password', "New password must be at least 6 characters.");
         }
 
-        const originalText = submitBtn.textContent;
         response = await performUpdate(username, email, password);
 
     } else if (signUp) {
@@ -168,14 +177,12 @@ export async function changeAuthState(event) {
         if (!validUsernameRegex.test(username)) return showInputError('username', "Usernames can only contain letters and numbers.");
         if (password.length < 6) return showInputError('password', "Password must be at least 6 characters.");
 
-        const originalText = submitBtn.textContent;
         response = await performSignUp(username, email, password);
 
     } else {
         if (!multi) return showInputError('multi', "Please enter your username or email.");
         if (!password) return showInputError('password', "Password is required.");
 
-        const originalText = submitBtn.textContent;
         const finalEmail = multi.includes('@') ? multi : `${multi.toLowerCase()}@theama.app`;
         response = await performLogIn(finalEmail, password);
     }
@@ -201,7 +208,6 @@ function showInputError(type, message) {
         p.classList.add('hidden');
     });
 
-    // 2. If there's an error, target the specific data-attribute
     if (message) {
         const errorEl = document.querySelector(`.auth-error-msg[data-target="${type}"]`);
         if (errorEl) {
@@ -223,18 +229,16 @@ export function toggleUpdateMode() {
 };
 window.toggleUpdateMode = toggleUpdateMode;
 
-// 2. SIGN UP FUNCTION
+// Sign up
 async function performSignUp(username, email, password) {
     const finalEmail = email ? email : `${username.toLowerCase()}@theama.app`;
 
-    // Return the promise result directly ({ data, error })
     return await supabase.auth.signUp({
         email: finalEmail,
         password: password,
         options: {
             data: {
                 username: username,
-                hasEmail: !!email
             }
         }
     });
@@ -258,7 +262,6 @@ async function performUpdate(username, email, password) {
 
     if (email) {
         updates.email = email;
-        updates.data = { hasEmail: true };
     }
 
     if (username) {
@@ -268,17 +271,47 @@ async function performUpdate(username, email, password) {
     return await supabase.auth.updateUser(updates);
 }
 
-// HELPER: Standalone Log Out
+// Forgot password
+async function sendPasswordResetEmail() {
+    const multiInput = document.getElementById('settings-multi');
+    const identifier = multiInput ? multiInput.value.trim() : '';
+
+    if (!identifier) {
+        showToast("Please type your username or email in the box first.", "error");
+        return;
+    }
+
+    if (!identifier.includes('@')) {
+        showToast("You need an email to reset you password.", "error");
+        return;
+    }
+    const email = identifier;
+
+    try {
+        const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+            redirectTo: window.location.origin
+        });
+
+        if (error) throw error;
+
+        console.log("Password reset link sent to:", email);
+        return { success: true };
+
+    } catch (err) {
+        console.error("Reset Error:", err.message);
+        return { success: false, error: err.message };
+    }
+}
+window.sendPasswordResetEmail = sendPasswordResetEmail;
+
+// Log out
 export async function logOutUser() {
-    // 1. Tell Supabase to kill the session
     const { error } = await supabase.auth.signOut();
 
-    // 2. Handle any potential errors
     if (error) {
         console.error("Logout Error:", error.message);
         alert("Failed to log out: " + error.message);
     } else {
-        // Success! 
         console.log("Successfully logged out.");
     }
 }

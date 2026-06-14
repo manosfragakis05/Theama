@@ -277,14 +277,14 @@
                                         d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
                                 </svg>
                             </div>
-                            Favorites
+                            Favourites
                         </h3>
 
-                        <div id="watchlist-track-favorites"
+                        <div id="watchlist-track-favourites"
                             class="draggable-row flex overflow-x-auto gap-4 pb-2 scrollbar-hide items-center min-h-[160px]">
-                            <div id="favorites-empty-state"
+                            <div id="favourites-empty-state"
                                 class="flex-none w-full text-center py-12 bg-slate-900/50 border border-dashed border-slate-700/50 rounded-2xl">
-                                <p class="text-slate-400 font-medium">No favorites added yet.</p>
+                                <p class="text-slate-400 font-medium">No favourites added yet.</p>
                                 <p class="text-slate-500 text-sm mt-1">Start exploring and save your top picks!</p>
                             </div>
                         </div>
@@ -363,7 +363,7 @@
                             <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 pl-1">
                                 Username
                             </label>
-                            <input id="settings-username" type="text" placeholder="Username" autocomplete="none"
+                            <input id="settings-username" type="text" placeholder="Username" autocomplete="off"
                                 class="w-full bg-slate-900 border border-slate-700 p-3.5 rounded-xl text-sm text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600">
 
                             <p data-target="username"
@@ -428,6 +428,10 @@
                                 class="text-blue-400 hover:text-blue-300 font-bold ml-1.5 transition-colors outline-none focus:underline">
                                 Log In
                             </button>
+                            <button id="forgotPassword-btn" type="button" onclick="sendPasswordResetEmail()"
+                                class="hidden text-blue-400 hover:text-blue-300 font-bold ml-3 transition-colors outline-none focus:underline">
+                                Forgot Password
+                            </button>
                         </div>
                     </form>
 
@@ -484,7 +488,7 @@
                             <input id="api-input" type="text" placeholder="Enter TorBox API Key" autocomplete="off"
                                 class="w-full bg-slate-900 border border-slate-700 p-3.5 rounded-xl text-sm text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600">
 
-                            <button id="loggin-btn" type="submit"
+                            <button id="login-btn" type="submit"
                                 class="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl transition-all font-bold text-sm shadow-[0_0_15px_rgba(37,99,235,0.2)]">
                                 Connect TorBox
                             </button>
@@ -849,32 +853,6 @@
 
             <div id="watchlist-options-container"
                 class="p-4 flex flex-col gap-3 bg-slate-900/50 overflow-y-auto hide-scrollbar">
-
-                <button onclick="addToWatchlist('history')"
-                    class="flex items-center justify-between p-3 rounded-xl bg-slate-800 hover:bg-blue-600/20 border border-slate-700 hover:border-blue-500 transition text-left group">
-
-                    <div class="flex items-center gap-4">
-                        <div
-                            class="w-12 h-12 bg-slate-700 group-hover:bg-blue-600 rounded-lg flex items-center justify-center text-slate-300 group-hover:text-white transition shadow-sm">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                            </svg>
-                        </div>
-
-                        <div>
-                            <div class="font-bold text-white group-hover:text-blue-400 transition">History</div>
-                            <div class="text-xs text-slate-400">Default List</div>
-                        </div>
-                    </div>
-
-                    <svg class="w-5 h-5 text-slate-500 group-hover:text-blue-400 transition" fill="none"
-                        stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-                    </svg>
-
-                </button>
-
             </div>
         </div>
     </div>
@@ -883,14 +861,17 @@
         <div class="watchlist-section mb-2">
 
             <h3 class="text-lg font-bold text-slate-200 mb-1 pl-1 flex items-center gap-2">
-                <div
-                    class="wl-row-icon w-6 h-6 bg-slate-800 rounded flex items-center justify-center text-slate-400 font-black text-xs uppercase shadow-sm">
-                </div>
                 <span class="wl-row-name">List Name</span>
-                <span
-                    class="wl-row-privacy hidden text-[9px] uppercase tracking-wider bg-slate-800 border border-slate-700 text-slate-400 px-2 py-0.5 rounded-md ml-2 font-bold shadow-sm">
-                    Private
-                </span>
+                <button
+                    class="wl-row-edit-btn ml-auto p-2 text-slate-500 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors group focus:outline-none"
+                    title="Edit List">
+                    <svg class="w-5 h-5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor"
+                        viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z">
+                        </path>
+                    </svg>
+                </button>
             </h3>
 
             <div
@@ -904,6 +885,64 @@
             </div>
         </div>
     </template>
+
+    <!-- Edit Wathclists Popup -->
+    <div id="edit-list-modal"
+        class="hidden fixed inset-0 z-[110] bg-black/90 flex flex-col justify-end sm:justify-center p-4 backdrop-blur-sm">
+
+        <div
+            class="bg-slate-800 rounded-t-xl sm:rounded-xl max-h-[80vh] flex flex-col max-w-sm mx-auto w-full border border-slate-700 shadow-2xl overflow-hidden">
+
+            <div class="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800/50">
+                <h3 class="font-bold text-lg text-white">Edit Watchlist</h3>
+
+                <button onclick="document.getElementById('edit-list-modal').classList.add('hidden')"
+                    class="p-2 -mr-2 text-slate-400 hover:text-white transition rounded-full hover:bg-slate-700/50">
+                    ✕
+                </button>
+            </div>
+
+            <div class="p-5 flex flex-col gap-5 bg-slate-900/50">
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 pl-1">
+                        Rename List
+                    </label>
+                    <input id="edit-list-input" type="text" placeholder="New list name..." autocomplete="off"
+                        class="w-full bg-slate-900 border border-slate-700 p-3.5 rounded-xl text-sm text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600">
+                </div>
+
+                <label for="edit-list-private"
+                    class="flex items-center gap-3 bg-slate-900 border border-slate-700 p-3.5 rounded-xl cursor-pointer hover:border-slate-600 transition-colors group">
+
+                    <input id="edit-list-private" type="checkbox"
+                        class="w-4 h-4 text-blue-600 bg-slate-800 border-slate-600 rounded cursor-pointer">
+
+                    <span id="edit-list-visibility-text"
+                        class="text-sm font-bold text-slate-200 group-hover:text-white transition-colors">
+                        Change list to private
+                    </span>
+                </label>
+
+                <button id="save-list-edit-btn"
+                    class="w-full bg-blue-600 hover:bg-blue-500 text-white py-3.5 rounded-xl transition-all font-bold text-sm shadow-[0_0_15px_rgba(37,99,235,0.2)]">
+                    Save Changes
+                </button>
+
+                <button id="delete-list-btn"
+                    class="w-full bg-red-500/10 hover:bg-red-500/20 text-red-500 py-3.5 rounded-xl transition-all font-bold text-sm border border-red-500/20 hover:border-red-500/40 flex items-center justify-center gap-2 group">
+                    <svg class="w-4 h-4 text-red-500 group-hover:scale-110 transition-transform" fill="none"
+                        stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                        </path>
+                    </svg>
+                    Delete Watchlist
+                </button>
+
+            </div>
+        </div>
+    </div>
 
     <template id="poster-card-template">
         <div

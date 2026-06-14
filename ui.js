@@ -75,7 +75,7 @@ function updateProfileDropdown() {
     if (!dropdown) return;
 
     // Start with your base header that is always there
-    let htmlContent = `<h3 class="text-xs font-bold text-slate-500 uppercase mb-3">Account</h3>`;
+    let htmlContent = "";
 
     // Check our Single Source of Truth
     if (appState.currentUser) {
@@ -89,11 +89,11 @@ function updateProfileDropdown() {
                 ${email ? `<p class="text-xs text-slate-400 truncate">${email}</p>` : ''}
             </div>
             <hr class="border-slate-700 my-2">
+            <button onclick="switchTab('profile-page')" class="w-full text-left px-3 py-2 hover:bg-slate-700 rounded-lg text-sm text-slate-300 transition-colors">
+                Public Profile
+            </button>
             <button onclick="logOutUser()" class="w-full text-left px-3 py-2 hover:bg-red-500/20 hover:text-red-400 rounded-lg text-sm text-slate-400 transition-colors mt-1">
                 Log Out
-            </button>
-            <button onclick="switchTab('settings-page')" class="w-full text-left px-3 py-2 hover:bg-slate-700 rounded-lg text-sm text-slate-300 transition-colors">
-                Manage Account
             </button>
         `;
     } else {

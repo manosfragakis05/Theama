@@ -12,7 +12,7 @@ import { loadLibrary } from '../pages/library.js';
 
 export async function authenticateTorboxUser() {
     const input = document.getElementById('api-input');
-    const button = document.getElementById('loggin-btn');
+    const button = document.getElementById('login-btn');
     const key = input.value.trim();
 
     if (!key) return;
