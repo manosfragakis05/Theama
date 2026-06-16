@@ -8,28 +8,29 @@ export default {
           "Access-Control-Allow-Origin": "*",
           "Access-Control-Allow-Methods": "GET, HEAD, POST, OPTIONS",
           "Access-Control-Allow-Headers": request.headers.get("Access-Control-Request-Headers") || "*",
+          "Access-Control-Max-Age": "86400",
         }
       });
     }
-    
+
     const url = new URL(request.url);
-    
+
     if (url.pathname === '/sw.js') {
       const assetRequest = new Request(request);
       assetRequest.headers.delete('If-None-Match');
       assetRequest.headers.delete('If-Modified-Since');
 
       const response = await env.ASSETS.fetch(assetRequest);
-      
+
       // 2. Safely handle the body. If it's a 204 or 304, pass null to prevent runtime crashes
       const cleanBody = [204, 304].includes(response.status) ? null : response.body;
       const modifiedResponse = new Response(cleanBody, response);
-      
+
       // 3. Apply the absolute no-cache headers
       modifiedResponse.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
       modifiedResponse.headers.set('Pragma', 'no-cache');
       modifiedResponse.headers.set('Expires', '0');
-      
+
       return modifiedResponse;
     }
 
@@ -109,7 +110,27 @@ export default {
     }
 
     if (!targetUrl) {
-      return env.ASSETS.fetch(request);
+      // 👇 THIS is the line that accidentally went missing!
+      const assetResponse = await env.ASSETS.fetch(request.clone());
+
+      // 🔧 Local Dev Bridge
+      if (assetResponse.status === 404 && (url.hostname === "127.0.0.1" || url.hostname === "localhost")) {
+        const viteUrl = new URL(request.url);
+        viteUrl.port = "5173";
+
+        // Clone headers and remove 'Host' to prevent port mismatch errors
+        const viteHeaders = new Headers(request.headers);
+        viteHeaders.delete("Host");
+
+        // FIX: Pass all headers so Vite recognizes CSS and module requests
+        return fetch(viteUrl.toString(), {
+          method: request.method,
+          headers: viteHeaders,
+          body: (request.method !== "GET" && request.method !== "HEAD") ? request.body : null
+        });
+      }
+
+      return assetResponse;
     }
 
     const proxyHeaders = new Headers(request.headers);
@@ -126,16 +147,24 @@ export default {
 
     try {
       const proxyResponse = await fetch(proxyRequest);
-
       const finalResponse = new Response(proxyResponse.body, proxyResponse);
-      finalResponse.headers.set("Access-Control-Allow-Origin", "*");
+
+      const origin = request.headers.get("Origin") || "*";
+
+      // Reflect exact origin and strip credentials
+      finalResponse.headers.set("Access-Control-Allow-Origin", origin);
       finalResponse.headers.set("Access-Control-Allow-Methods", "GET, HEAD, POST, OPTIONS");
+      finalResponse.headers.delete("Access-Control-Allow-Credentials");
+      finalResponse.headers.set("Access-Control-Expose-Headers", "*");
 
       return finalResponse;
     } catch (error) {
       return new Response(JSON.stringify({ error: "Proxy Fetch Error", details: error.message }), {
         status: 502,
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": request.headers.get("Origin") || "*"
+        }
       });
     }
   }

@@ -41,7 +41,6 @@ window.openExternalPlayer = openExternalPlayer;
 window.downloadToOPFS = downloadToOPFS;
 
 window.updateProfilePage = updateProfilePage;
-//window.renderWatchlistRows = renderWatchlistRows;
 window.openWatchlists = openWatchlists;
 window.addToWatchlist = addToWatchlist;
 window.createNewList = createNewList;
@@ -60,21 +59,20 @@ if (fileInput) {
 
 // --- PWA AUTO-UPDATE TRIGGER ---
 const updateSW = registerSW({
-  immediate: true, // Forces the page to reload instantly when a new update is ready
-  onRegistered(r) {
-    // Check for new commits every 15 minutes while the app is open
-    r && setInterval(() => {
-      console.log('Checking for PWA updates...');
-      r.update();
-    }, 15 * 60 * 1000);
-  }
+    immediate: true, // Forces the page to reload instantly when a new update is ready
+    onRegistered(r) {
+        // Check for new commits every 15 minutes while the app is open
+        r && setInterval(() => {
+            console.log('Checking for PWA updates...');
+            r.update();
+        }, 15 * 60 * 1000);
+    }
 });
 
 // --- PWA BOOT SEQUENCE & FAILSAFE ---
-window.addEventListener('load', () => {
+document.addEventListener('DOMContentLoaded', () => {
     const splash = document.getElementById('pwa-splash');
 
-    // Helper function to gracefully kill the splash screen
     const dropShield = () => {
         if (splash && splash.style.opacity !== '0') {
             splash.style.opacity = '0';
@@ -82,37 +80,30 @@ window.addEventListener('load', () => {
         }
     };
 
-    // 1. THE FAILSAFE (Your 4-second rule)
-    // If the network hangs, kill the splash screen anyway so the user isn't trapped.
     const failsafeTimer = setTimeout(() => {
         console.warn("Network is slow. Dropping splash screen via failsafe.");
         dropShield();
     }, 4000);
 
-    // 2. THE ACTUAL BOOT LOGIC
     async function bootApp() {
         try {
-            // Run your local setup 
             await checkAuth();
 
             initGlobalDrag();
-            
-            await initializeSupabase();
-            
-            await scanLocalOPFSDirectory();
+
+            await Promise.all([
+                initializeSupabase(),
+                scanLocalOPFSDirectory()
+            ]);
+
             renderLocalLibrary();
 
-            // Add any TorBox API network checks here if you have them!
-
-            // If we successfully get to this line before 4 seconds, 
-            // cancel the failsafe timer and drop the shield immediately!
             clearTimeout(failsafeTimer);
-            dropShield();
 
         } catch (error) {
             console.error("Boot error:", error);
-            // Even if the app crashes, drop the shield so the user can see what broke
             clearTimeout(failsafeTimer);
+        } finally {
             dropShield();
         }
     }

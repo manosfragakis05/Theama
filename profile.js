@@ -2,92 +2,184 @@ import { appState, showToast } from './services/config.js';
 import { supabase } from './services/db.js';
 import { mediaStore, openMasterDetail } from './api.js';
 
-
 //#region Data
 
 // Get watchlists
-function getAvailableCustomLists() {
-    if (!appState.currentUser) return [];
-    return appState.currentUser.user_metadata?.custom_lists || [];
+export async function getAvailableCustomLists() {
+    if (!appState.currentUser) {
+        const localLists = localStorage.getItem('guest_custom_lists');
+        return localLists ? JSON.parse(localLists) : [];
+    }
+
+    const { data, error } = await supabase
+        .from('lists')
+        .select('*')
+        .eq('user_id', appState.currentUser.id)
+        .order('created_at', { ascending: true });
+
+    if (error) {
+        console.error("Error fetching custom lists:", error.message);
+        return [];
+    }
+
+    return (data || []).filter(list => list.name.toLowerCase() !== 'favourites');
 }
 
-// Get data for a watchlist
-async function getListMedia(listName) {
-    const normalizedList = listName.toLowerCase();
+export async function getFavouritesList() {
+    // 1. Standardized Guest Object
+    if (!appState.currentUser) {
+        return { id: 'local-fav', name: 'Favourites', is_private: true }; 
+    }
 
+    // 2. Authenticated: Safely check for existing Favourites
+    const { data, error } = await supabase
+        .from('lists')
+        .select('*')
+        .eq('user_id', appState.currentUser.id)
+        .ilike('name', 'Favourites')
+        .maybeSingle(); // maybeSingle won't throw an error if 0 rows are found
+
+    if (data) return data;
+
+    // 3. If missing, create it bulletproof against race conditions
+    const { data: newList, error: insertError } = await supabase
+        .from('lists')
+        .insert({
+            user_id: appState.currentUser.id,
+            name: 'Favourites',
+            is_private: true // Favourites are typically private
+        })
+        .select()
+        .single();
+
+    if (insertError) {
+        console.error("Error creating Favourites list:", insertError);
+    }
+
+    return newList;
+}
+
+async function getListMedia(list) {
     if (appState.currentUser) {
+        if (!list || !list.id) return []; // Safety check
+
         const { data, error } = await supabase
-            .from('watchlists')
+            .from('watchlists') 
             .select('*')
             .eq('user_id', appState.currentUser.id)
-            .eq('status', normalizedList)
+            .eq('list_id', list.id)
             .order('created_at', { ascending: false });
 
         if (error) {
-            console.error(`Error fetching ${listName}:`, error.message);
+            console.error(`Error fetching ${list.name}:`, error.message);
             return [];
         }
         return data || [];
     } else {
-        // For guests
+        // Guest routing
+        const normalizedList = list.name.toLowerCase();
         const localData = localStorage.getItem(`guest_watchlist_${normalizedList}`);
         return localData ? JSON.parse(localData) : [];
     }
 }
 
-// Save to a list from the popup
-async function saveMediaToList(mediaData, listName) {
-    const normalizedList = listName.toLowerCase();
-
+// Save media to a list
+async function saveMediaToList(mediaData, list) {
     const payload = {
         tmdb_id: mediaData.id,
         media_type: mediaData.type,
         title: mediaData.title,
-        poster_path: mediaData.poster,
-        status: normalizedList,
+        poster_path: mediaData.poster
     };
 
     if (appState.currentUser) {
+        // Cloud routing
         payload.user_id = appState.currentUser.id;
-        const { error } = await supabase.from('watchlists').insert(payload);
+        payload.list_id = list.id; 
+        
+        const { error } = await supabase.from('watchlists').insert(payload); 
 
+        // Prevents duplicate movies in the same list
         if (error && error.code === '23505') return { status: 'duplicate' };
         if (error) throw error;
 
-        return { status: 'success' };
+        return { status: 'status' };
     } else {
-        // For guests
-        const existingData = await getListMedia(normalizedList);
-
+        // Guest routing
+        const normalizedList = list.name.toLowerCase();
+        const existingData = await getListMedia(list); 
+        
+        // Prevents duplicate movies in the same local list
         if (existingData.some(item => item.tmdb_id === payload.tmdb_id)) {
             return { status: 'duplicate' };
         }
-
+        
+        payload.list_id = list.id; 
         existingData.unshift(payload);
+        
         localStorage.setItem(`guest_watchlist_${normalizedList}`, JSON.stringify(existingData));
         return { status: 'success' };
     }
 }
 
 // Delete media
-async function removeMediaFromList(tmdbId, listName) {
-    const normalizedList = listName.toLowerCase();
-
+async function removeMediaFromList(tmdbId, list) {
     if (appState.currentUser) {
         const { error } = await supabase
             .from('watchlists')
             .delete()
             .eq('user_id', appState.currentUser.id)
             .eq('tmdb_id', tmdbId)
-            .eq('status', normalizedList);
+            .eq('list_id', list.id);
 
         if (error) throw error;
     } else {
-        const existingData = await getListMedia(normalizedList);
+        // Guest routing
+        const normalizedList = list.name.toLowerCase();
+        const existingData = await getListMedia(list);
         const filteredData = existingData.filter(item => item.tmdb_id !== tmdbId);
+        
         localStorage.setItem(`guest_watchlist_${normalizedList}`, JSON.stringify(filteredData));
     }
 }
+
+// Migrate Local Favourites to Cloud upon Login
+async function syncLocalFavouritesToCloud() {
+    if (!appState.currentUser) return;
+
+    // 1. Check if there's anything to migrate
+    const localFavsRaw = localStorage.getItem('guest_watchlist_favourites');
+    if (!localFavsRaw) return;
+
+    const localFavs = JSON.parse(localFavsRaw);
+    if (localFavs.length === 0) return;
+
+    console.log("Migrating local Favourites to the cloud...");
+
+    try {
+        // 2. Ensure the DB Favourites list exists and get its ID
+        const favList = await getFavouritesList();
+
+        // 3. Loop through local items and save them to the DB
+        // We reuse saveMediaToList because it already handles duplicates perfectly
+        for (const media of localFavs) {
+            await saveMediaToList({
+                id: media.tmdb_id,
+                type: media.media_type,
+                title: media.title,
+                poster: media.poster_path
+            }, favList);
+        }
+
+        // 4. Clean up local storage so we don't migrate this again
+        localStorage.removeItem('guest_watchlist_favourites');
+        console.log("Migration complete!");
+
+    } catch (err) {
+        console.error("Failed to migrate Favourites:", err);
+    }
+}
+//#endregion
 
 
 //#region Renderers
@@ -98,22 +190,27 @@ export async function renderProfileWatchlists() {
     const template = document.getElementById('watchlist-row-template');
 
     if (!container || !template) return;
-
     container.innerHTML = '';
 
-    const customLists = getAvailableCustomLists();
+    const customLists = await getAvailableCustomLists();
+    const favList = await getFavouritesList();
+
+    if(customLists.length > 0)
+    {
+        container.classList.remove('hidden');
+    } else {
+        container.classList.add('hidden');
+    }
 
     customLists.forEach(list => {
         const clone = template.content.cloneNode(true);
         const nameEl = clone.querySelector('.wl-row-name');
         const trackEl = clone.querySelector('.wl-row-track');
-
         const editBtn = clone.querySelector('.wl-row-edit-btn');
 
         nameEl.textContent = list.name;
 
-        // If the list is PUBLIC, add the minimal Earth icon right next to the name
-        if (!list.isPrivate) {
+        if (!list.is_private) {
             nameEl.insertAdjacentHTML('afterend', `
             <svg class="w-[18px] h-[18px] text-slate-400 ml-2 inline-block align-middle relative -bottom-[1px] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" title="Public List">
                 <circle cx="12" cy="12" r="10"></circle>
@@ -123,9 +220,7 @@ export async function renderProfileWatchlists() {
         `);
         }
 
-        if (editBtn) {
-            editBtn.onclick = () => openEditListModal(list);
-        }
+        if (editBtn) editBtn.onclick = () => openEditListModal(list);
 
         const safeId = list.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
         trackEl.id = `watchlist-track-${safeId}`;
@@ -134,10 +229,10 @@ export async function renderProfileWatchlists() {
     });
 
     const renderTasks = [
-        renderMediaCards('favourites', 'watchlist-track-favourites'),
+        renderMediaCards(favList, 'watchlist-track-favourites'),
         ...customLists.map(list => {
             const safeId = list.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
-            return renderMediaCards(list.name, `watchlist-track-${safeId}`);
+            return renderMediaCards(list, `watchlist-track-${safeId}`);
         }),
     ];
 
@@ -148,10 +243,9 @@ export async function renderProfileWatchlists() {
 
 
 // Render cards
-async function renderMediaCards(listName, trackId) {
+export async function renderMediaCards(list, trackId, targetUserId = null) {
     const trackEl = document.getElementById(trackId);
     if (!trackEl) return;
-
 
     const cardTemplate = document.getElementById('poster-card-template');
     if (!cardTemplate) {
@@ -165,7 +259,8 @@ async function renderMediaCards(listName, trackId) {
 
     trackEl.querySelectorAll('.poster-card').forEach(card => card.remove());
 
-    const mediaData = await getListMedia(listName);
+    // FIXED: Pass the ID down
+    const mediaData = await getListMedia(list, targetUserId);
 
     if (mediaData.length === 0) {
         if (emptyState) emptyState.style.display = 'block';
@@ -197,7 +292,12 @@ async function renderMediaCards(listName, trackId) {
             skeleton.classList.add('hidden');
         }
 
-        removeBtn.onclick = (e) => handleRemoveMedia(e, media.tmdb_id, listName, trackId);
+        if (targetUserId) {
+            if (removeBtn) removeBtn.remove();
+        } else {
+            removeBtn.onclick = (e) => handleRemoveMedia(e, media.tmdb_id, list, trackId);
+        }
+        
         card.onclick = () => openMasterDetail(media.tmdb_id, media.title, media.media_type, media.poster_path, media.poster_path);
 
         trackEl.appendChild(clone);
@@ -205,15 +305,16 @@ async function renderMediaCards(listName, trackId) {
 }
 
 // Add to watchlist popup
-export function openWatchlists() {
+export async function openWatchlists() {
     const modal = document.getElementById('watchlist-picker-modal');
     const container = document.getElementById('watchlist-options-container');
     if (!modal || !container) return;
 
-    const customLists = getAvailableCustomLists();
+    const customLists = await getAvailableCustomLists();
+    const favList = await getFavouritesList();   
     container.innerHTML = '';
 
-    // Favourites first
+    // Favourites Button
     const favBtn = document.createElement('button');
     favBtn.className = 'flex items-center justify-between p-3 rounded-xl bg-slate-800 hover:bg-red-600/20 border border-slate-700 hover:border-red-500 transition text-left group shrink-0';
     favBtn.innerHTML = `
@@ -229,7 +330,7 @@ export function openWatchlists() {
             </div>
         </div>
     `;
-    favBtn.addEventListener('click', () => addToWatchlist('favourites'));
+    favBtn.addEventListener('click', async () => await addToWatchlist(favList)); // <- FIXED: async and object
     container.appendChild(favBtn);
 
     // Custom lists
@@ -241,7 +342,6 @@ export function openWatchlists() {
         customLists.forEach(list => {
             const listBtn = document.createElement('button');
             listBtn.className = 'flex items-center justify-between p-3 rounded-xl bg-slate-800 hover:bg-emerald-600/20 border border-slate-700 hover:border-emerald-500 transition text-left group shrink-0';
-
             listBtn.innerHTML = `
                 <div class="flex items-center gap-4">
                     <div class="w-12 h-12 bg-slate-700 group-hover:bg-emerald-600 rounded-lg flex items-center justify-center text-slate-300 group-hover:text-white transition shadow-sm font-black text-xl uppercase" data-list-icon></div>
@@ -251,16 +351,14 @@ export function openWatchlists() {
                     </div>
                 </div>
             `;
-
             listBtn.querySelector('[data-list-icon]').textContent = list.name.charAt(0);
             listBtn.querySelector('[data-list-name]').textContent = list.name;
-            listBtn.querySelector('[data-list-privacy]').textContent = list.isPrivate ? 'Private List' : 'Public List';
+            listBtn.querySelector('[data-list-privacy]').textContent = list.is_private ? 'Private List' : 'Public List';
 
-            listBtn.addEventListener('click', () => addToWatchlist(list.name));
+            listBtn.addEventListener('click', async () => await addToWatchlist(list)); // <- FIXED: async
             container.appendChild(listBtn);
         });
     }
-
     modal.classList.remove('hidden');
 }
 
@@ -291,37 +389,34 @@ export async function createNewList() {
         showToast("Please enter a name for your list.", "error");
         return;
     }
-
     if (listName.toLowerCase() === 'favourites') {
-        showToast("You already have a Favourites", "error");
+        showToast("You already have a Favourites list.", "error");
         return;
     }
-
-    const existingLists = getAvailableCustomLists();
-    if (existingLists.some(list => list.name.toLowerCase() === listName.toLowerCase())) {
-        showToast("You already have a list with this name.", "info");
-        return;
-    }
-
-    const updatedLists = [...existingLists, { name: listName, isPrivate }];
 
     try {
-        const { data, error } = await supabase.auth.updateUser({
-            data: { custom_lists: updatedLists },
-        });
-        if (error) throw error;
+        // Insert directly into the new lists table
+        const { error } = await supabase
+            .from('lists')
+            .insert({
+                user_id: appState.currentUser.id,
+                name: listName,
+                is_private: isPrivate
+            });
 
-        if (data?.user) {
-            appState.currentUser = data.user;
-        } else {
-            appState.currentUser.user_metadata.custom_lists = updatedLists;
+        if (error && error.code === '23505') {
+            showToast("You already have a list with this name.", "info");
+            return;
         }
+        if (error) throw error;
 
         showToast("List created successfully!", "success");
         nameInput.value = '';
         privateToggle.checked = false;
 
         document.getElementById('create-list-modal').classList.add('hidden');
+
+        // Re-fetch and render the lists
         renderProfileWatchlists();
     } catch (err) {
         console.error("Error creating list:", err);
@@ -330,7 +425,7 @@ export async function createNewList() {
 }
 
 // Helper for the popup
-export async function addToWatchlist(listName) {
+export async function addToWatchlist(list) { 
     const mediaData = mediaStore.exportForLibrary();
 
     if (!mediaData || !mediaData.id) {
@@ -339,15 +434,15 @@ export async function addToWatchlist(listName) {
     }
 
     try {
-        const result = await saveMediaToList(mediaData, listName);
+        const result = await saveMediaToList(mediaData, list);
 
         if (result.status === 'duplicate') {
-            showToast(`This is already in ${listName}.`, "info");
+            showToast(`This is already in ${list.name}.`, "info");
         } else {
-            showToast(`Added to ${listName}!`, "success");
+            showToast(`Added to ${list.name}!`, "success");
 
-            const safeId = listName.toLowerCase().replace(/[^a-z0-9]/g, '-');
-            renderMediaCards(listName, `watchlist-track-${safeId}`);
+            const safeId = list.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
+            renderMediaCards(list, `watchlist-track-${safeId}`);
 
             document.getElementById('watchlist-picker-modal').classList.add('hidden');
         }
@@ -385,7 +480,7 @@ export function openEditListModal(list) {
     nameInput.value = list.name;
     checkbox.checked = false;
 
-    if (list.isPrivate) {
+    if (list.is_private) {
         visibilityText.textContent = "Change list to public";
     } else {
         visibilityText.textContent = "Change list to private";
@@ -394,7 +489,7 @@ export function openEditListModal(list) {
     submitBtn.onclick = async () => {
         const newName = nameInput.value.trim();
 
-        const newIsPrivate = checkbox.checked ? !list.isPrivate : list.isPrivate;
+        const newIsPrivate = checkbox.checked ? !list.is_private : list.is_private;
 
         if (!newName) {
             showToast("List name cannot be empty.", "error");
@@ -406,7 +501,7 @@ export function openEditListModal(list) {
             return;
         }
 
-        const customLists = getAvailableCustomLists();
+        const customLists = await getAvailableCustomLists();
 
         // Prevent dups
         if (list.name !== newName && customLists.some(l => l.name.toLowerCase() === newName.toLowerCase())) {
@@ -419,33 +514,13 @@ export function openEditListModal(list) {
         }
 
         try {
-            // Update supa
+            // Update list
             const { error: dbError } = await supabase
-                .from('watchlists')
-                .update({ status: newName.toLowerCase(), is_private: newIsPrivate })
-                .eq('user_id', appState.currentUser.id)
-                .eq('status', list.name.toLowerCase()); // Match the OLD name to update the rows
+            .from('lists')
+            .update({ name: newName, is_private: newIsPrivate })
+            .eq('id', list.id)
 
             if (dbError) throw dbError;
-
-            const updatedLists = customLists.map(l =>
-                l.name === list.name
-                    ? { name: newName, isPrivate: newIsPrivate }
-                    : l
-            );
-
-            const { data: authData, error: authError } = await supabase.auth.updateUser({
-                data: { custom_lists: updatedLists },
-            });
-
-            if (authError) throw authError;
-
-            // Guests
-            if (authData?.user) {
-                appState.currentUser = authData.user;
-            } else {
-                appState.currentUser.user_metadata.custom_lists = updatedLists;
-            }
 
             modal.classList.add('hidden');
             renderProfileWatchlists();
@@ -461,7 +536,6 @@ export function openEditListModal(list) {
 
         if (!isSure) return;
 
-        // Disable button to prevent spam-clicking
         deleteBtn.disabled = true;
         const originalContent = deleteBtn.innerHTML;
         deleteBtn.textContent = "Deleting...";
@@ -469,29 +543,11 @@ export function openEditListModal(list) {
         try {
             // 2. Delete all movies inside this list from the SQL Table
             const { error: dbError } = await supabase
-                .from('watchlists')
-                .delete()
-                .eq('user_id', appState.currentUser.id)
-                .eq('status', list.name.toLowerCase()); // Must be lowercase for DB matching!
+            .from('lists')
+            .delete()
+            .eq('id', list.id)
 
             if (dbError) throw dbError;
-
-            // 3. Remove the list from Auth Metadata
-            const customLists = getAvailableCustomLists();
-            const updatedLists = customLists.filter(l => l.name !== list.name);
-
-            const { data: authData, error: authError } = await supabase.auth.updateUser({
-                data: { custom_lists: updatedLists },
-            });
-
-            if (authError) throw authError;
-
-            // 4. Sync local state
-            if (authData?.user) {
-                appState.currentUser = authData.user;
-            } else {
-                appState.currentUser.user_metadata.custom_lists = updatedLists;
-            }
 
             // 5. Success and Cleanup
             showToast("List deleted.", "success");
@@ -510,8 +566,13 @@ export function openEditListModal(list) {
 }
 window.openEditListModal = openEditListModal;
 
-window.addEventListener('auth-state-changed', () => {
+window.addEventListener('auth-state-changed',async () => {
     console.log("Auth state changed. Refreshing Profile Data...");
     updateProfilePage();
+
+    if (appState.currentUser) {
+        await syncLocalFavouritesToCloud();
+    }
+    
     renderProfileWatchlists();
 });

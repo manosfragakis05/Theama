@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { updatePublicProfile } from '../network.js';
 import { SUPABASEURL, SUPABASEKEY, showToast, appState } from './config.js';
 
 export const supabase = createClient(SUPABASEURL, SUPABASEKEY);
@@ -35,7 +36,7 @@ export async function initializeSupabase() {
             await supabase.auth.signOut();
         } else {
             currentSession.user = user;
-            setAuthState(user);
+            updatePublicProfile();
             updateSettingsUI();
         }
     }
