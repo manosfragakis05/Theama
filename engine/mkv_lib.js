@@ -1,6 +1,3 @@
-import {smartFetch} from '../services/config.js';
-
-
 import initModule from './streaming-engine.js';
 let wasm = null;
 
@@ -53,7 +50,7 @@ class MKVFetcher {
         }
 
         try {
-            const res = await smartFetch(this.source, {
+            const res = await fetch(this.source, {
                 method: 'HEAD',
                 signal: AbortSignal.timeout(3000)
             });
@@ -68,7 +65,7 @@ class MKVFetcher {
 
         try {
             const controller = new AbortController();
-            const res = await smartFetch(this.source, {
+            const res = await fetch(this.source, {
                 headers: { 'Range': 'bytes=0-0' },
                 signal: controller.signal
             });
@@ -87,7 +84,7 @@ class MKVFetcher {
         if (this.type === 'file') {
             return new Uint8Array(await this.source.slice(start, end).arrayBuffer());
         } else {
-            const res = await smartFetch(this.source, {
+            const res = await fetch(this.source, {
                 headers: { 'Range': `bytes=${start}-${end - 1}` },
                 signal: signal
             });
@@ -107,7 +104,7 @@ class MKVFetcher {
         if (this.type === 'file') {
             streamObj = this.source.slice(start, end).stream();
         } else {
-            const res = await smartFetch(this.source, {
+            const res = await fetch(this.source, {
                 headers: { 'Range': `bytes=${start}-${end - 1}` },
                 signal: signal
             });
