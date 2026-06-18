@@ -1,15 +1,13 @@
 import { appState, showToast } from './services/config.js';
 import { supabase } from './services/db.js';
 import { mediaStore, openMasterDetail } from './api.js';
+import { renderAllWatchlists, renderMediaCards } from './profile-renderer.js';
 
 //#region Data
 
 // Get watchlists
 export async function getAvailableCustomLists() {
-    if (!appState.currentUser) {
-        const localLists = localStorage.getItem('guest_custom_lists');
-        return localLists ? JSON.parse(localLists) : [];
-    }
+    if (!appState.currentUser) return [];
 
     const { data, error } = await supabase
         .from('lists')
@@ -64,7 +62,7 @@ async function getListMedia(list) {
         if (!list || !list.id) return []; // Safety check
 
         const { data, error } = await supabase
-            .from('watchlists') 
+            .from('movies') 
             .select('*')
             .eq('user_id', appState.currentUser.id)
             .eq('list_id', list.id)
@@ -97,13 +95,13 @@ async function saveMediaToList(mediaData, list) {
         payload.user_id = appState.currentUser.id;
         payload.list_id = list.id; 
         
-        const { error } = await supabase.from('watchlists').insert(payload); 
+        const { error } = await supabase.from('movies').insert(payload); 
 
         // Prevents duplicate movies in the same list
         if (error && error.code === '23505') return { status: 'duplicate' };
         if (error) throw error;
 
-        return { status: 'status' };
+        return { status: 'success' };
     } else {
         // Guest routing
         const normalizedList = list.name.toLowerCase();
@@ -126,7 +124,7 @@ async function saveMediaToList(mediaData, list) {
 async function removeMediaFromList(tmdbId, list) {
     if (appState.currentUser) {
         const { error } = await supabase
-            .from('watchlists')
+            .from('movies')
             .delete()
             .eq('user_id', appState.currentUser.id)
             .eq('tmdb_id', tmdbId)
@@ -160,8 +158,6 @@ async function syncLocalFavouritesToCloud() {
         // 2. Ensure the DB Favourites list exists and get its ID
         const favList = await getFavouritesList();
 
-        // 3. Loop through local items and save them to the DB
-        // We reuse saveMediaToList because it already handles duplicates perfectly
         for (const media of localFavs) {
             await saveMediaToList({
                 id: media.tmdb_id,
@@ -171,7 +167,6 @@ async function syncLocalFavouritesToCloud() {
             }, favList);
         }
 
-        // 4. Clean up local storage so we don't migrate this again
         localStorage.removeItem('guest_watchlist_favourites');
         console.log("Migration complete!");
 
@@ -179,128 +174,119 @@ async function syncLocalFavouritesToCloud() {
         console.error("Failed to migrate Favourites:", err);
     }
 }
+
+export async function fetchFollowingSidebarList() {
+    if (!appState.currentUser) return [];
+
+    // Step 1: Get the IDs of everyone we follow
+    const { data: follows, error: followErr } = await supabase
+        .from('follows')
+        .select('following_id')
+        .eq('follower_id', appState.currentUser.id);
+
+    // If there's an error or we follow no one, return an empty array
+    if (followErr || !follows || follows.length === 0) return [];
+
+    // Extract just the IDs into an array: ['uuid-1', 'uuid-2']
+    const followingIds = follows.map(f => f.following_id);
+
+    // Step 2: Fetch their profiles using those IDs (Sorted alphabetically!)
+    const { data: profiles, error: profileErr } = await supabase
+        .from('profiles')
+        .select('id, username')
+        .in('id', followingIds)
+        .order('username', { ascending: true });
+
+    if (profileErr) {
+        console.error("Error fetching friend profiles:", profileErr.message);
+        return [];
+    }
+
+    return profiles;
+}
 //#endregion
 
 
 //#region Renderers
-
-// Render lists
-export async function renderProfileWatchlists() {
-    const container = document.getElementById('profile-watchlists-container');
-    const template = document.getElementById('watchlist-row-template');
-
-    if (!container || !template) return;
-    container.innerHTML = '';
-
+export async function loadAndRenderProfile() {
+    // 1. Fetch the Shelves
     const customLists = await getAvailableCustomLists();
     const favList = await getFavouritesList();
+    
+    renderAllWatchlists(customLists);
+    
+    // 3. Helper to fetch and render books for a specific shelf
+    async function populateTrack(listObj, trackId) {
+        // Fetch the books
+        const mediaData = await getListMedia(listObj);
+        
+        // Define what happens when a user deletes a movie
+        const handleRemove = async (tmdbId) => {
+            await handleRemoveMedia(tmdbId, listObj);
+            // Re-fetch and re-render just this one track!
+            await populateTrack(listObj, trackId); 
+        };
 
-    if(customLists.length > 0)
-    {
-        container.classList.remove('hidden');
-    } else {
-        container.classList.add('hidden');
+        // Define what happens when a user clicks a movie
+        const handleCardClick = (media) => {
+            openMasterDetail(media.tmdb_id, media.title, media.media_type, media.poster_path, media.poster_path);
+        };
+
+        // Render the books (Step 2 function)
+        renderMediaCards(mediaData, trackId, handleRemove, handleCardClick);
     }
 
-    customLists.forEach(list => {
-        const clone = template.content.cloneNode(true);
-        const nameEl = clone.querySelector('.wl-row-name');
-        const trackEl = clone.querySelector('.wl-row-track');
-        const editBtn = clone.querySelector('.wl-row-edit-btn');
-
-        nameEl.textContent = list.name;
-
-        if (!list.is_private) {
-            nameEl.insertAdjacentHTML('afterend', `
-            <svg class="w-[18px] h-[18px] text-slate-400 ml-2 inline-block align-middle relative -bottom-[1px] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" title="Public List">
-                <circle cx="12" cy="12" r="10"></circle>
-                <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path>
-                <path d="M2 12h20"></path>
-            </svg>
-        `);
-        }
-
-        if (editBtn) editBtn.onclick = () => openEditListModal(list);
-
+    // 4. Trigger population for all tracks
+    const allLists = [favList, ...customLists];
+    
+    allLists.forEach(list => {
         const safeId = list.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
-        trackEl.id = `watchlist-track-${safeId}`;
-
-        container.appendChild(clone);
+        const trackId = `watchlist-track-${safeId}`;
+        
+        // Fetch and render async without blocking the rest of the page
+        populateTrack(list, trackId);
     });
-
-    const renderTasks = [
-        renderMediaCards(favList, 'watchlist-track-favourites'),
-        ...customLists.map(list => {
-            const safeId = list.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
-            return renderMediaCards(list, `watchlist-track-${safeId}`);
-        }),
-    ];
-
-    await Promise.all(renderTasks).catch(err =>
-        console.error('Error rendering watchlist cards:', err)
-    );
 }
 
+// Render friends sidebar
+export function renderFriendsSidebar(friendsList) {
+    const container = document.getElementById('sidebar-following-list');
+    const emptyState = document.getElementById('sidebar-following-empty');
+    const template = document.getElementById('following-user-template');
 
-// Render cards
-export async function renderMediaCards(list, trackId, targetUserId = null) {
-    const trackEl = document.getElementById(trackId);
-    if (!trackEl) return;
+    if (!container || !template) return;
 
-    const cardTemplate = document.getElementById('poster-card-template');
-    if (!cardTemplate) {
-        console.error('Missing required template: #poster-card-template');
+    // 1. Safely clear existing buttons (leaving the empty state div intact)
+    container.querySelectorAll('.following-btn').forEach(btn => btn.remove());
+
+    // 2. Handle the empty state
+    if (!friendsList || friendsList.length === 0) {
+        if (emptyState) emptyState.classList.remove('hidden');
         return;
     }
 
-    const emptyState =
-        trackEl.querySelector('.wl-row-empty') ||
-        trackEl.querySelector('[id$="-empty-state"]');
+    if (emptyState) emptyState.classList.add('hidden');
 
-    trackEl.querySelectorAll('.poster-card').forEach(card => card.remove());
-
-    // FIXED: Pass the ID down
-    const mediaData = await getListMedia(list, targetUserId);
-
-    if (mediaData.length === 0) {
-        if (emptyState) emptyState.style.display = 'block';
-        return;
-    }
-
-    if (emptyState) emptyState.style.display = 'none';
-
-    mediaData.forEach(media => {
-        const clone = cardTemplate.content.cloneNode(true);
-        const card = clone.querySelector('.poster-card');
-        const img = clone.querySelector('.poster-img');
-        const title = clone.querySelector('.poster-title');
-        const skeleton = clone.querySelector('.poster-skeleton');
-        const removeBtn = clone.querySelector('.remove-btn');
-
-        title.textContent = media.title;
-
-        if (media.poster_path) {
-            const imgUrl = media.poster_path.startsWith('http')
-                ? media.poster_path
-                : `https://image.tmdb.org/t/p/w300${media.poster_path}`;
-            img.src = imgUrl;
-            img.onload = () => {
-                skeleton.classList.add('hidden');
-                img.classList.remove('opacity-0');
-            };
-        } else {
-            skeleton.classList.add('hidden');
-        }
-
-        if (targetUserId) {
-            if (removeBtn) removeBtn.remove();
-        } else {
-            removeBtn.onclick = (e) => handleRemoveMedia(e, media.tmdb_id, list, trackId);
-        }
+    // 3. Render each friend from the data
+    friendsList.forEach(friend => {
+        const clone = template.content.cloneNode(true);
         
-        card.onclick = () => openMasterDetail(media.tmdb_id, media.title, media.media_type, media.poster_path, media.poster_path);
+        const btn = clone.querySelector('.following-btn');
+        const avatar = clone.querySelector('.following-avatar');
+        const nameEl = clone.querySelector('.following-name');
 
-        trackEl.appendChild(clone);
+        // Set the text content (Safe from XSS!)
+        nameEl.textContent = friend.username;
+        // Grab the first letter and capitalize it for the avatar
+        avatar.textContent = friend.username.charAt(0).toUpperCase();
+
+        // Navigate to their profile when clicked
+        btn.onclick = () => {
+            // Adjust this if your app uses a different routing method
+            window.location.search = `?user=${friend.id}`; 
+        };
+
+        container.appendChild(clone);
     });
 }
 
@@ -355,7 +341,7 @@ export async function openWatchlists() {
             listBtn.querySelector('[data-list-name]').textContent = list.name;
             listBtn.querySelector('[data-list-privacy]').textContent = list.is_private ? 'Private List' : 'Public List';
 
-            listBtn.addEventListener('click', async () => await addToWatchlist(list)); // <- FIXED: async
+            listBtn.addEventListener('click', async () => await addToWatchlist(list));
             container.appendChild(listBtn);
         });
     }
@@ -417,7 +403,7 @@ export async function createNewList() {
         document.getElementById('create-list-modal').classList.add('hidden');
 
         // Re-fetch and render the lists
-        renderProfileWatchlists();
+        await loadAndRenderProfile();
     } catch (err) {
         console.error("Error creating list:", err);
         showToast("Failed to create list.", "error");
@@ -438,13 +424,11 @@ export async function addToWatchlist(list) {
 
         if (result.status === 'duplicate') {
             showToast(`This is already in ${list.name}.`, "info");
-        } else {
+        } else if(result.status === 'success'){
             showToast(`Added to ${list.name}!`, "success");
-
-            const safeId = list.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
-            renderMediaCards(list, `watchlist-track-${safeId}`);
-
             document.getElementById('watchlist-picker-modal').classList.add('hidden');
+
+            await loadAndRenderProfile();
         }
     } catch (err) {
         console.error("Unexpected error saving media:", err);
@@ -453,13 +437,10 @@ export async function addToWatchlist(list) {
 }
 
 // Delete media from a list
-async function handleRemoveMedia(event, tmdbId, listName, trackId) {
-    event.stopPropagation();
-
+async function handleRemoveMedia(tmdbId, list) {
     try {
-        await removeMediaFromList(tmdbId, listName);
+        await removeMediaFromList(tmdbId, list);
         showToast("Removed from list.", "info");
-        renderMediaCards(listName, trackId);
     } catch (err) {
         console.error("Error removing media:", err);
         showToast("Failed to remove item.", "error");
@@ -523,7 +504,7 @@ export function openEditListModal(list) {
             if (dbError) throw dbError;
 
             modal.classList.add('hidden');
-            renderProfileWatchlists();
+            await loadAndRenderProfile();
 
         } catch (err) {
             console.error("Error updating list:", err);
@@ -552,7 +533,7 @@ export function openEditListModal(list) {
             // 5. Success and Cleanup
             showToast("List deleted.", "success");
             modal.classList.add('hidden');
-            renderProfileWatchlists();
+            await loadAndRenderProfile();
 
         } catch (err) {
             console.error("Error deleting list:", err);
@@ -574,5 +555,5 @@ window.addEventListener('auth-state-changed',async () => {
         await syncLocalFavouritesToCloud();
     }
     
-    renderProfileWatchlists();
+    await loadAndRenderProfile();
 });

@@ -15,7 +15,9 @@ import { initGlobalDrag } from './api.js';
 import { deleteTorrent } from './pages/library.js';
 import { closePicker } from './streaming/picker.js';
 import { playDirect } from './streaming/player.js';
-import { updateProfilePage, addToWatchlist, createNewList, openWatchlists } from './profile.js';
+import { renderFriendsSidebar, updateProfilePage, addToWatchlist, createNewList, openWatchlists } from './profile.js';
+import { initFriendProfile, fetchFriendsList } from './network.js';
+
 import {
     downloadToOPFS,
     triggerLocalFilePicker,
@@ -69,6 +71,22 @@ const updateSW = registerSW({
     }
 });
 
+async function handleProfileRouting() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const friendId = urlParams.get('user');
+
+    if (friendId) {
+        console.log("Routing to friend profile:", friendId);
+        // We have a parameter, load the friend!
+        await initializeSupabase();
+        await initFriendProfile(friendId);
+    } else {
+        console.log("Routing to personal profile");
+        
+        await initializeSupabase();
+    }
+}
+
 // --- PWA BOOT SEQUENCE & FAILSAFE ---
 document.addEventListener('DOMContentLoaded', () => {
     const splash = document.getElementById('pwa-splash');
@@ -87,14 +105,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function bootApp() {
         try {
-            await checkAuth();
-
+            
             initGlobalDrag();
-
+            
             await Promise.all([
-                initializeSupabase(),
-                scanLocalOPFSDirectory()
+                await checkAuth(),
+                await handleProfileRouting(),
+                await scanLocalOPFSDirectory()
             ]);
+
+            const friends = await fetchFriendsList();
+            renderFriendsSidebar(friends);
 
             renderLocalLibrary();
 

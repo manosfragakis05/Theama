@@ -117,7 +117,7 @@ export function renderList(items) {
             const vid = t.files.find(f => f.name.match(/\.(mkv|mp4|avi|mov)$/i)) || t.files[0];
             if (vid) {
                 actionButtonsHTML = `
-                    <button onclick="event.stopPropagation(); downloadToOPFS(${t.id}, ${vid.id}, null, '${cleanName.replace(/'/g, "\\'")}', this);" class="text-blue-400 hover:text-blue-300 p-1 bg-black/50 rounded-full transition z-10 w-8 h-8 flex items-center justify-center backdrop-blur-sm shadow-md mr-2">⬇️</button>
+                    <button onclick="event.stopPropagation(); downloadToOPFS(${t.id}, ${vid.id}, null, cleanName, this);" class="text-blue-400 hover:text-blue-300 p-1 bg-black/50 rounded-full transition z-10 w-8 h-8 flex items-center justify-center backdrop-blur-sm shadow-md mr-2">⬇️</button>
                     ${actionButtonsHTML}
                 `;
             }

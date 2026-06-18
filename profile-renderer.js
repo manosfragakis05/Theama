@@ -1,66 +1,67 @@
-import { getAvailableCustomLists, getFavouritesList, addToWatchlist } from "./profile";
-import { appState, showToast } from "./services/config";
-import { supabase } from "./services/db";
-
-export async function renderProfileWatchlists() {
+// Expects the actual data arrays to be passed in!
+export function renderAllWatchlists(customLists) {
     const container = document.getElementById('profile-watchlists-container');
-    const template = document.getElementById('watchlist-row-template');
+    if (!container) return;
 
-    if (!container || !template) return;
+    // 1. Clear the board for a fresh render
     container.innerHTML = '';
 
-    const customLists = await getAvailableCustomLists();
-    const favList = await getFavouritesList();
-
-    if(customLists.length > 0)
-    {
+    // 2. Handle Container Visibility
+    if (customLists.length > 0) {
         container.classList.remove('hidden');
     } else {
         container.classList.add('hidden');
     }
 
+    // 3. Loop through lists and append the DOM for each track
     customLists.forEach(list => {
-        const clone = template.content.cloneNode(true);
-        const nameEl = clone.querySelector('.wl-row-name');
-        const trackEl = clone.querySelector('.wl-row-track');
-        const editBtn = clone.querySelector('.wl-row-edit-btn');
+        const trackDOM = createWatchlistTrack(list);
+        container.appendChild(trackDOM);
+    });
+}
 
-        nameEl.textContent = list.name;
+// Helper: Builds the DOM for a single row (The "Shelf")
+function createWatchlistTrack(list) {
+    const template = document.getElementById('watchlist-row-template');
+    const clone = template.content.cloneNode(true);
 
-        if (!list.is_private) {
-            nameEl.insertAdjacentHTML('afterend', `
+    const nameEl = clone.querySelector('.wl-row-name');
+    const trackEl = clone.querySelector('.wl-row-track');
+    const editBtn = clone.querySelector('.wl-row-edit-btn');
+
+    // Set Name
+    nameEl.textContent = list.name;
+
+    // Add Public Icon if necessary
+    if (!list.is_private) {
+        nameEl.insertAdjacentHTML('afterend', `
             <svg class="w-[18px] h-[18px] text-slate-400 ml-2 inline-block align-middle relative -bottom-[1px] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" title="Public List">
                 <circle cx="12" cy="12" r="10"></circle>
                 <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path>
                 <path d="M2 12h20"></path>
             </svg>
         `);
-        }
+    }
 
-        if (editBtn) editBtn.onclick = () => openEditListModal(list);
+    // Attach Edit Event
+    if (editBtn) editBtn.onclick = () => openEditListModal(list);
 
-        const safeId = list.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
-        trackEl.id = `watchlist-track-${safeId}`;
+    // Generate Safe ID for the track (so we can find it later to insert posters)
+    const safeId = list.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    trackEl.id = `watchlist-track-${safeId}`;
 
-        container.appendChild(clone);
-    });
-
-    const renderTasks = [
-        renderMediaCards(favList, 'watchlist-track-favourites'),
-        ...customLists.map(list => {
-            const safeId = list.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
-            return renderMediaCards(list, `watchlist-track-${safeId}`);
-        }),
-    ];
-
-    await Promise.all(renderTasks).catch(err =>
-        console.error('Error rendering watchlist cards:', err)
-    );
+    return clone;
 }
 
-
 // Render cards
-export async function renderMediaCards(list, trackId, targetUserId = null) {
+/**
+ * Renders an array of media items into a specific track.
+ * @param {Array} mediaData - The array of movie objects to render.
+ * @param {string} trackId - The DOM ID of the container track.
+ * @param {Function} onRemoveClick - Callback for when the remove button is clicked. If null, the button is hidden.
+ * @param {Function} onCardClick - Callback for when the poster itself is clicked.
+ */
+export function renderMediaCards(mediaData, trackId, onRemoveClick = null, onCardClick = null) {
     const trackEl = document.getElementById(trackId);
     if (!trackEl) return;
 
@@ -74,18 +75,18 @@ export async function renderMediaCards(list, trackId, targetUserId = null) {
         trackEl.querySelector('.wl-row-empty') ||
         trackEl.querySelector('[id$="-empty-state"]');
 
+    // 1. Clear existing cards
     trackEl.querySelectorAll('.poster-card').forEach(card => card.remove());
 
-    // FIXED: Pass the ID down
-    const mediaData = await getListMedia(list, targetUserId);
-
-    if (mediaData.length === 0) {
+    // 2. Handle Empty State
+    if (!mediaData || mediaData.length === 0) {
         if (emptyState) emptyState.style.display = 'block';
         return;
     }
 
     if (emptyState) emptyState.style.display = 'none';
 
+    // 3. Render Cards
     mediaData.forEach(media => {
         const clone = cardTemplate.content.cloneNode(true);
         const card = clone.querySelector('.poster-card');
@@ -96,6 +97,7 @@ export async function renderMediaCards(list, trackId, targetUserId = null) {
 
         title.textContent = media.title;
 
+        // Image Loading Logic
         if (media.poster_path) {
             const imgUrl = media.poster_path.startsWith('http')
                 ? media.poster_path
@@ -109,13 +111,22 @@ export async function renderMediaCards(list, trackId, targetUserId = null) {
             skeleton.classList.add('hidden');
         }
 
-        if (targetUserId) {
+        // 4. Handle Read-Only vs Editable States via Callbacks
+        if (!onRemoveClick) {
+            // If no callback is provided (e.g., viewing another user's list), hide the button
             if (removeBtn) removeBtn.remove();
         } else {
-            removeBtn.onclick = (e) => handleRemoveMedia(e, media.tmdb_id, list, trackId);
+            // Otherwise, attach the injected callback
+            removeBtn.onclick = (e) => {
+                e.stopPropagation();
+                onRemoveClick(media.tmdb_id);
+            };
         }
         
-        card.onclick = () => openMasterDetail(media.tmdb_id, media.title, media.media_type, media.poster_path, media.poster_path);
+        // 5. Attach Card Click Callback
+        if (onCardClick) {
+            card.onclick = () => onCardClick(media);
+        }
 
         trackEl.appendChild(clone);
     });

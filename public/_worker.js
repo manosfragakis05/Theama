@@ -110,19 +110,16 @@ export default {
     }
 
     if (!targetUrl) {
-      // 👇 THIS is the line that accidentally went missing!
       const assetResponse = await env.ASSETS.fetch(request.clone());
 
-      // 🔧 Local Dev Bridge
+      // Local Dev
       if (assetResponse.status === 404 && (url.hostname === "127.0.0.1" || url.hostname === "localhost")) {
         const viteUrl = new URL(request.url);
         viteUrl.port = "5173";
 
-        // Clone headers and remove 'Host' to prevent port mismatch errors
         const viteHeaders = new Headers(request.headers);
         viteHeaders.delete("Host");
 
-        // FIX: Pass all headers so Vite recognizes CSS and module requests
         return fetch(viteUrl.toString(), {
           method: request.method,
           headers: viteHeaders,

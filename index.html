@@ -79,6 +79,32 @@
                 class="nav-link w-full text-center px-4 py-3 rounded-xl font-bold transition-all text-slate-400 hover:bg-slate-800 hover:text-white [&.active]:bg-blue-600 [&.active]:text-white [&.active]:hover:bg-blue-600">
                 Settings
             </button>
+
+            <div class="mt-8 pt-6 border-t border-slate-800/80">
+                <h3 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3 px-4">
+                    Following
+                </h3>
+
+                <div id="sidebar-following-list"
+                    class="space-y-1 overflow-y-auto max-h-[35vh] custom-scrollbar px-2 hide-scrollbar">
+
+                    <div id="sidebar-following-empty" class="hidden text-center py-6 px-2">
+                        <p class="text-xs text-slate-500 font-medium">No one here yet.</p>
+                    </div>
+
+                </div>
+
+                <template id="following-user-template">
+                    <button
+                        class="following-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-slate-400 hover:bg-slate-800 hover:text-white group outline-none focus:bg-slate-800">
+                        <div
+                            class="following-avatar w-8 h-8 flex-shrink-0 rounded-full bg-blue-500/10 text-blue-500 flex items-center justify-center font-bold text-sm border border-blue-500/20 group-hover:border-blue-500/50 transition-colors">
+                        </div>
+                        <span class="following-name font-medium text-sm truncate">
+                        </span>
+                    </button>
+                </template>
+            </div>
         </div>
     </nav>
 
@@ -216,6 +242,7 @@
 
             <div
                 class="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-800/40 backdrop-blur-md p-6 md:p-8 rounded-3xl border border-slate-700/50 shadow-xl gap-6">
+
                 <div>
                     <h1 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight">
                         Welcome, <span id="profile-username-display"
@@ -225,17 +252,28 @@
                     </p>
                 </div>
 
-                <button onclick="switchTab('settings-page')"
-                    class="p-4 bg-slate-900/50 hover:bg-blue-600 text-slate-300 hover:text-white rounded-2xl transition-all border border-slate-700/50 hover:border-blue-500 shadow-sm group shrink-0 self-start sm:self-auto">
-                    <svg class="w-6 h-6 group-hover:rotate-90 transition-transform duration-300" fill="none"
-                        stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
-                        </path>
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                    </svg>
-                </button>
+                <div class="shrink-0 self-start sm:self-auto flex items-center">
+
+                    <button id="profile-follow-btn" onclick="handleFollowToggle()" data-friend-id=""
+                        class="hidden px-6 py-3 rounded-2xl font-bold text-sm transition-all items-center gap-2 border shadow-sm outline-none">
+                        <svg id="follow-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        </svg>
+                        <span id="follow-text">Follow</span>
+                    </button>
+
+                    <button id="profile-settings-btn" onclick="switchTab('settings-page')"
+                        class="p-4 bg-slate-900/50 hover:bg-blue-600 text-slate-300 hover:text-white rounded-2xl transition-all border border-slate-700/50 hover:border-blue-500 shadow-sm group">
+                        <svg class="w-6 h-6 group-hover:rotate-90 transition-transform duration-300" fill="none"
+                            stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
+                            </path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        </svg>
+                    </button>
+
+                </div>
             </div>
 
             <section class="flex flex-col gap-6">
