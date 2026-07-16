@@ -133,20 +133,22 @@ function setReadOnlyUI(username, friendId) {
     welcomeText.innerHTML = `<span id="profile-username-display" class="text-blue-500 drop-shadow-[0_0_5px_rgba(59,130,246,0.3)]">${username}</span>'s Profile`;
     welcomeText.nextElementSibling.textContent = "Browsing public watchlists.";
 
-    // 2. Hide Personal Settings & Creation Buttons
+    // 2. Hide Personal Settings & Show Back Button
     const settingsBtn = document.getElementById('profile-settings-btn');
     const newListBtn = document.querySelector('button[onclick*="create-list-modal"]');
     const defaultFavs = document.getElementById('default-watchlists-container');
+    const backBtn = document.getElementById('back-to-profile-btn'); // <-- Grab the new button
 
     if (settingsBtn) settingsBtn.style.display = 'none';
     if (newListBtn) newListBtn.style.display = 'none';
     if (defaultFavs) defaultFavs.style.display = 'none';
+    if (backBtn) backBtn.classList.remove('hidden'); // <-- Show it!
 
     // 3. Prepare and Show the Follow Button
     const followBtn = document.getElementById('profile-follow-btn');
     if (followBtn) {
         followBtn.style.display = 'flex';
-        followBtn.dataset.friendId = friendId; // Store the ID invisibly for the click handler
+        followBtn.dataset.friendId = friendId; 
     }
 }
 
@@ -255,10 +257,7 @@ async function toggleFollowState(friendId, isCurrentlyFollowing) {
     return true; // Success
 }
 
-// ==========================================
-// 4. EVENT HANDLERS (User Interactions)
-// ==========================================
-
+// Follow / Unfollow
 window.handleFollowToggle = async () => {
     const btn = document.getElementById('profile-follow-btn');
     if (!btn) return;

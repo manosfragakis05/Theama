@@ -9,6 +9,7 @@
 import { registerSW } from 'virtual:pwa-register';
 
 import { authenticateTorboxUser, checkAuth, logoutTorBox } from './services/torbox.js';
+import { appState } from './services/config.js';
 import { initializeSupabase, changeAuthState } from './services/db.js';
 import { goHome, toggleProfile, switchTab, handleSearch, openExternalPlayer } from './ui.js';
 import { initGlobalDrag } from './api.js';
@@ -71,23 +72,27 @@ const updateSW = registerSW({
     }
 });
 
-async function handleProfileRouting() {
+export async function handleProfileRouting() {
     const urlParams = new URLSearchParams(window.location.search);
     const friendId = urlParams.get('user');
 
+    await initializeSupabase();
+
+    if (friendId && appState.currentUser && friendId === appState.currentUser.id) {
+        console.log("User viewing their own public link. Stripping parameter.");
+
+        window.history.replaceState({}, document.title, window.location.pathname);
+        return;
+    }
+
     if (friendId) {
         console.log("Routing to friend profile:", friendId);
-        // We have a parameter, load the friend!
-        await initializeSupabase();
         await initFriendProfile(friendId);
-    } else {
-        console.log("Routing to personal profile");
-        
-        await initializeSupabase();
+        switchTab('profile-page');
     }
 }
 
-// --- PWA BOOT SEQUENCE & FAILSAFE ---
+// Boot
 document.addEventListener('DOMContentLoaded', () => {
     const splash = document.getElementById('pwa-splash');
 
@@ -105,20 +110,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function bootApp() {
         try {
-            
+
+
             initGlobalDrag();
-            
             await Promise.all([
-                await checkAuth(),
-                await handleProfileRouting(),
-                await scanLocalOPFSDirectory()
+                handleProfileRouting(),
+                checkAuth(),
+                scanLocalOPFSDirectory()
             ]);
 
             const friends = await fetchFriendsList();
             renderFriendsSidebar(friends);
 
             renderLocalLibrary();
-
             clearTimeout(failsafeTimer);
 
         } catch (error) {

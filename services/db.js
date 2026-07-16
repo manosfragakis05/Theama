@@ -18,14 +18,17 @@ function setAuthState(user) {
     window.dispatchEvent(authEvent);
 }
 
+let isDbInitialized = false;
 export async function initializeSupabase() {
+    if (isDbInitialized) return;
+    
     supabase.auth.onAuthStateChange((event, session) => {
         console.log(`Supabase Auth Event: ${event}`);
         currentSession = session;
         setAuthState(session ? session.user : null);
         updateSettingsUI();
     });
-
+    
     const { data: { session } } = await supabase.auth.getSession();
 
     if (session) {
@@ -36,7 +39,8 @@ export async function initializeSupabase() {
             await supabase.auth.signOut();
         } else {
             currentSession.user = user;
-            updatePublicProfile();
+            isDbInitialized = true;
+            
             updateSettingsUI();
         }
     }
@@ -196,6 +200,10 @@ export async function changeAuthState(event) {
         showToast(error.message, "error");
     } else {
         submitBtn.textContent = "Success!";
+
+        if (appState.currentUser) {
+            updatePublicProfile();
+        }
 
         setTimeout(() => {
             submitBtn.textContent = originalText;

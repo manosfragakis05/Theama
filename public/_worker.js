@@ -110,10 +110,8 @@ export default {
     }
 
     if (!targetUrl) {
-      const assetResponse = await env.ASSETS.fetch(request.clone());
-
-      // Local Dev
-      if (assetResponse.status === 404 && (url.hostname === "127.0.0.1" || url.hostname === "localhost")) {
+      // 1. LOCAL DEV: Always use live Vite server, completely ignoring the dist folder
+      if (url.hostname === "127.0.0.1" || url.hostname === "localhost") {
         const viteUrl = new URL(request.url);
         viteUrl.port = "5173";
 
@@ -127,7 +125,8 @@ export default {
         });
       }
 
-      return assetResponse;
+      // 2. PRODUCTION: Serve compiled assets from Cloudflare Pages
+      return await env.ASSETS.fetch(request.clone());
     }
 
     const proxyHeaders = new Headers(request.headers);

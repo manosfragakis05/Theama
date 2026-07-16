@@ -19,7 +19,7 @@ export async function loadLibrary() {
     document.getElementById('file-list').innerHTML = '';
 
     const key = getTbKey();
-    if(!key) return;
+    if (!key) return;
 
     try {
         const res = await smartFetch('https://api.torbox.app/v1/api/torrents/mylist?bypass_cache=true', {
@@ -40,17 +40,15 @@ export async function loadLibrary() {
     }
 }
 
-export function refreshLibrary() {
-    if (key) loadLibrary();
-}
-
 // --- API ACTIONS ---
 
 export async function deleteTorrent(torrentId, event) {
     if (event) event.stopPropagation();
     if (!confirm("Are you sure you want to delete this from TorBox?")) return;
 
+
     const key = getTbKey();
+    if (!key) return;
     const targetUrl = 'https://api.torbox.app/v1/api/torrents/controltorrent';
 
     try {
@@ -70,7 +68,7 @@ export async function deleteTorrent(torrentId, event) {
 
         if (data.success) {
             showToast("Deleted successfully!", 'success');
-            refreshLibrary();
+            loadLibrary();
         } else {
             showToast("Error: " + data.detail, 'error');
         }

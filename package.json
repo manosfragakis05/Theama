@@ -1,7 +1,9 @@
 {
+  "name": "theama",
+  "type": "module",
   "scripts": {
     "vite:dev": "vite --port 5173 --strictPort --host 127.0.0.1",
-    "wrangler:dev": "wrangler pages dev public",
+    "wrangler:dev": "wrangler pages dev public --compatibility-date=2026-06-18",
     "dev": "npm-run-all --parallel vite:dev wrangler:dev",
     "build": "vite build",
     "preview": "vite preview"

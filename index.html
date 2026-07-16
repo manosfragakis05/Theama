@@ -244,6 +244,15 @@
                 class="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-800/40 backdrop-blur-md p-6 md:p-8 rounded-3xl border border-slate-700/50 shadow-xl gap-6">
 
                 <div>
+                    <button id="back-to-profile-btn" onclick="returnToMyProfile(event)"
+                        class="hidden -mt-3 mb-1 text-blue-500 hover:text-blue-400 font-bold flex items-center gap-2 transition cursor-pointer">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                        </svg>
+                        Back
+                    </button>
+
                     <h1 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight">
                         Welcome, <span id="profile-username-display"
                             class="text-blue-500 drop-shadow-[0_0_5px_rgba(59,130,246,0.3)]">Guest</span>!
@@ -254,12 +263,14 @@
 
                 <div class="shrink-0 self-start sm:self-auto flex items-center">
 
+
                     <button id="profile-follow-btn" onclick="handleFollowToggle()" data-friend-id=""
                         class="hidden px-6 py-3 rounded-2xl font-bold text-sm transition-all items-center gap-2 border shadow-sm outline-none">
                         <svg id="follow-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         </svg>
                         <span id="follow-text">Follow</span>
                     </button>
+                    
 
                     <button id="profile-settings-btn" onclick="switchTab('settings-page')"
                         class="p-4 bg-slate-900/50 hover:bg-blue-600 text-slate-300 hover:text-white rounded-2xl transition-all border border-slate-700/50 hover:border-blue-500 shadow-sm group">
@@ -523,7 +534,7 @@
 
                         <form id="torbox-auth-form" class="flex flex-col gap-3"
                             onsubmit="event.preventDefault(); authenticateTorboxUser();">
-                            <input id="api-input" type="text" placeholder="Enter TorBox API Key" autocomplete="off"
+                            <input id="api-input" type="password" placeholder="Enter TorBox API Key" autocomplete="off"
                                 class="w-full bg-slate-900 border border-slate-700 p-3.5 rounded-xl text-sm text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600">
 
                             <button id="login-btn" type="submit"

@@ -1,6 +1,7 @@
 import { appState, showToast } from './services/config.js';
 import { supabase } from './services/db.js';
 import { mediaStore, openMasterDetail } from './api.js';
+import { handleProfileRouting } from './main.js';
 import { renderAllWatchlists, renderMediaCards } from './profile-renderer.js';
 
 //#region Data
@@ -26,7 +27,7 @@ export async function getAvailableCustomLists() {
 export async function getFavouritesList() {
     // 1. Standardized Guest Object
     if (!appState.currentUser) {
-        return { id: 'local-fav', name: 'Favourites', is_private: true }; 
+        return { id: 'local-fav', name: 'Favourites', is_private: true };
     }
 
     // 2. Authenticated: Safely check for existing Favourites
@@ -62,7 +63,7 @@ async function getListMedia(list) {
         if (!list || !list.id) return []; // Safety check
 
         const { data, error } = await supabase
-            .from('movies') 
+            .from('movies')
             .select('*')
             .eq('user_id', appState.currentUser.id)
             .eq('list_id', list.id)
@@ -93,9 +94,9 @@ async function saveMediaToList(mediaData, list) {
     if (appState.currentUser) {
         // Cloud routing
         payload.user_id = appState.currentUser.id;
-        payload.list_id = list.id; 
-        
-        const { error } = await supabase.from('movies').insert(payload); 
+        payload.list_id = list.id;
+
+        const { error } = await supabase.from('movies').insert(payload);
 
         // Prevents duplicate movies in the same list
         if (error && error.code === '23505') return { status: 'duplicate' };
@@ -105,16 +106,16 @@ async function saveMediaToList(mediaData, list) {
     } else {
         // Guest routing
         const normalizedList = list.name.toLowerCase();
-        const existingData = await getListMedia(list); 
-        
+        const existingData = await getListMedia(list);
+
         // Prevents duplicate movies in the same local list
         if (existingData.some(item => item.tmdb_id === payload.tmdb_id)) {
             return { status: 'duplicate' };
         }
-        
-        payload.list_id = list.id; 
+
+        payload.list_id = list.id;
         existingData.unshift(payload);
-        
+
         localStorage.setItem(`guest_watchlist_${normalizedList}`, JSON.stringify(existingData));
         return { status: 'success' };
     }
@@ -136,7 +137,7 @@ async function removeMediaFromList(tmdbId, list) {
         const normalizedList = list.name.toLowerCase();
         const existingData = await getListMedia(list);
         const filteredData = existingData.filter(item => item.tmdb_id !== tmdbId);
-        
+
         localStorage.setItem(`guest_watchlist_${normalizedList}`, JSON.stringify(filteredData));
     }
 }
@@ -204,6 +205,46 @@ export async function fetchFollowingSidebarList() {
 
     return profiles;
 }
+
+// Clear viewing state
+export async function returnToMyProfile(e) {
+    if (e) e.preventDefault();
+
+    // 1. Clean the URL silently (The PWA Way)
+    window.history.pushState({}, document.title, window.location.pathname);
+
+    // 2. Hide the Friend UI Elements
+    const backBtn = document.getElementById('back-to-profile-btn');
+    const followBtn = document.getElementById('profile-follow-btn');
+    
+    if (backBtn) backBtn.classList.add('hidden');
+    if (followBtn) followBtn.style.display = 'none';
+
+    // 3. Restore Your Personal UI Elements
+    const settingsBtn = document.getElementById('profile-settings-btn');
+    const newListBtn = document.querySelector('button[onclick*="create-list-modal"]');
+    const defaultFavs = document.getElementById('default-watchlists-container');
+    
+    if (settingsBtn) settingsBtn.style.display = ''; 
+    if (newListBtn) newListBtn.style.display = '';
+    if (defaultFavs) defaultFavs.style.display = '';
+
+    // 4. Clear the tracks so the old ones don't overlap with yours
+    const watchlistsContainer = document.getElementById('watchlists-container'); // Change ID if yours is different!
+    if (watchlistsContainer) watchlistsContainer.innerHTML = '';
+
+    // 5. Restore your username and re-fetch your highly optimized personal lists!
+    updateProfilePage();
+    
+    // Add the subtitle back
+    const usernameDisplay = document.getElementById('profile-username-display');
+    if (usernameDisplay && usernameDisplay.parentElement.nextElementSibling) {
+        usernameDisplay.parentElement.nextElementSibling.textContent = "Manage your watchlists and profile.";
+    }
+
+    await loadAndRenderProfile();
+}
+window.returnToMyProfile = returnToMyProfile;
 //#endregion
 
 
@@ -212,38 +253,48 @@ export async function loadAndRenderProfile() {
     // 1. Fetch the Shelves
     const customLists = await getAvailableCustomLists();
     const favList = await getFavouritesList();
-    
+    const allLists = [favList, ...customLists];
+
     renderAllWatchlists(customLists);
-    
-    // 3. Helper to fetch and render books for a specific shelf
+
+    // 2. THE OPTIMIZATION: Fetch ALL movies for this user in ONE single API call
+    let allUserMovies = [];
+    if (appState.currentUser) {
+        const { data } = await supabase
+            .from('movies')
+            .select('*')
+            .eq('user_id', appState.currentUser.id)
+            .order('created_at', { ascending: false });
+        allUserMovies = data || [];
+    }
+
+    // 3. Helper to render books for a specific shelf
     async function populateTrack(listObj, trackId) {
-        // Fetch the books
-        const mediaData = await getListMedia(listObj);
-        
-        // Define what happens when a user deletes a movie
+        let mediaData = [];
+
+        // Instantly filter from our bulk-fetched array instead of pinging the database again!
+        if (appState.currentUser) {
+             mediaData = allUserMovies.filter(movie => movie.list_id === listObj.id);
+        } else {
+             mediaData = await getListMedia(listObj); // Keep guest local storage logic
+        }
+
         const handleRemove = async (tmdbId) => {
             await handleRemoveMedia(tmdbId, listObj);
-            // Re-fetch and re-render just this one track!
-            await populateTrack(listObj, trackId); 
+            await loadAndRenderProfile(); // Re-run the optimized render
         };
 
-        // Define what happens when a user clicks a movie
         const handleCardClick = (media) => {
             openMasterDetail(media.tmdb_id, media.title, media.media_type, media.poster_path, media.poster_path);
         };
 
-        // Render the books (Step 2 function)
         renderMediaCards(mediaData, trackId, handleRemove, handleCardClick);
     }
 
-    // 4. Trigger population for all tracks
-    const allLists = [favList, ...customLists];
-    
+    // 4. Trigger population instantly
     allLists.forEach(list => {
         const safeId = list.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
         const trackId = `watchlist-track-${safeId}`;
-        
-        // Fetch and render async without blocking the rest of the page
         populateTrack(list, trackId);
     });
 }
@@ -270,20 +321,20 @@ export function renderFriendsSidebar(friendsList) {
     // 3. Render each friend from the data
     friendsList.forEach(friend => {
         const clone = template.content.cloneNode(true);
-        
+
         const btn = clone.querySelector('.following-btn');
         const avatar = clone.querySelector('.following-avatar');
         const nameEl = clone.querySelector('.following-name');
 
-        // Set the text content (Safe from XSS!)
         nameEl.textContent = friend.username;
-        // Grab the first letter and capitalize it for the avatar
         avatar.textContent = friend.username.charAt(0).toUpperCase();
 
-        // Navigate to their profile when clicked
-        btn.onclick = () => {
-            // Adjust this if your app uses a different routing method
-            window.location.search = `?user=${friend.id}`; 
+        btn.onclick = (e) => {
+            e.preventDefault();
+
+            window.history.pushState({}, '', `?user=${friend.id}`);
+
+            handleProfileRouting();
         };
 
         container.appendChild(clone);
@@ -297,7 +348,7 @@ export async function openWatchlists() {
     if (!modal || !container) return;
 
     const customLists = await getAvailableCustomLists();
-    const favList = await getFavouritesList();   
+    const favList = await getFavouritesList();
     container.innerHTML = '';
 
     // Favourites Button
@@ -411,7 +462,7 @@ export async function createNewList() {
 }
 
 // Helper for the popup
-export async function addToWatchlist(list) { 
+export async function addToWatchlist(list) {
     const mediaData = mediaStore.exportForLibrary();
 
     if (!mediaData || !mediaData.id) {
@@ -424,7 +475,7 @@ export async function addToWatchlist(list) {
 
         if (result.status === 'duplicate') {
             showToast(`This is already in ${list.name}.`, "info");
-        } else if(result.status === 'success'){
+        } else if (result.status === 'success') {
             showToast(`Added to ${list.name}!`, "success");
             document.getElementById('watchlist-picker-modal').classList.add('hidden');
 
@@ -497,9 +548,9 @@ export function openEditListModal(list) {
         try {
             // Update list
             const { error: dbError } = await supabase
-            .from('lists')
-            .update({ name: newName, is_private: newIsPrivate })
-            .eq('id', list.id)
+                .from('lists')
+                .update({ name: newName, is_private: newIsPrivate })
+                .eq('id', list.id)
 
             if (dbError) throw dbError;
 
@@ -524,9 +575,9 @@ export function openEditListModal(list) {
         try {
             // 2. Delete all movies inside this list from the SQL Table
             const { error: dbError } = await supabase
-            .from('lists')
-            .delete()
-            .eq('id', list.id)
+                .from('lists')
+                .delete()
+                .eq('id', list.id)
 
             if (dbError) throw dbError;
 
@@ -547,13 +598,35 @@ export function openEditListModal(list) {
 }
 window.openEditListModal = openEditListModal;
 
-window.addEventListener('auth-state-changed',async () => {
-    console.log("Auth state changed. Refreshing Profile Data...");
-    updateProfilePage();
+let lastRenderedUserId = null;
+window.addEventListener('auth-state-changed', async () => {
+    // 1. Figure out who is currently logged in (or if they are a guest)
+    const currentUserId = appState.currentUser ? appState.currentUser.id : 'guest';
+
+    // 2. THE OPTIMIZATION: If the user hasn't changed, this is just a background token refresh. Abort!
+    if (lastRenderedUserId === currentUserId) {
+        console.log("Session verified in background. Skipping redundant database refetch.");
+        return;
+    }
+
+    console.log("Genuine Auth state change detected. Updating UI...");
+
+    // 3. Update the tracker so we don't fetch again next time
+    lastRenderedUserId = currentUserId;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const isViewingFriend = urlParams.has('user');
 
     if (appState.currentUser) {
         await syncLocalFavouritesToCloud();
     }
-    
+
+    if (isViewingFriend) {
+        console.log("Viewing friend's profile. Ignoring personal UI update.");
+        return;
+    }
+
+    // 5. Actually update the screen
+    updateProfilePage();
     await loadAndRenderProfile();
 });
