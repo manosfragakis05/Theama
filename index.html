@@ -24,7 +24,7 @@
         </div>
     </div>
 
-    <header class="fixed top-0 left-0 w-full z-40 bg-slate-900/95 backdrop-blur border-b border-slate-800 h-[72px]">
+    <header class="sticky top-0 left-0 w-full z-40 bg-slate-900/95 backdrop-blur border-b border-slate-800 h-[72px]">
         <div
             class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md px-16 md:px-4 z-10 flex gap-2">
             <form onsubmit="event.preventDefault()" class="relative flex-1">
@@ -56,7 +56,7 @@
     <!--PC-->
     <nav
         class="hidden md:flex flex-col fixed top-0 left-0 h-screen w-64 bg-slate-900/95 border-r border-slate-800 z-50">
-        <div class="p-6 border-b border-slate-800">
+        <div class="p-6 pb-[15px] border-b border-slate-800">
             <button onclick="goHome()" class="text-2xl font-extrabold text-white">Theama</button>
         </div>
         <div class="flex-1 px-4 mt-4 space-y-2">
@@ -126,7 +126,7 @@
         </div>
     </div>
 
-    <main class="max-w-7xl mx-auto w-full p-4 pt-24 pb-24 md:pb-6 transition-all">
+    <main class="max-w-7xl mx-auto w-full p-4 pt-10 pb-24 md:pb-6 transition-all">
         <div id="toast-container"
             class="fixed top-5 right-5 z-[9999] flex flex-col gap-3 pointer-events-none items-end"></div>
 
@@ -270,7 +270,7 @@
                         </svg>
                         <span id="follow-text">Follow</span>
                     </button>
-                    
+
 
                     <button id="profile-settings-btn" onclick="switchTab('settings-page')"
                         class="p-4 bg-slate-900/50 hover:bg-blue-600 text-slate-300 hover:text-white rounded-2xl transition-all border border-slate-700/50 hover:border-blue-500 shadow-sm group">
@@ -282,6 +282,22 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                         </svg>
+                    </button>
+
+                    <button id="profile-share-btn" onclick="shareMyProfile()"
+                        class="p-4 ml-2 bg-slate-900/50 hover:bg-blue-600 text-slate-300 hover:text-white rounded-2xl transition-all border border-slate-700/50 hover:border-blue-500 shadow-sm group"
+                        title="Share Profile">
+
+                        <svg class="w-6 h-6 group-hover:-translate-y-0.5 transition-transform duration-300" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                            viewBox="0 0 24 24">
+                            <circle cx="18" cy="5" r="3"></circle>
+                            <circle cx="6" cy="12" r="3"></circle>
+                            <circle cx="18" cy="19" r="3"></circle>
+                            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+                            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+                        </svg>
+
                     </button>
 
                 </div>

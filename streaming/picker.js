@@ -308,6 +308,7 @@ export function closePicker() {
 
 //#region UI Rendering
 function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cleanName) {
+    console.log(cleanName);
     const groupKeys = Object.keys(franchiseGroups);
     const mainShowKey = groupKeys[0];
 
@@ -337,7 +338,7 @@ function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cle
 
     titleElement.innerHTML = `
         <div class="flex flex-wrap items-center w-full gap-3 overflow-hidden px-1">
-            <span class="font-bold text-slate-200 text-lg truncate shrink-0 max-w-full md:max-w-[50%]">
+            <span class="font-bold text-slate-200 text-lg truncate"> 
                 ${cleanName}
             </span> 
             <div class="flex flex-wrap items-center gap-2">

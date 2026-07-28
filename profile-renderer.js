@@ -111,12 +111,9 @@ export function renderMediaCards(mediaData, trackId, onRemoveClick = null, onCar
             skeleton.classList.add('hidden');
         }
 
-        // 4. Handle Read-Only vs Editable States via Callbacks
         if (!onRemoveClick) {
-            // If no callback is provided (e.g., viewing another user's list), hide the button
             if (removeBtn) removeBtn.remove();
         } else {
-            // Otherwise, attach the injected callback
             removeBtn.onclick = (e) => {
                 e.stopPropagation();
                 onRemoveClick(media.tmdb_id);

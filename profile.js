@@ -222,10 +222,12 @@ export async function returnToMyProfile(e) {
 
     // 3. Restore Your Personal UI Elements
     const settingsBtn = document.getElementById('profile-settings-btn');
+    const shareProfileBtn = document.getElementById('profile-share-btn');
     const newListBtn = document.querySelector('button[onclick*="create-list-modal"]');
     const defaultFavs = document.getElementById('default-watchlists-container');
     
     if (settingsBtn) settingsBtn.style.display = ''; 
+    if (shareProfileBtn) shareProfileBtn.style.display = ''; 
     if (newListBtn) newListBtn.style.display = '';
     if (defaultFavs) defaultFavs.style.display = '';
 
@@ -245,6 +247,44 @@ export async function returnToMyProfile(e) {
     await loadAndRenderProfile();
 }
 window.returnToMyProfile = returnToMyProfile;
+
+export async function shareMyProfile() {
+    if (!appState.currentUser) {
+        showToast("Please log in to share your profile.", "error");
+        return;
+    }
+
+    const myId = appState.currentUser.id;
+    const shareUrl = `${window.location.origin}/?user=${myId}`;
+    const myUsername = appState.currentUser.user_metadata?.username || "me";
+
+    const shareData = {
+        title: 'Check out my watchlists!',
+        text: `Follow ${myUsername} to see what they are watching.`,
+        url: shareUrl
+    };
+
+    // 1. THE AUTO-DETECT: Does their device support native sharing?
+    if (navigator.share) {
+        // 2. THE TRY/CATCH: Did they actually share it, or did they hit cancel?
+        try {
+            await navigator.share(shareData);
+            console.log("Profile shared successfully!");
+        } catch (err) {
+            console.log("User cancelled the share menu.");
+        }
+    } 
+    // 3. THE FALLBACK: Desktop users get a copied link instead
+    else {
+        try {
+            await navigator.clipboard.writeText(shareUrl);
+            showToast("Profile link copied to clipboard!", "success");
+        } catch (err) {
+            console.error("Failed to copy text: ", err);
+            showToast("Failed to copy link.", "error");
+        }
+    }
+}
 //#endregion
 
 
@@ -257,7 +297,6 @@ export async function loadAndRenderProfile() {
 
     renderAllWatchlists(customLists);
 
-    // 2. THE OPTIMIZATION: Fetch ALL movies for this user in ONE single API call
     let allUserMovies = [];
     if (appState.currentUser) {
         const { data } = await supabase
@@ -268,11 +307,9 @@ export async function loadAndRenderProfile() {
         allUserMovies = data || [];
     }
 
-    // 3. Helper to render books for a specific shelf
     async function populateTrack(listObj, trackId) {
         let mediaData = [];
 
-        // Instantly filter from our bulk-fetched array instead of pinging the database again!
         if (appState.currentUser) {
              mediaData = allUserMovies.filter(movie => movie.list_id === listObj.id);
         } else {

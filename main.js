@@ -16,7 +16,7 @@ import { initGlobalDrag } from './api.js';
 import { deleteTorrent } from './pages/library.js';
 import { closePicker } from './streaming/picker.js';
 import { playDirect } from './streaming/player.js';
-import { renderFriendsSidebar, updateProfilePage, addToWatchlist, createNewList, openWatchlists } from './profile.js';
+import { renderFriendsSidebar, shareMyProfile, updateProfilePage, addToWatchlist, createNewList, openWatchlists } from './profile.js';
 import { initFriendProfile, fetchFriendsList } from './network.js';
 
 import {
@@ -47,6 +47,7 @@ window.updateProfilePage = updateProfilePage;
 window.openWatchlists = openWatchlists;
 window.addToWatchlist = addToWatchlist;
 window.createNewList = createNewList;
+window.shareMyProfile = shareMyProfile;
 
 
 // Offline & Local File Bindings

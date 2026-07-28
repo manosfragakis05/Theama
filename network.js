@@ -135,11 +135,13 @@ function setReadOnlyUI(username, friendId) {
 
     // 2. Hide Personal Settings & Show Back Button
     const settingsBtn = document.getElementById('profile-settings-btn');
+    const shareProfileBtn = document.getElementById('profile-share-btn');
     const newListBtn = document.querySelector('button[onclick*="create-list-modal"]');
     const defaultFavs = document.getElementById('default-watchlists-container');
     const backBtn = document.getElementById('back-to-profile-btn'); // <-- Grab the new button
 
     if (settingsBtn) settingsBtn.style.display = 'none';
+    if (shareProfileBtn) shareProfileBtn.style.display = 'none';
     if (newListBtn) newListBtn.style.display = 'none';
     if (defaultFavs) defaultFavs.style.display = 'none';
     if (backBtn) backBtn.classList.remove('hidden'); // <-- Show it!
@@ -267,11 +269,9 @@ window.handleFollowToggle = async () => {
     const currentText = document.getElementById('follow-text').textContent.trim();
     const isCurrentlyFollowing = currentText === "Following";
 
-    // 2. Optimistic UI Update: Flip the button instantly so it feels fast
     updateFollowBtnState(!isCurrentlyFollowing);
 
     try {
-        // 3. Execute the Database logic in the background
         await toggleFollowState(friendId, isCurrentlyFollowing);
         console.log(`Successfully ${isCurrentlyFollowing ? 'unfollowed' : 'followed'} user!`);
     } catch (error) {
@@ -279,6 +279,6 @@ window.handleFollowToggle = async () => {
 
         updateFollowBtnState(isCurrentlyFollowing);
 
-        showToast("Failed to update follow status. Please check your connection.", "error");
+        showToast("Please log in or check your connection.", "error");
     }
 };

@@ -190,7 +190,6 @@ function renderCardsToRow(movies, containerId) {
     if (rowState[containerId].hasMore) {
         row.insertAdjacentHTML('beforeend', `<div class="scroll-sentinel w-1 flex-none" data-target-row="${containerId}"></div>`);
 
-        // 👇 USE THE NEW OBSERVER FUNCTION HERE 👇
         getObserverFor(containerId).observe(row.querySelector('.scroll-sentinel:last-child'));
     }
 }
@@ -249,7 +248,6 @@ async function renderRow(initialEndpoint = null, containerId) {
             if (row) {
                 const oldSentinel = row.querySelector('.scroll-sentinel');
 
-                // 👇 Update this line to use the new observer system!
                 if (oldSentinel) getObserverFor(containerId).unobserve(oldSentinel);
 
                 row.innerHTML = '';
@@ -495,13 +493,13 @@ export async function openMasterDetail(tmdbId, TMDBTitle, type, posterImage, bac
             });
         }
     }
-
+    
     // 4. Hand off to the detail fetcher for the heavy lifting
     return openTMDBDetail();
 }
 
 // Anime detector and mappings
-export async function fetchAnimeMapping(tmdbId) {
+export async function fetchAnimeMapping(tmdbId) { 
     const workerBaseUrl = MY_PROXY.replace('/?url=', '');
 
     try {
