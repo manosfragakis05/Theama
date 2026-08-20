@@ -1,23 +1,54 @@
 import { parse as pttParse } from './ptt.js';
 
-export function parseTorrentio(fullTitle) {
+// Detect and parse full stream data
+export function parseFormated(stream) {
 
-    if (!fullTitle) return;
+    if (!stream) return;
 
-    const lines = fullTitle.split(/\r?\n/);
+    const streamName = (stream.name || "").toLowerCase();
+    const streamDesc = stream.description || stream.title || stream.name || "";
 
-    const pttData = parseMediaData(lines[0]);
+    const isCached =
+        streamName.includes('torbox+') ||
+        streamName.includes('tb+') ||
+        streamName.includes('torbox⚡') ||
+        streamName.includes('tb⚡');
+
+
+    const pttData = parseMediaData(streamDesc);
+
+    let finalResolution = "";
+
+    if (streamName) {
+        if (streamName.includes('4k hdr') || streamName.includes('4k hdr10') || streamName.includes('4k hdr10+') || streamName.includes('4khdr') || streamName.includes('4khdr10') || streamName.includes('4khdr10+')) {
+            finalResolution = "4k HDR";
+        } else if (streamName.includes('4k') || streamName.includes('2160p')) {
+            finalResolution = "4K";
+        } else if (streamName.includes('1080p')) {
+            finalResolution = "1080p";
+        } else if (streamName.includes('720p')) {
+            finalResolution = "720p";
+        } else if (streamName.includes('480p') || streamName.includes('sd')) {
+            finalResolution = "SD";
+        } else if (streamName.includes('unknown')) {
+            finalResolution = pttData.resolution || "Unknown";
+        }
+    } else {
+        finalResolution = pttData.resolution;
+    }
+
 
     const streamData = {
+        isCached: isCached,
         seeders: 0,
+        resolution: finalResolution,
         size: null,
-        group: null,
         languages: [],
         multi: null
     };
 
     // Seeders
-    const seederMatch = fullTitle.match(/👤[\s\-:|]*([\d,]+)/u);
+    const seederMatch = streamDesc.match(/👤[\s\-:|]*([\d,]+)/u);
     if (seederMatch) {
         streamData.seeders = parseInt(seederMatch[1].replace(/,/g, ''), 10);
     } else {
@@ -25,34 +56,22 @@ export function parseTorrentio(fullTitle) {
     }
 
     // Size
-    const sizeMatch = fullTitle.match(/💾[\s\-:|]*([\d.]+\s*[KMGT]i?B)/ui);
+    const sizeMatch = streamDesc.match(/💾[\s\-:|]*([\d.]+\s*[KMGT]i?B)/ui);
     if (sizeMatch) {
         streamData.size = sizeMatch[1].trim();
     } else {
         streamData.size = pttData.size || null;
     }
 
-    // Group
-    const groupMatch = fullTitle.match(/⚙️\s*([^\n]+)/);
-    if (groupMatch) {
-        streamData.group = groupMatch[1].trim();
+    // Languages
+    const lineLanguages = extractLanguage(streamDesc);
+
+    if (lineLanguages.languages) {
+        streamData.languages = lineLanguages.languages;
     }
 
-    // Languages
-    const lastLine = lines[lines.length - 1];
-
-    const isMetadataLine = lastLine.includes('👤') || lastLine.includes('💾') || lastLine.includes('⚙️');
-
-    if (!isMetadataLine && lines.length > 1) {
-        const lineLanguages = extractLanguage(lastLine);
-
-        if (lineLanguages.languages) {
-            streamData.languages = lineLanguages.languages;
-        }
-
-        if (lineLanguages.multi) {
-            streamData.multi = lineLanguages.multi;
-        }
+    if (lineLanguages.multi) {
+        streamData.multi = lineLanguages.multi;
     }
 
     if (!streamData.languages || streamData.languages.length === 0) {
@@ -64,8 +83,8 @@ export function parseTorrentio(fullTitle) {
     return fullData;
 }
 
-
-function parseMediaData(rawString) {
+// Parse single strings
+export function parseMediaData(rawString) {
     let cleanName = rawString.toLowerCase();
 
     let fallbackSeason = null;
@@ -76,15 +95,15 @@ function parseMediaData(rawString) {
         fallbackEpisode = parseInt(seMatch[2], 10);
     }
 
-    // Uses PTT for Western shows
-    const parsed = pttParse(cleanName);
+    // Use PTT library
+    const parsed = pttParse(rawString);
 
     let finalTitle = parsed.title || cleanName;
 
     // Season packs
     let seasonText = null;
 
-    if (/\b(?:complete series|complete collection|the complete series)\b/i.test(cleanName)) {
+    if (/\b(?:complete series|complete collection|the complete series|full series)\b/i.test(cleanName)) {
         seasonText = "COMPLETE SERIES";
     }
     if (!seasonText) {
@@ -131,11 +150,18 @@ function parseMediaData(rawString) {
         }
     }
 
-    // Video codec
-    const customVideo = extractVideoCodec(rawString);
+    // Video Source (Blueray/WebRip...)
+    const customVideo = extractVideoCodec(cleanName);
+    const finalVideoSource = customVideo.source || parsed.source || "Unknown";
+    const finalVideoTier = customVideo.tier || "Standard";
+    const videoData = { source: finalVideoSource, tier: finalVideoTier };
 
-    // Audio codec
-    const customAudio = extractAudioCodec(rawString);
+    // Audio Codec
+    const customAudio = extractAudioCodec(cleanName);
+    
+    const finalAudioCodecs = customAudio.codecs || (parsed.audio ? [parsed.audio] : []);
+    const finalAudioTier = customAudio.tier || "Standard";
+    const audioData = { codecs: finalAudioCodecs, tier: finalAudioTier };
 
     finalTitle = finalTitle.replace(/^\[.*?\]\s*/, '');
     finalTitle = finalTitle.replace(/\s*\[.*?\]$/, '');
@@ -161,11 +187,11 @@ function parseMediaData(rawString) {
         season: parsed.season !== undefined ? parsed.season : fallbackSeason,
         episode: parsed.episode !== undefined ? parsed.episode : fallbackEpisode,
         seasonDetails: seasonText,
-        audioType: customAudio || parsed.audio,
+        audioType: audioData,
         languages: parsed.languages,
         videoType: parsed.codec || videoFormat,
         resolution: parsed.resolution,
-        source: customVideo || parsed.source
+        source: videoData
     };
 
     return pttData;
@@ -238,48 +264,59 @@ function extractLanguage(rawString) {
 }
 
 // Video formats
+const videoQualities = [
+    // 1. Remux
+    { source: "Remux", tier: "Premium", patterns: ['remux', 'bdremux', 'uhdremux', '4kremux'] },
+    { source: "BluRay", tier: "Premium", patterns: ['bluray', 'blu-ray', 'bdrip', 'brrip', 'bdmv', 'bdr'] },
+    { source: "WEB-DL", tier: "Premium", patterns: ['web-dl', 'webdl', 'web.dl', 'web dl'] },
+
+    { source: "WEBRip", tier: "Standard", patterns: ['web-rip', 'webrip', 'web.rip', 'web rip'] },
+    { source: "HDTV", tier: "Standard", patterns: ['hdtv', 'tvrip'] },
+    { source: "HDRip", tier: "Standard", patterns: ['hdrip'] },
+    { source: "WEB", tier: "Standard", patterns: ['web'] },
+    { source: "DVD", tier: "Standard", patterns: ['dvdrip', 'dvd', 'dvdscr'] },
+    { source: "CAM", tier: "Standard", patterns: ['cam', 'camrip', 'hdcam', 'ts', 'hdts', 'telesync', 'tc', 'telecine', 'scr', 'screener'] }
+];
+
 function extractVideoCodec(rawString) {
-    // Check for Remux first, as it's the ultimate quality modifier
-    const isRemux = /\bremux\b/i.test(rawString);
+    const cleanName = rawString.toLowerCase();
 
-    if (/\b(?:blu-?ray|blue-?ray|bdrip|brrip)\b/i.test(rawString)) {
-        return isRemux ? "BluRay Remux" : "BluRay";
+    for (const quality of videoQualities) {
+        for (const pattern of quality.patterns) {
+            // Escapes special characters and ensures we match the exact alias
+            const escapedPattern = pattern.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+            const regex = new RegExp(`(?:^|\\W|_)${escapedPattern}(?:$|\\W|_)`, 'i');
+
+            if (regex.test(cleanName)) {
+                return {
+                    source: quality.source,
+                    tier: quality.tier
+                };
+            }
+        }
     }
 
-    // 2. WEB-DL (Matches: web-dl, webdl, web.dl)
-    if (/\b(?:web-?dl|web\.dl)\b/i.test(rawString)) {
-        return "WEB-DL";
-    }
-
-    // 3. WEBRip (Matches: web-rip, webrip, web.rip)
-    if (/\b(?:web-?rip|web\.rip)\b/i.test(rawString)) {
-        return "WEBRip";
-    }
-
-    // 4. Fallback WEB (If it just says "WEB")
-    if (/\b(?:web)\b/i.test(rawString)) {
-        return "WEB";
-    }
-
-    // 5. HDTV / HDRip
-    if (/\b(?:hdtv)\b/i.test(rawString)) return "HDTV";
-    if (/\b(?:hdrip)\b/i.test(rawString)) return "HDRip";
-
-    // If no source is found but it says Remux, label it Remux
-    return isRemux ? "Remux" : null;
+    // Default fallback if absolutely nothing is found
+    return { source: null, tier: "Standard" };
 }
 
-// Audio formats
-const audioTypes = [
-    'truehd', 'atmos', 'dts-hd', 'dts:x', 'flac',
-    'dd+', 'e-ac3', 'eac3', 'ac3', 'dts',
-    'dolby digital', 'aac'
+// Audio categorization
+const losslessAudio = [
+    'atmos', 'truehd', 'dts-hd', 'dts:x', 'lossless'
 ];
+
+const premiumAudio = [
+    'flac', 'aac', 'dts', 'dd5.1', 'ac3', 'eac3', 'e-ac3', 'dd+', 'dolby digital', '5.1', '7.1'
+];
+
+// Master list for the regex scanner
+const allAudioTypes = [...losslessAudio, ...premiumAudio];
 
 function extractAudioCodec(rawString) {
     const foundAudio = new Set();
+    let highestTier = "Standard";
 
-    audioTypes.forEach(audio => {
+    allAudioTypes.forEach(audio => {
         // Escape special characters like + or . in the audio name
         const escapedAudio = audio.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
 
@@ -291,5 +328,19 @@ function extractAudioCodec(rawString) {
         }
     });
 
-    return foundAudio.size > 0 ? Array.from(foundAudio) : null;
+    const codecsArray = foundAudio.size > 0 ? Array.from(foundAudio) : null;
+
+    // Evaluate the tier if codecs were found
+    if (codecsArray) {
+        if (codecsArray.some(c => losslessAudio.includes(c))) {
+            highestTier = "Lossless";
+        } else if (codecsArray.some(c => premiumAudio.includes(c))) {
+            highestTier = "Premium";
+        }
+    }
+
+    return {
+        codecs: codecsArray,
+        tier: highestTier
+    };
 }

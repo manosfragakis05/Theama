@@ -5,19 +5,29 @@
  * ==========================================
  */
 
-// 1. Import from our newly created modules
 import { registerSW } from 'virtual:pwa-register';
 
-import { authenticateTorboxUser, checkAuth, logoutTorBox } from './services/torbox.js';
+import { authenticateTorboxUser, checkAuth, logoutTorBox, closeStreamPicker } from './services/torbox.js';
 import { appState } from './services/config.js';
-import { initializeSupabase, changeAuthState } from './services/db.js';
+import { initializeSupabase, changeAuthState, toggleAuthMode, toggleUpdateMode, logOutUser } from './services/db.js';
 import { goHome, toggleProfile, switchTab, handleSearch, openExternalPlayer } from './ui.js';
 import { initGlobalDrag } from './api.js';
 import { deleteTorrent } from './pages/library.js';
 import { closePicker } from './streaming/picker.js';
 import { playDirect } from './streaming/player.js';
-import { renderFriendsSidebar, shareMyProfile, updateProfilePage, addToWatchlist, createNewList, openWatchlists } from './profile.js';
 import { initFriendProfile, fetchFriendsList } from './network.js';
+import { submitNewAddon } from './user-addons/scrapers.js';
+import { renderInstalledAddons } from './user-addons/scraper-renderer.js';
+
+import {
+    renderFriendsSidebar,
+    shareMyProfile,
+    returnToMyProfile,
+    updateProfilePage,
+    addToWatchlist,
+    createNewList,
+    openWatchlists
+} from './profile.js';
 
 import {
     downloadToOPFS,
@@ -28,44 +38,101 @@ import {
     renderLocalLibrary
 } from './services/offline.js';
 
+// NEW LOGIC: Setup Static Event Listeners
+function setupStaticEventListeners() {
+    // 1. Forms
+    const torboxForm = document.getElementById('torbox-auth-form');
+    if (torboxForm) {
+        torboxForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            authenticateTorboxUser();
+        });
+    }
 
-// Global Bindings
-window.authenticateTorboxUser = authenticateTorboxUser;
-window.changeAuthState = changeAuthState;
-window.playDirect = playDirect;
-window.goHome = goHome;
-window.switchTab = switchTab;
-window.handleSearch = handleSearch;
-window.toggleProfile = toggleProfile;
-window.logoutTorBox = logoutTorBox;
-window.closePicker = closePicker;
-window.deleteTorrent = deleteTorrent;
-window.openExternalPlayer = openExternalPlayer;
-window.downloadToOPFS = downloadToOPFS;
+    const accountForm = document.getElementById('account-form');
+    if (accountForm) {
+        accountForm.addEventListener('submit', changeAuthState);
+    }
 
-window.updateProfilePage = updateProfilePage;
-window.openWatchlists = openWatchlists;
-window.addToWatchlist = addToWatchlist;
-window.createNewList = createNewList;
-window.shareMyProfile = shareMyProfile;
+    const searchInput = document.getElementById('search-input');
+    if (searchInput) {
+        searchInput.addEventListener('input', handleSearch);
+    }
+
+    // 2. Navigation (Using Event Delegation for all .nav-link classes)
+    const navLinks = document.querySelectorAll('.nav-link');
+    navLinks.forEach(link => {
+        link.addEventListener('click', (e) => {
+            const target = e.currentTarget.dataset.target;
+            if (target) switchTab(target);
+        });
+    });
+
+    // 3. Static Profile & UI Buttons
+    const profileShareBtn = document.getElementById('profile-share-btn');
+    if (profileShareBtn) {
+        profileShareBtn.addEventListener('click', shareMyProfile);
+    }
+
+    const addWatchlistBtn = document.getElementById('btn-add-watchlist');
+    if (addWatchlistBtn) {
+        addWatchlistBtn.addEventListener('click', openWatchlists);
+    }
+
+    // Addons input bar
+    const toggleAddonBtn = document.getElementById('show-addon-input-btn');
+    if (toggleAddonBtn) {
+        toggleAddonBtn.addEventListener('click', () => {
+            const container = document.getElementById('addon-input-container');
+            if (container) {
+                container.classList.toggle('hidden');
+            }
+        });
+    }
+
+    // 4. File Inputs
+    const fileInput = document.getElementById('local-file-input');
+    if (fileInput) {
+        fileInput.addEventListener('change', processLocalFile);
+    }
 
 
-// Offline & Local File Bindings
-window.triggerLocalFilePicker = triggerLocalFilePicker;
-window.processLocalFile = processLocalFile;
-window.deleteLocalGhost = deleteLocalGhost;
-window.renderLocalLibrary = renderLocalLibrary;
+    // UI.js
+    document.getElementById('profile-settings-btn')?.addEventListener('click', () => switchTab('settings-page'));
+    document.getElementById('header-profile-toggle')?.addEventListener('click', toggleProfile);
+    document.getElementById('home-logo-btn')?.addEventListener('click', goHome);
 
-const fileInput = document.getElementById('local-file-input');
-if (fileInput) {
-    fileInput.addEventListener('change', processLocalFile);
+    document.getElementById('dropdown-profile-btn')?.addEventListener('click', () => switchTab('profile-page'));
+    document.getElementById('dropdown-logout-btn')?.addEventListener('click', logOutUser);
+
+    //Offline.js
+    document.getElementById('trigger-local-file-btn')?.addEventListener('click', triggerLocalFilePicker);
+
+    //Torbox.js
+    document.getElementById('disconnect-torbox-btn')?.addEventListener('click', logoutTorBox);
+    document.getElementById('close-stream-picker-btn')?.addEventListener('click', closeStreamPicker);
+
+    //Profile.js
+    document.getElementById('back-to-profile-btn')?.addEventListener('click', returnToMyProfile);
+    document.getElementById('submit-new-list-btn')?.addEventListener('click', createNewList);
+
+    //Db.js
+    document.getElementById('toggle-auth-mode-btn')?.addEventListener('click', toggleAuthMode);
+    document.getElementById('edit-profile-btn')?.addEventListener('click', toggleUpdateMode);
+
+    //Picker.js
+    document.getElementById('close-episode-picker-btn')?.addEventListener('click', closePicker);
+    
+    //Scraper.js
+    document.getElementById('install-addon-btn')?.addEventListener('click', submitNewAddon);
+
 }
+
 
 // --- PWA AUTO-UPDATE TRIGGER ---
 const updateSW = registerSW({
-    immediate: true, // Forces the page to reload instantly when a new update is ready
+    immediate: true,
     onRegistered(r) {
-        // Check for new commits every 15 minutes while the app is open
         r && setInterval(() => {
             console.log('Checking for PWA updates...');
             r.update();
@@ -81,7 +148,6 @@ export async function handleProfileRouting() {
 
     if (friendId && appState.currentUser && friendId === appState.currentUser.id) {
         console.log("User viewing their own public link. Stripping parameter.");
-
         window.history.replaceState({}, document.title, window.location.pathname);
         return;
     }
@@ -95,8 +161,10 @@ export async function handleProfileRouting() {
 
 // Boot
 document.addEventListener('DOMContentLoaded', () => {
-    const splash = document.getElementById('pwa-splash');
+    // Initialize our new static listeners immediately
+    setupStaticEventListeners();
 
+    const splash = document.getElementById('pwa-splash');
     const dropShield = () => {
         if (splash && splash.style.opacity !== '0') {
             splash.style.opacity = '0';
@@ -111,8 +179,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function bootApp() {
         try {
-
-
             initGlobalDrag();
             await Promise.all([
                 handleProfileRouting(),
@@ -124,8 +190,9 @@ document.addEventListener('DOMContentLoaded', () => {
             renderFriendsSidebar(friends);
 
             renderLocalLibrary();
-            clearTimeout(failsafeTimer);
+            renderInstalledAddons();
 
+            clearTimeout(failsafeTimer);
         } catch (error) {
             console.error("Boot error:", error);
             clearTimeout(failsafeTimer);
@@ -134,6 +201,5 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Start the boot process
     bootApp();
 });

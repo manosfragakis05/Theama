@@ -71,46 +71,35 @@ export function toggleProfile(event) {
 }
 
 function updateProfileDropdown() {
-    const dropdown = document.getElementById('profile-dropdown');
-    if (!dropdown) return;
+    const loggedInContainer = document.getElementById('profile-logged-in');
+    const loggedOutContainer = document.getElementById('profile-logged-out');
 
-    // Start with your base header that is always there
-    let htmlContent = "";
+    // Ensure elements exist before trying to modify them
+    if (!loggedInContainer || !loggedOutContainer) return;
 
-    // Check our Single Source of Truth
     if (appState.currentUser) {
-        // Logged In State
+        // Logged In State: Update Text Values
         const username = appState.currentUser.user_metadata?.username || 'User';
         const email = appState.currentUser.email || '';
 
-        htmlContent += `
-            <div class="mb-4">
-                <p class="font-bold text-white text-lg truncate">Welcome ${username}!</p>
-                ${email ? `<p class="text-xs text-slate-400 truncate">${email}</p>` : ''}
-            </div>
-            <hr class="border-slate-700 my-2">
-            <button onclick="switchTab('profile-page')" class="w-full text-left px-3 py-2 hover:bg-slate-700 rounded-lg text-sm text-slate-300 transition-colors">
-                Public Profile
-            </button>
-            <button onclick="logOutUser()" class="w-full text-left px-3 py-2 hover:bg-red-500/20 hover:text-red-400 rounded-lg text-sm text-slate-400 transition-colors mt-1">
-                Log Out
-            </button>
-        `;
-    } else {
-        // Logged Out State
-        htmlContent += `
-            <div class="mb-4">
-                <p class="font-bold text-white text-lg">Guest</p>
-                <p class="text-xs text-slate-400">Not logged in</p>
-            </div>
-            <button onclick="switchTab('settings-page')" class="w-full text-center bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold transition-all shadow-lg">
-                Log In / Sign Up
-            </button>
-        `;
-    }
+        document.getElementById('dropdown-username').textContent = username;
 
-    // Inject the new HTML
-    dropdown.innerHTML = htmlContent;
+        const emailEl = document.getElementById('dropdown-email');
+        if (email) {
+            emailEl.textContent = email;
+            emailEl.classList.remove('hidden');
+        } else {
+            emailEl.classList.add('hidden');
+        }
+
+        // Toggle Visibility
+        loggedInContainer.classList.remove('hidden');
+        loggedOutContainer.classList.add('hidden');
+    } else {
+        // Logged Out State: Toggle Visibility
+        loggedInContainer.classList.add('hidden');
+        loggedOutContainer.classList.remove('hidden');
+    }
 }
 
 // Close profile dropdown when clicking outside

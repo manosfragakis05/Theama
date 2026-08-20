@@ -6,7 +6,7 @@
  */
 
 import { appState, showToast } from '../services/config.js';
-import { parseTorrentio } from '../utils/parseMedia.js';
+import { parseMediaData } from '../utils/parseMedia.js';
 import { requestLink } from './player.js';
 import { fetchAnimeMapping } from '../api.js'; 
 
@@ -24,7 +24,7 @@ export function preProcessTorrentData(videoFiles, mainShowTitle) {
     const franchiseGroups = {};
 
     videoFiles.forEach(file => {
-        const fileData = parseTorrentio(file.name);
+        const fileData = parseMediaData(file.name);
 
         let mergedInfo = {
             title: fileData.title || mainShowTitle || 'Unknown',
@@ -105,8 +105,8 @@ export async function openPicker(torrent) {
     `;
 
     const videoFiles = torrent.files.filter(f => f.name.match(/\.(mkv|mp4|avi|mov)$/i));
-    const baseInfo = parseTorrentio(torrent.name);
-    const cleanName = baseInfo.title;
+    const baseInfo = parseMediaData(torrent.name);
+    const cleanName = baseInfo.title.replace(/(^\w|[\s-]\w)/g, match => match.toUpperCase());
 
     const vault = JSON.parse(localStorage.getItem('tmdb_vault') || '{}');
     const vaultData = vault[(torrent.hash || "").toLowerCase()];
@@ -147,7 +147,7 @@ export async function openPicker(torrent) {
 
         if (!isFlatDirectory) {
             const parentFolder = pathParts[pathParts.length - 2];
-            const folderData = parseTorrentio(parentFolder);
+            const folderData = parseMediaData(parentFolder);
             realTitle = folderData.title || cleanName;
         }
 

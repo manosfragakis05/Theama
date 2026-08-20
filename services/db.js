@@ -23,7 +23,6 @@ export async function initializeSupabase() {
     if (isDbInitialized) return;
     
     supabase.auth.onAuthStateChange((event, session) => {
-        console.log(`Supabase Auth Event: ${event}`);
         currentSession = session;
         setAuthState(session ? session.user : null);
         updateSettingsUI();
@@ -58,7 +57,7 @@ function updateSettingsUI() {
 
     const toggleAuthDiv = document.getElementById('settings-auth-toggle');
     const toggleText = document.getElementById('toggle-text');
-    const toggleBtn = document.getElementById('toggle-btn');
+    const toggleBtn = document.getElementById('toggle-auth-mode-btn');
     const forgotPasswordBtn = document.getElementById('forgotPassword-btn');
 
     const toggleUpdateDiv = document.getElementById('edit-profile-toggle');

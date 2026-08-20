@@ -12,7 +12,7 @@ export async function getAvailableCustomLists() {
 
     const { data, error } = await supabase
         .from('lists')
-        .select('*')
+        .select('id, name, is_private')
         .eq('user_id', appState.currentUser.id)
         .order('created_at', { ascending: true });
 
@@ -64,7 +64,7 @@ async function getListMedia(list) {
 
         const { data, error } = await supabase
             .from('movies')
-            .select('*')
+            .select('id, list_id, tmdb_id, title, media_type, poster_path')
             .eq('user_id', appState.currentUser.id)
             .eq('list_id', list.id)
             .order('created_at', { ascending: false });
@@ -207,8 +207,7 @@ export async function fetchFollowingSidebarList() {
 }
 
 // Clear viewing state
-export async function returnToMyProfile(e) {
-    if (e) e.preventDefault();
+export async function returnToMyProfile() {
 
     // 1. Clean the URL silently (The PWA Way)
     window.history.pushState({}, document.title, window.location.pathname);
@@ -216,7 +215,7 @@ export async function returnToMyProfile(e) {
     // 2. Hide the Friend UI Elements
     const backBtn = document.getElementById('back-to-profile-btn');
     const followBtn = document.getElementById('profile-follow-btn');
-    
+
     if (backBtn) backBtn.classList.add('hidden');
     if (followBtn) followBtn.style.display = 'none';
 
@@ -225,9 +224,9 @@ export async function returnToMyProfile(e) {
     const shareProfileBtn = document.getElementById('profile-share-btn');
     const newListBtn = document.querySelector('button[onclick*="create-list-modal"]');
     const defaultFavs = document.getElementById('default-watchlists-container');
-    
-    if (settingsBtn) settingsBtn.style.display = ''; 
-    if (shareProfileBtn) shareProfileBtn.style.display = ''; 
+
+    if (settingsBtn) settingsBtn.style.display = '';
+    if (shareProfileBtn) shareProfileBtn.style.display = '';
     if (newListBtn) newListBtn.style.display = '';
     if (defaultFavs) defaultFavs.style.display = '';
 
@@ -237,7 +236,7 @@ export async function returnToMyProfile(e) {
 
     // 5. Restore your username and re-fetch your highly optimized personal lists!
     updateProfilePage();
-    
+
     // Add the subtitle back
     const usernameDisplay = document.getElementById('profile-username-display');
     if (usernameDisplay && usernameDisplay.parentElement.nextElementSibling) {
@@ -246,7 +245,6 @@ export async function returnToMyProfile(e) {
 
     await loadAndRenderProfile();
 }
-window.returnToMyProfile = returnToMyProfile;
 
 export async function shareMyProfile() {
     if (!appState.currentUser) {
@@ -273,7 +271,7 @@ export async function shareMyProfile() {
         } catch (err) {
             console.log("User cancelled the share menu.");
         }
-    } 
+    }
     // 3. THE FALLBACK: Desktop users get a copied link instead
     else {
         try {
@@ -297,11 +295,12 @@ export async function loadAndRenderProfile() {
 
     renderAllWatchlists(customLists);
 
+    // THE OPTIMIZED FIX:
     let allUserMovies = [];
     if (appState.currentUser) {
         const { data } = await supabase
             .from('movies')
-            .select('*')
+            .select('id, list_id, tmdb_id, title, media_type, poster_path')
             .eq('user_id', appState.currentUser.id)
             .order('created_at', { ascending: false });
         allUserMovies = data || [];
@@ -311,9 +310,9 @@ export async function loadAndRenderProfile() {
         let mediaData = [];
 
         if (appState.currentUser) {
-             mediaData = allUserMovies.filter(movie => movie.list_id === listObj.id);
+            mediaData = allUserMovies.filter(movie => movie.list_id === listObj.id);
         } else {
-             mediaData = await getListMedia(listObj); // Keep guest local storage logic
+            mediaData = await getListMedia(listObj); // Keep guest local storage logic
         }
 
         const handleRemove = async (tmdbId) => {
@@ -642,7 +641,7 @@ window.addEventListener('auth-state-changed', async () => {
 
     // 2. THE OPTIMIZATION: If the user hasn't changed, this is just a background token refresh. Abort!
     if (lastRenderedUserId === currentUserId) {
-        console.log("Session verified in background. Skipping redundant database refetch.");
+        //console.log("Session verified in background. Skipping redundant database refetch.");
         return;
     }
 

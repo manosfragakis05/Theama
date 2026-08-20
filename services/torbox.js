@@ -1,13 +1,12 @@
 /**
- * ==========================================
+ * ===============================================
  * torboxAuth.js
- * Handles TorBox API Key Verification & Session
- * ==========================================
+ * Handles TorBox API Key Verification & Addition
+ * ===============================================
  */
 
-// 1. Import the utilities we made in config.js
-import { getTbKey, smartFetch, showToast } from './config.js';
 
+import { getTbKey, smartFetch, showToast } from './config.js';
 import { loadLibrary } from '../pages/library.js';
 
 export async function authenticateTorboxUser() {
@@ -63,7 +62,7 @@ export async function checkAuth() {
     if (key) {
         // User is authenticated
         await loadLibrary();
-        
+
         connectedBadge.classList.replace('hidden', 'flex');
         disconnectedBadge.classList.replace('flex', 'hidden');
         authForm.classList.add('hidden');
@@ -83,3 +82,146 @@ export function logoutTorBox() {
         location.reload();
     }
 }
+
+//#region Add to Library
+async function addStreamtoTorbox(finalLink) {
+    if (finalLink.startsWith("magnet")) {
+        const torrentId = await sendMagnetToTorbox(finalLink);
+        if (torrentId) {
+            await editTorrentInfo(torrentId);
+            console.log("Edited magnet");
+            return;
+        }
+    }
+}
+
+// Ping the http stream so TB adds it
+async function pingAddonLink(url) {
+    const controller = new AbortController();
+
+    try {
+        console.log("Pinging add-on to trigger TorBox addition...");
+
+        await fetch(url, {
+            method: 'GET',
+            mode: 'no-cors',
+            signal: controller.signal
+        });
+
+        controller.abort();
+
+        console.log("Ping complete! Stream added to library.");
+        return true;
+
+    } catch (error) {
+        if (error.name === 'AbortError') {
+            console.log("Ping complete and connection safely closed.");
+            return true;
+        }
+
+        console.warn("Ping encountered a network/CORS error, but side-effect likely succeeded.");
+        return true;
+    }
+}
+
+// Add a link to users library  
+export async function sendMagnetToTorbox(magnetLink) {
+    const tbKey = getTbKey();
+    if (!tbKey) return;
+
+    try {
+        const createUrl = 'https://api.torbox.app/v1/api/torrents/createtorrent';
+        const formData = new FormData();
+        formData.append('magnet', magnetLink);
+
+        console.log("Magnet send");
+
+        const createRes = await smartFetch(createUrl, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${tbKey}` },
+            body: formData
+        });
+
+        const createData = await createRes.json();
+        const torrentId = createData.data?.torrent_id;
+
+        if (!createData.success) throw new Error(createData.detail || "TorBox rejected the magnet.");
+
+        closeStreamPicker();
+        showToast("Successfully added to library", "success");
+
+        return true;
+
+    } catch (e) {
+        console.error(e);
+        showToast(`Failed to add: ${e.message}`, 'error');
+    }
+}
+
+async function editTorrentInfo(torrentId) {
+    const tbKey = getTbKey();
+    if (!tbKey) return;
+
+    const mediaData = mediaStore.get();
+    const releaseYear = mediaData.releaseYear;
+    const customName = `${mediaData.title} (${releaseYear})`;
+
+    if (!torrentId) {
+        try {
+            const listUrl = 'https://api.torbox.app/v1/api/torrents/mylist';
+            const listRes = await smartFetch(listUrl, {
+                headers: { 'Authorization': `Bearer ${tbKey}` }
+            });
+            const listData = await listRes.json();
+
+            if (listData.success && listData.data && listData.data.length > 0) {
+                const latestTorrent = listData.data[0];
+                const latestTorrentId = latestTorrent.id || latestTorrent.torrent_id;
+
+                const editUrl = 'https://api.torbox.app/v1/api/torrents/edittorrent';
+                await smartFetch(editUrl, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${tbKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        torrent_id: latestTorrentId,
+                        name: customName
+                    })
+                });
+            }
+
+            closeStreamPicker();
+            showToast("Successfully added and renamed in TorBox!", "success");
+            return;
+        } catch (e) {
+            console.error("Smart link ping failed:", e);
+            showToast("Failed to trigger smart link.", "error");
+            return;
+        }
+        console.log("Http edit");
+    }
+
+
+    // Magnet Edit
+    if (torrentId) {
+        const editUrl = 'https://api.torbox.app/v1/api/torrents/edittorrent';
+        const editBody = { torrent_id: torrentId, name: customName };
+
+        await smartFetch(editUrl, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${tbKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(editBody)
+        });
+        console.log("Magnet edit");
+    }
+}
+
+export function closeStreamPicker() {
+    document.getElementById('stream-picker-modal').classList.add('hidden');
+};
+//#endregion

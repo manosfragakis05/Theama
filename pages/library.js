@@ -7,7 +7,7 @@
 
 import { appState, getTbKey, smartFetch, showToast } from '../services/config.js';
 import { getPosterForLibrary } from '../services/metadata.js';
-import { parseTorrentio } from '../utils/parseMedia.js';
+import { parseMediaData } from '../utils/parseMedia.js';
 import { requestLink } from '../streaming/player.js';
 
 import { openPicker } from '../streaming/picker.js';
@@ -22,7 +22,7 @@ export async function loadLibrary() {
     if (!key) return;
 
     try {
-        const res = await smartFetch('https://api.torbox.app/v1/api/torrents/mylist?bypass_cache=true', {
+        const res = await smartFetch('https://api.torbox.app/v1/api/torrents/mylist?bypass_cache=false', {
             headers: { 'Authorization': `Bearer ${key}` }
         });
         const data = await res.json();
@@ -68,7 +68,9 @@ export async function deleteTorrent(torrentId, event) {
 
         if (data.success) {
             showToast("Deleted successfully!", 'success');
-            loadLibrary();
+            
+            appState.allTorrents = appState.allTorrents.filter(t => t.id !== torrentId);            
+            renderList(appState.allTorrents);
         } else {
             showToast("Error: " + data.detail, 'error');
         }
@@ -98,8 +100,8 @@ export function renderList(items) {
         const vidCount = t.files.filter(f => f.name.match(/\.(mkv|mp4|avi|mov)$/i)).length;
         const isShow = vidCount > 1;
 
-        const mediaInfo = parseTorrentio(t.name);
-        const cleanName = mediaInfo.title;
+        const mediaInfo = parseMediaData(t.name);
+        const cleanName = mediaInfo.title.replace(/(^\w|[\s-]\w)/g, match => match.toUpperCase());
         const year = mediaInfo.year;
 
         const hash = (t.hash || "").toLowerCase();
@@ -108,14 +110,14 @@ export function renderList(items) {
         const card = document.createElement('div');
         card.className = "relative flex-col cursor-pointer transition-transform hover:scale-105 select-none group";
 
-        // Build the action buttons
-        let actionButtonsHTML = `<button onclick="event.stopPropagation(); deleteTorrent(${t.id}, event);" class="text-red-500 hover:text-red-400 p-1 bg-black/50 rounded-full transition z-10 w-8 h-8 flex items-center justify-center backdrop-blur-sm shadow-md">🗑️</button>`;
+        // Step 1: Remove onclick entirely and add identifier classes ('delete-btn', 'download-btn')
+        let actionButtonsHTML = `<button class="delete-btn text-red-500 hover:text-red-400 p-1 bg-black/50 rounded-full transition z-10 w-8 h-8 flex items-center justify-center backdrop-blur-sm shadow-md">🗑️</button>`;
 
         if (!isShow) {
             const vid = t.files.find(f => f.name.match(/\.(mkv|mp4|avi|mov)$/i)) || t.files[0];
             if (vid) {
                 actionButtonsHTML = `
-                    <button onclick="event.stopPropagation(); downloadToOPFS(${t.id}, ${vid.id}, null, cleanName, this);" class="text-blue-400 hover:text-blue-300 p-1 bg-black/50 rounded-full transition z-10 w-8 h-8 flex items-center justify-center backdrop-blur-sm shadow-md mr-2">⬇️</button>
+                    <button class="download-btn text-blue-400 hover:text-blue-300 p-1 bg-black/50 rounded-full transition z-10 w-8 h-8 flex items-center justify-center backdrop-blur-sm shadow-md mr-2">⬇️</button>
                     ${actionButtonsHTML}
                 `;
             }
@@ -143,9 +145,32 @@ export function renderList(items) {
             <p class="text-xs text-slate-300 mt-2 truncate font-semibold pl-1">${cleanName}</p>
         `;
 
-        card.onclick = () => {
+        // Step 2: Query the newly created HTML for the buttons and attach event listeners dynamically
+
+        const deleteBtn = card.querySelector('.delete-btn');
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', (event) => {
+                // Event delegation handles this safely inside the loop's closure
+                deleteTorrent(t.id, event);
+            });
+        }
+
+        const downloadBtn = card.querySelector('.download-btn');
+        if (downloadBtn) {
+            downloadBtn.addEventListener('click', (event) => {
+                event.stopPropagation(); // Prevent the main card click event from firing
+                const vid = t.files.find(f => f.name.match(/\.(mkv|mp4|avi|mov)$/i)) || t.files[0];
+                if (vid) {
+                    downloadToOPFS(t.id, vid.id, null, cleanName, event.currentTarget);
+                }
+            });
+        }
+
+        // Maintain your original card click logic
+        card.addEventListener('click', () => {
             if (appState.clickCooldown) { showToast("Please wait a moment."); return; }
-            appState.clickCooldown = true; setTimeout(() => appState.clickCooldown = false, 2000);
+            appState.clickCooldown = true;
+            setTimeout(() => appState.clickCooldown = false, 2000);
 
             if (isShow) {
                 openPicker(t);
@@ -157,7 +182,7 @@ export function renderList(items) {
                     showToast("No playable video files found in this torrent.", "error");
                 }
             }
-        };
+        });
 
         list.appendChild(card);
 

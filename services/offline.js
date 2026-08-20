@@ -6,7 +6,7 @@
  */
 
 import { appState, showToast } from './config.js';
-import { parseTorrentio } from '../utils/parseMedia.js';
+import { parseFormated } from '../utils/parseMedia.js';
 import { getPosterForLibrary } from './metadata.js';
 import { getTorboxLink, startPlayer } from '../streaming/player.js';
 
@@ -41,7 +41,7 @@ export async function processLocalFile(event) {
 
     if (!localVault[file.name]) {
         showToast("Adding to library...", "info");
-        const parsedData = parseTorrentio(file.name);
+        const parsedData = parseFormated(file.name);
 
         let posterUrl = '';
         try {

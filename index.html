@@ -27,8 +27,8 @@
     <header class="sticky top-0 left-0 w-full z-40 bg-slate-900/95 backdrop-blur border-b border-slate-800 h-[72px]">
         <div
             class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md px-16 md:px-4 z-10 flex gap-2">
-            <form onsubmit="event.preventDefault()" class="relative flex-1">
-                <input id="search-input" type="text" placeholder="Search or Paste Link..." oninput="handleSearch()"
+            <form class="relative flex-1">
+                <input id="search-input" type="text" placeholder="Search or Paste Link..."
                     class="w-full bg-slate-800 border border-slate-700 text-white pl-10 pr-4 py-2.5 rounded-xl text-sm focus:ring-2 focus:ring-blue-600 outline-none transition-all shadow-inner">
                 <svg class="absolute left-3 top-3 w-5 h-5 text-slate-400 pointer-events-none" fill="none"
                     stroke="currentColor" viewBox="0 0 24 24">
@@ -39,7 +39,7 @@
         </div>
 
         <div class="absolute top-1/2 right-6 -translate-y-1/2 z-20">
-            <button onclick="toggleProfile(event)"
+            <button id="header-profile-toggle"
                 class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold border-2 border-slate-800 focus:outline-none hover:bg-blue-500 transition shadow-lg shadow-blue-900/20">
                 <svg class="w-5 h-5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -49,6 +49,37 @@
 
             <div id="profile-dropdown"
                 class="hidden absolute right-0 mt-2 w-64 bg-slate-800 rounded-xl shadow-2xl border border-slate-700 z-50 p-4">
+
+                <!-- Logged In State -->
+                <div id="profile-logged-in" class="hidden">
+                    <div class="mb-4">
+                        <p class="font-bold text-white text-lg truncate">Welcome <span id="dropdown-username"></span>!
+                        </p>
+                        <p id="dropdown-email" class="text-xs text-slate-400 truncate"></p>
+                    </div>
+                    <hr class="border-slate-700 my-2">
+                    <button id="dropdown-profile-btn"
+                        class="w-full text-left px-3 py-2 hover:bg-slate-700 rounded-lg text-sm text-slate-300 transition-colors">
+                        Public Profile
+                    </button>
+                    <button id="dropdown-logout-btn"
+                        class="w-full text-left px-3 py-2 hover:bg-red-500/20 hover:text-red-400 rounded-lg text-sm text-slate-400 transition-colors mt-1">
+                        Log Out
+                    </button>
+                </div>
+
+                <!-- Logged Out State -->
+                <div id="profile-logged-out" class="hidden">
+                    <div class="mb-4">
+                        <p class="font-bold text-white text-lg">Guest</p>
+                        <p class="text-xs text-slate-400">Not logged in</p>
+                    </div>
+                    <button onclick="switchTab('settings-page')"
+                        class="w-full text-center bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold transition-all shadow-lg">
+                        Log In / Sign Up
+                    </button>
+                </div>
+
             </div>
         </div>
     </header>
@@ -57,25 +88,25 @@
     <nav
         class="hidden md:flex flex-col fixed top-0 left-0 h-screen w-64 bg-slate-900/95 border-r border-slate-800 z-50">
         <div class="p-6 pb-[15px] border-b border-slate-800">
-            <button onclick="goHome()" class="text-2xl font-extrabold text-white">Theama</button>
+            <button id="home-logo-btn" class="text-2xl font-extrabold text-white"></button>
         </div>
         <div class="flex-1 px-4 mt-4 space-y-2">
-            <button onclick="switchTab('library-page')" data-target="library-page"
+            <button data-target="library-page"
                 class="nav-link active w-full text-center px-4 py-3 rounded-xl font-bold transition-all text-slate-400 hover:bg-slate-800 hover:text-white [&.active]:bg-blue-600 [&.active]:text-white [&.active]:hover:bg-blue-600">
                 Library
             </button>
 
-            <button onclick="switchTab('discover-page')" data-target="discover-page"
+            <button data-target="discover-page"
                 class="nav-link w-full text-center px-4 py-3 rounded-xl font-bold transition-all text-slate-400 hover:bg-slate-800 hover:text-white [&.active]:bg-blue-600 [&.active]:text-white [&.active]:hover:bg-blue-600">
                 Discover
             </button>
 
-            <button onclick="switchTab('profile-page')" data-target="profile-page"
+            <button data-target="profile-page"
                 class="nav-link w-full text-center px-4 py-3 rounded-xl font-bold transition-all text-slate-400 hover:bg-slate-800 hover:text-white [&.active]:bg-blue-600 [&.active]:text-white [&.active]:hover:bg-blue-600">
                 Profile
             </button>
 
-            <button onclick="switchTab('settings-page')" data-target="settings-page"
+            <button data-target="settings-page"
                 class="nav-link w-full text-center px-4 py-3 rounded-xl font-bold transition-all text-slate-400 hover:bg-slate-800 hover:text-white [&.active]:bg-blue-600 [&.active]:text-white [&.active]:hover:bg-blue-600">
                 Settings
             </button>
@@ -111,12 +142,11 @@
     <!--MOBILE-->
     <nav class="md:hidden fixed bottom-0 left-0 w-full bg-slate-900/95 backdrop-blur border-t border-slate-800 z-50">
         <div class="flex justify-around items-center h-16">
-            <button onclick="switchTab('library-page')" data-target="library-page"
+            <button data-target="library-page"
                 class="nav-link flex-1 h-full text-blue-500 font-bold text-sm">Library</button>
-            <button onclick="switchTab('discover-page')" data-target="discover-page"
+            <button data-target="discover-page"
                 class="nav-link flex-1 h-full text-slate-400 font-bold text-sm">Discover</button>
-            <button onclick="switchTab('settings-page')" data-target="settings-page"
-                class="flex-1 h-full text-slate-400 font-bold text-sm">Settings</button>
+            <button data-target="settings-page" class="flex-1 h-full text-slate-400 font-bold text-sm">Settings</button>
         </div>
     </nav>
 
@@ -155,7 +185,7 @@
                     <input type="file" id="local-file-input" class="hidden"
                         accept="video/mp4,video/x-matroska,.mkv,.mp4" onchange="processLocalFile(event)">
 
-                    <button onclick="triggerLocalFilePicker()"
+                    <button id="trigger-local-file-btn"
                         class="bg-slate-800 hover:bg-emerald-600 text-white text-xs font-bold px-4 py-2.5 rounded-lg border border-slate-700 transition shadow-lg flex items-center gap-2">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -244,7 +274,7 @@
                 class="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-800/40 backdrop-blur-md p-6 md:p-8 rounded-3xl border border-slate-700/50 shadow-xl gap-6">
 
                 <div>
-                    <button id="back-to-profile-btn" onclick="returnToMyProfile(event)"
+                    <button id="back-to-profile-btn"
                         class="hidden -mt-3 mb-1 text-blue-500 hover:text-blue-400 font-bold flex items-center gap-2 transition cursor-pointer">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -272,7 +302,7 @@
                     </button>
 
 
-                    <button id="profile-settings-btn" onclick="switchTab('settings-page')"
+                    <button id="profile-settings-btn"
                         class="p-4 bg-slate-900/50 hover:bg-blue-600 text-slate-300 hover:text-white rounded-2xl transition-all border border-slate-700/50 hover:border-blue-500 shadow-sm group">
                         <svg class="w-6 h-6 group-hover:rotate-90 transition-transform duration-300" fill="none"
                             stroke="currentColor" viewBox="0 0 24 24">
@@ -284,7 +314,7 @@
                         </svg>
                     </button>
 
-                    <button id="profile-share-btn" onclick="shareMyProfile()"
+                    <button id="profile-share-btn"
                         class="p-4 ml-2 bg-slate-900/50 hover:bg-blue-600 text-slate-300 hover:text-white rounded-2xl transition-all border border-slate-700/50 hover:border-blue-500 shadow-sm group"
                         title="Share Profile">
 
@@ -378,14 +408,14 @@
                 <div
                     class="bg-slate-800/40 backdrop-blur border border-slate-700/50 p-6 rounded-2xl shadow-lg flex flex-col md:flex-row gap-8">
 
-                    <form id="account-form" onsubmit="changeAuthState(event)" class="flex-1 space-y-4" novalidate>
+                    <form id="account-form" class="flex-1 space-y-4" novalidate>
 
                         <h1 id="account-message"
                             class="text-l font-bold text-slate-200 mb-4 pl-1 flex items-center gap-2">Log in to optimize
                             your experience</h1>
 
                         <div id="edit-profile-toggle" class="hidden mb-6 pl-1">
-                            <button id="edit-profile-btn" type="button" onclick="toggleUpdateMode()"
+                            <button id="edit-profile-btn"
                                 class="text-sm text-blue-400 hover:text-blue-300 font-bold transition-colors outline-none focus:underline">
                                 Edit Profile
                             </button>
@@ -489,7 +519,7 @@
                         <div id="settings-auth-toggle" class="pt-2 text-sm">
                             <span id="toggle-text" class="text-slate-400">Already have an account?</span>
 
-                            <button id="toggle-btn" type="button" onclick="toggleAuthMode()"
+                            <button id="toggle-auth-mode-btn"
                                 class="text-blue-400 hover:text-blue-300 font-bold ml-1.5 transition-colors outline-none focus:underline">
                                 Log In
                             </button>
@@ -548,8 +578,7 @@
                             </span>
                         </div>
 
-                        <form id="torbox-auth-form" class="flex flex-col gap-3"
-                            onsubmit="event.preventDefault(); authenticateTorboxUser();">
+                        <form id="torbox-auth-form" class="flex flex-col gap-3">
                             <input id="api-input" type="password" placeholder="Enter TorBox API Key" autocomplete="off"
                                 class="w-full bg-slate-900 border border-slate-700 p-3.5 rounded-xl text-sm text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600">
 
@@ -560,7 +589,7 @@
                         </form>
 
                         <div id="torbox-connected-actions" class="hidden">
-                            <button onclick="logoutTorBox()"
+                            <button id="disconnect-torbox-btn"
                                 class="w-full bg-slate-800 hover:bg-red-500/20 text-slate-300 hover:text-red-400 py-3 rounded-xl transition-all font-bold text-sm border border-slate-700 hover:border-red-500/30">
                                 Disconnect TorBox
                             </button>
@@ -604,9 +633,9 @@
                     <p class="text-sm text-slate-400 mb-6">Install community add-ons by pasting their manifest URL
                         below.</p>
 
-                    <button onclick="toggleAddonInput()"
+                    <button id="show-addon-input-btn"
                         class="w-full sm:w-auto text-sm bg-slate-700 hover:bg-slate-600 text-white px-6 py-3 rounded-xl transition-all font-bold mb-4 border border-slate-600 shadow-sm">
-                        + Add New Scraper
+                        + Add New Add-On
                     </button>
 
                     <div id="addon-input-container" class="hidden mt-2">
@@ -614,11 +643,17 @@
                             <input id="addon-url-input" type="text" placeholder="https://example.com/manifest.json"
                                 class="flex-1 bg-slate-900 border border-slate-600 p-3.5 rounded-xl text-sm text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600">
 
-                            <button onclick="submitNewAddon()"
+                            <button id="install-addon-btn"
                                 class="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3.5 rounded-xl transition-all font-bold text-sm shrink-0 shadow-[0_0_15px_rgba(37,99,235,0.2)]">
                                 Install Add-on
                             </button>
                         </div>
+                    </div>
+
+                    <div class="mt-4 pt-4 border-t border-slate-700/50">
+                        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Installed Add-ons
+                        </h3>
+                        <div id="installed-addons-list" class="flex flex-col gap-3"></div>
                     </div>
 
                 </div>
@@ -644,7 +679,7 @@
             class="bg-slate-900 rounded-t-xl sm:rounded-2xl max-h-[85vh] h-full flex flex-col max-w-5xl mx-auto w-full shadow-2xl border border-slate-700">
             <div class="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-800/50">
                 <h3 id="picker-title" class="font-bold text-xl text-white truncate pr-4"></h3>
-                <button onclick="closePicker()"
+                <button id="close-episode-picker-btn"
                     class="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-full transition flex-shrink-0">✕</button>
             </div>
             <div id="picker-list"
@@ -663,7 +698,7 @@
                 <div class="px-4 pt-4 pb-2 flex justify-between items-center w-full">
                     <h3 id="stream-picker-title" class="font-bold text-lg text-white leading-none">Enter Title</h3>
 
-                    <button onclick="closeStreamPicker()"
+                    <button id="close-stream-picker-btn"
                         class="p-1 -mr-1 text-slate-400 hover:text-white transition flex items-center justify-center">✕</button>
                 </div>
 
@@ -769,7 +804,7 @@
                             </svg>
                             Add to library
                         </button>
-                        <button id="btn-add-watchlist" onclick="openWatchlists()" title="Save to Watchlist"
+                        <button id="btn-add-watchlist" title="Save to Watchlist"
                             class="bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white px-5 py-3.5 rounded-xl border border-slate-700/50 shadow-lg backdrop-blur transition-all group flex items-center justify-center">
                             <svg class="w-6 h-6 group-hover:scale-110 transition-transform duration-200" fill="none"
                                 stroke="currentColor" viewBox="0 0 24 24">
@@ -801,6 +836,69 @@
                 </div>
 
                 <div class="panel-content flex flex-col gap-3 w-full hidden"></div>
+            </div>
+        </template>
+
+        <template id="installed-addon-template">
+            <div
+                class="flex p-4 bg-slate-900/70 rounded-2xl hover:bg-slate-800/80 transition-colors gap-4 items-start shadow-sm border border-transparent hover:border-slate-700/50">
+
+                <!-- Bigger Logo Container -->
+                <div
+                    class="w-14 h-14 rounded-xl bg-slate-800 flex items-center justify-center shrink-0 p-1 shadow-inner overflow-hidden">
+                    <img class="addon-logo hidden w-full h-full object-contain rounded-lg" alt="logo"
+                        draggable="false" />
+                    <div
+                        class="addon-fallback flex items-center justify-center w-full h-full text-blue-400 font-bold text-xl uppercase">
+                    </div>
+                </div>
+
+                <!-- Content Area -->
+                <div class="flex-1 min-w-0 flex flex-col justify-center">
+
+                    <div class="flex items-center gap-2">
+                        <h4 class="addon-name font-bold text-white text-base truncate"></h4>
+                        <span
+                            class="addon-version text-[10px] bg-slate-700/50 text-slate-300 px-1.5 py-0.5 rounded font-mono"></span>
+                    </div>
+
+                    <!-- Description (Borderless, directly underneath) -->
+                    <p class="addon-description text-sm text-slate-400 line-clamp-2 mt-1"></p>
+
+                    <!-- Metadata Badges -->
+                    <div class="flex flex-wrap items-center gap-1.5 mt-2.5">
+                        <div class="addon-capabilities flex flex-wrap gap-1.5"></div>
+                        <div class="addon-types flex flex-wrap gap-1.5"></div>
+                    </div>
+
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex items-center gap-2 shrink-0 ml-2">
+
+                    <button
+                        class="addon-config-btn hidden p-2.5 bg-slate-800 hover:bg-blue-600 text-slate-300 hover:text-white rounded-xl transition-all shadow-sm"
+                        title="Configure Add-on">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
+                            </path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        </svg>
+                    </button>
+
+                    <button
+                        class="addon-uninstall-btn p-2.5 bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white rounded-xl transition-all shadow-sm"
+                        title="Uninstall Add-on">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                            </path>
+                        </svg>
+                    </button>
+
+                </div>
             </div>
         </template>
 
@@ -892,7 +990,7 @@
 
                 </label>
 
-                <button onclick="createNewList()"
+                <button id="submit-new-list-btn"
                     class="w-full bg-blue-600 hover:bg-blue-500 text-white py-3.5 rounded-xl transition-all font-bold text-sm shadow-[0_0_15px_rgba(37,99,235,0.2)]">
                     Create List
                 </button>

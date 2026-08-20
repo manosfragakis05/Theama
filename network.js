@@ -64,7 +64,10 @@ async function checkFollowStatus(friendId) {
 async function fetchWatchlists(friendId) {
     const { data: publicLists, error: listsError } = await supabase
         .from('lists')
-        .select('*')
+        .select(`
+            id, name, is_private, created_at,
+            movies ( id, tmdb_id, title, media_type, poster_path )
+        `)
         .eq('user_id', friendId)
         .eq('is_private', false)
         .order('created_at', { ascending: true });
@@ -74,23 +77,10 @@ async function fetchWatchlists(friendId) {
         return [];
     }
 
-    const enrichedLists = await Promise.all(publicLists.map(async (list) => {
-        const { data: listItems, error: itemsError } = await supabase
-            .from('movies')
-            .select('*')
-            .eq('list_id', list.id);
-
-        if (itemsError) {
-            console.error(`Error fetching items for list ${list.name}:`, itemsError);
-        }
-
-        return {
-            ...list,
-            items: listItems || []
-        };
+    return publicLists.map(list => ({
+        ...list,
+        items: list.movies || []
     }));
-
-    return enrichedLists;
 }
 
 export async function initFriendProfile(friendId) {
