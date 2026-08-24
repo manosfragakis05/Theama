@@ -632,7 +632,6 @@ export function openEditListModal(list) {
         }
     };
 }
-window.openEditListModal = openEditListModal;
 
 let lastRenderedUserId = null;
 window.addEventListener('auth-state-changed', async () => {

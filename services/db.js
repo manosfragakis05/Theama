@@ -58,7 +58,7 @@ function updateSettingsUI() {
     const toggleAuthDiv = document.getElementById('settings-auth-toggle');
     const toggleText = document.getElementById('toggle-text');
     const toggleBtn = document.getElementById('toggle-auth-mode-btn');
-    const forgotPasswordBtn = document.getElementById('forgotPassword-btn');
+    const forgotPasswordBtn = document.getElementById('forgot-password-btn');
 
     const toggleUpdateDiv = document.getElementById('edit-profile-toggle');
 
@@ -229,13 +229,11 @@ export function toggleAuthMode() {
     signUp = !signUp;
     updateSettingsUI();
 };
-window.toggleAuthMode = toggleAuthMode;
 
 export function toggleUpdateMode() {
     updateDetails = !updateDetails;
     updateSettingsUI();
 };
-window.toggleUpdateMode = toggleUpdateMode;
 
 // Sign up
 async function performSignUp(username, email, password) {
@@ -280,7 +278,7 @@ async function performUpdate(username, email, password) {
 }
 
 // Forgot password
-async function sendPasswordResetEmail() {
+export async function sendPasswordResetEmail() {
     const multiInput = document.getElementById('settings-multi');
     const identifier = multiInput ? multiInput.value.trim() : '';
 
@@ -302,6 +300,7 @@ async function sendPasswordResetEmail() {
 
         if (error) throw error;
 
+        showToast(`Password reset link sent to: ${email}`, "success");
         console.log("Password reset link sent to:", email);
         return { success: true };
 
@@ -310,7 +309,6 @@ async function sendPasswordResetEmail() {
         return { success: false, error: err.message };
     }
 }
-window.sendPasswordResetEmail = sendPasswordResetEmail;
 
 // Log out
 export async function logOutUser() {
@@ -323,4 +321,3 @@ export async function logOutUser() {
         console.log("Successfully logged out.");
     }
 }
-window.logOutUser = logOutUser;

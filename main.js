@@ -9,13 +9,17 @@ import { registerSW } from 'virtual:pwa-register';
 
 import { authenticateTorboxUser, checkAuth, logoutTorBox, closeStreamPicker } from './services/torbox.js';
 import { appState } from './services/config.js';
-import { initializeSupabase, changeAuthState, toggleAuthMode, toggleUpdateMode, logOutUser } from './services/db.js';
+import { initializeSupabase, changeAuthState, toggleAuthMode, toggleUpdateMode, logOutUser, sendPasswordResetEmail } from './services/db.js';
+
 import { goHome, toggleProfile, switchTab, handleSearch, openExternalPlayer } from './ui.js';
 import { initGlobalDrag } from './api.js';
 import { deleteTorrent } from './pages/library.js';
+
 import { closePicker } from './streaming/picker.js';
 import { playDirect } from './streaming/player.js';
+
 import { initFriendProfile, fetchFriendsList } from './network.js';
+
 import { submitNewAddon } from './user-addons/scrapers.js';
 import { renderInstalledAddons } from './user-addons/scraper-renderer.js';
 
@@ -98,16 +102,16 @@ function setupStaticEventListeners() {
 
 
     // UI.js
+    document.getElementById('profile-dropdown-login')?.addEventListener('click', () => switchTab('settings-page'));
     document.getElementById('profile-settings-btn')?.addEventListener('click', () => switchTab('settings-page'));
     document.getElementById('header-profile-toggle')?.addEventListener('click', toggleProfile);
     document.getElementById('home-logo-btn')?.addEventListener('click', goHome);
 
     document.getElementById('dropdown-profile-btn')?.addEventListener('click', () => switchTab('profile-page'));
-    document.getElementById('dropdown-logout-btn')?.addEventListener('click', logOutUser);
-
+    
     //Offline.js
     document.getElementById('trigger-local-file-btn')?.addEventListener('click', triggerLocalFilePicker);
-
+    
     //Torbox.js
     document.getElementById('disconnect-torbox-btn')?.addEventListener('click', logoutTorBox);
     document.getElementById('close-stream-picker-btn')?.addEventListener('click', closeStreamPicker);
@@ -117,6 +121,9 @@ function setupStaticEventListeners() {
     document.getElementById('submit-new-list-btn')?.addEventListener('click', createNewList);
 
     //Db.js
+    document.getElementById('dropdown-logout-btn')?.addEventListener('click', logOutUser);
+    document.getElementById('settings-logout-btn')?.addEventListener('click', logOutUser);
+    document.getElementById('forgot-password-btn')?.addEventListener('click', sendPasswordResetEmail);
     document.getElementById('toggle-auth-mode-btn')?.addEventListener('click', toggleAuthMode);
     document.getElementById('edit-profile-btn')?.addEventListener('click', toggleUpdateMode);
 
