@@ -189,7 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
             initGlobalDrag();
             await Promise.all([
                 handleProfileRouting(),
-                checkAuth(),
+                authenticateTorboxUser(),
                 scanLocalOPFSDirectory()
             ]);
 

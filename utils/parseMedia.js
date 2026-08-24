@@ -1,3 +1,4 @@
+import { renderAllWatchlists } from '../profile-renderer.js';
 import { parse as pttParse } from './ptt.js';
 
 // Detect and parse full stream data
@@ -98,7 +99,7 @@ export function parseMediaData(rawString) {
     // Use PTT library
     const parsed = pttParse(rawString);
 
-    let finalTitle = parsed.title || cleanName;
+    let finalTitle = parsed.title || rawString;
 
     // Season packs
     let seasonText = null;
@@ -184,6 +185,7 @@ export function parseMediaData(rawString) {
 
     const pttData = {
         title: finalTitle,
+        year: parsed.year,
         season: parsed.season !== undefined ? parsed.season : fallbackSeason,
         episode: parsed.episode !== undefined ? parsed.episode : fallbackEpisode,
         seasonDetails: seasonText,

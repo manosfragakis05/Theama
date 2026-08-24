@@ -7,41 +7,54 @@
 
 
 import { getTbKey, smartFetch, showToast } from './config.js';
-import { loadLibrary } from '../pages/library.js';
+import { fetchLibrary } from '../pages/library.js';
 
 export async function authenticateTorboxUser() {
     const input = document.getElementById('api-input');
     const button = document.getElementById('login-btn');
-    const key = input.value.trim();
 
-    if (!key) return;
+    let key = "";
+    
+    if (input.value) {
+        key = input.value.trim();
+        if (!key) return;
+        
+        button.innerText = "Verifying...";
+        button.disabled = true;
+        input.disabled = true;
+        
+    } else {
+        checkAuth();
 
-    button.innerText = "Verifying...";
-    button.disabled = true;
-    input.disabled = true;
+        key = getTbKey();
+        if (!key) return;
+
+        await fetchLibrary();
+        
+        return;
+    }
+
 
     try {
         const targetUrl = 'https://api.torbox.app/v1/api/user/me';
         const res = await smartFetch(targetUrl, {
             headers: { 'Authorization': `Bearer ${key}` }
         });
-
+        
         const data = await res.json();
 
         if (data.success && data.data) {
             localStorage.setItem('tb_api_key', key);
-
+            
             button.innerText = "Connected!";
             button.classList.replace('bg-blue-600', 'bg-green-600');
 
-            setTimeout(() => {
-                checkAuth();
-            }, 500);
+            await fetchLibrary();
 
         } else {
             throw new Error(data.detail || "Invalid API Key");
         }
-
+        
     } catch (e) {
         showToast("Authentication Failed: " + e.message, 'error');
         button.innerText = "Log In";
@@ -49,9 +62,10 @@ export async function authenticateTorboxUser() {
         input.disabled = false;
         input.classList.add('border-red-500');
     }
+    checkAuth();
 }
 
-export async function checkAuth() {
+export function checkAuth() {
     const key = getTbKey();
 
     const connectedBadge = document.getElementById('tb-status-connected');
@@ -59,10 +73,10 @@ export async function checkAuth() {
     const authForm = document.getElementById('torbox-auth-form');
     const connectedActions = document.getElementById('torbox-connected-actions');
 
-    if (key) {
-        // User is authenticated
-        await loadLibrary();
+    const libraryText = document.getElementById('library-info-text');
 
+    if (key) {
+        // User is connected
         connectedBadge.classList.replace('hidden', 'flex');
         disconnectedBadge.classList.replace('flex', 'hidden');
         authForm.classList.add('hidden');
@@ -73,6 +87,8 @@ export async function checkAuth() {
         disconnectedBadge.classList.replace('hidden', 'flex');
         authForm.classList.remove('hidden');
         connectedActions.classList.add('hidden');
+
+        libraryText.innerText = "No debrid service linked. \n You can add one in the settings.";
     }
 }
 

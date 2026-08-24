@@ -314,7 +314,7 @@ export async function loadDiscover() {
     loadMyPicks();
 }
 
-// 🔍 SEARCH (Now clean and bug-free)
+// Global search
 export async function searchTMDB(query) {
     const containerId = 'global-search-grid';
     const container = document.getElementById('global-search-results');
@@ -459,7 +459,7 @@ export const mediaStore = (() => {
             };
         },
 
-        // UTILITY
+        // For watchlist data
         exportForLibrary: () => {
             return {
                 id: state.id,
@@ -658,7 +658,6 @@ async function buildKitsuSeasons(baseKitsuId) {
         while (currentId && !visited.has(currentId) && maxDepth > 0) {
             visited.add(currentId);
 
-            // ⚡ THE FIX: Use Sparse Fieldsets (fields[anime]=titles) to make the download tiny
             const url = `https://kitsu.io/api/edge/anime/${currentId}?include=mediaRelationships.destination&fields[anime]=titles,canonicalTitle`;
 
             const res = await fetch(url);
@@ -825,7 +824,7 @@ export function handlePlayAction() {
         return;
     }
 
-    const playBtn = document.getElementById('btn-torrent');
+    const playBtn = document.getElementById('add-library-btn');
     const originalContent = playBtn.innerHTML;
 
     playBtn.disabled = true;
@@ -960,8 +959,7 @@ function renderSeason(activeSeason, seasonsList) {
         seasonName = container.querySelector('.tmdb-season-text');
     }
 
-    // --- 2. UPDATE MENU DATA ---
-    // (This runs every time, updating text and highlight states)
+    // Update menu data every time
     seasonName.textContent = activeSeason.seasonName;
 
     seasonMenu.innerHTML = seasonsList.map(season => {
@@ -976,8 +974,7 @@ function renderSeason(activeSeason, seasonsList) {
         `;
     }).join('');
 
-    // --- 3. PREPARE THE EPISODE LIST ---
-    // Remove the loading classes we added in handleSeasonChangeClick
+    // Remove the loading classes from handleSeasonChangeClick
     listContainer.classList.remove('opacity-50', 'pointer-events-none', 'animate-pulse');
 
     listContainer.innerHTML = '';
@@ -1078,7 +1075,7 @@ window.closeMovieDetail = () => {
 //#endregion
 
 document.addEventListener('click', async (event) => {
-    const playBtn = event.target.closest('#btn-torrent');
+    const playBtn = event.target.closest('#add-library-btn');
 
     if (!playBtn) return;
     if (playBtn.disabled) return;

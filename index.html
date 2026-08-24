@@ -162,13 +162,9 @@
             class="fixed top-5 right-5 z-[9999] flex flex-col gap-3 pointer-events-none items-end"></div>
 
         <div id="library-page" class="page-view min-h-[50vh]">
-            <div id="loading" class="text-center text-slate-500 mt-10 hidden">Loading your cloud...</div>
+            <div id="library-info-text" class="text-center text-slate-500 mt-10">Loading your cloud...</div>
 
             <div id="file-list" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4"></div>
-
-            <div id="empty-state" class="hidden text-center mt-20 text-slate-500">
-                <p>No files found.</p>
-            </div>
 
             <div class="mt-16 pt-8 border-t border-slate-800">
                 <div class="flex justify-between items-center mb-6 pl-1">
@@ -798,7 +794,7 @@
 
                     <div id="media-action"
                         class="flex flex-wrap justify-center md:justify-start gap-4 mt-8 w-full max-w-4xl">
-                        <button id="btn-torrent"
+                        <button id="add-library-btn"
                             class="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white px-8 py-3.5 rounded-xl font-bold text-lg flex items-center gap-2 hover:shadow-[0_10px_20px_rgba(37,99,235,0.3)]">
                             <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24">
                                 <path d="M8 5v14l11-7z" />

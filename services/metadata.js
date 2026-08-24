@@ -9,63 +9,72 @@
 import { TMDB_KEY } from './config.js';
 
 //#region TMDB Logic
-export async function getPosterForLibrary(cleanTitle, year) {
+export async function getPosterForLibrary(tmdbId, type) {
     try {
-        let url = `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_KEY}&query=${encodeURIComponent(cleanTitle)}&page=1`;
-        if (year) url += `&primary_release_year=${year}`;
+        const url = `https://api.themoviedb.org/3/${type}/${tmdbId}/images?api_key=${TMDB_KEY}&include_image_language=en,ja,null`;
+        const res = await fetch(url);
+        const data = await res.json();
 
-        const response = await fetch(url);
-        const data = await response.json();
-
-        if (data.results && data.results.length > 0) {
-            const bestMatch = data.results[0];
-
-            return {
-                id: bestMatch.id,
-                type: bestMatch.media_type || (bestMatch.name ? 'tv' : 'movie'),
-                poster: bestMatch.poster_path ? `https://image.tmdb.org/t/p/w500${bestMatch.poster_path}` : null
-            };
+        if (data.posters && data.posters.length > 0) {
+            return `https://image.tmdb.org/t/p/w500${data.posters[0].file_path}`;
         }
         return null;
     } catch (e) {
+        console.warn(`Failed to fetch poster for ID: ${tmdbId}`, e);
         return null;
     }
 }
 
-export async function getTmdbIdFallback(title) {
+// Fetch TMDB ID from a string
+export async function getTmdbId(title, year) {
     if (!title) return null;
-    const cleanTitle = title.toLowerCase().trim();
 
-    // 1. Scan LocalStorage Cache First
-    const cacheKey = 'tmdb_title_cache';
-    let titleCache = JSON.parse(localStorage.getItem(cacheKey) || '{}');
+    console.log(`🕵️ Fetching TMDB ID for: "${title}", ${year}`);
 
-    if (titleCache[cleanTitle]) {
-        console.log(`⚡ Loaded TMDB ID from Cache for: "${title}"`);
-        return titleCache[cleanTitle];
-    }
-
-    // 2. Fetch from TMDB API if not in cache
-    console.log(`🕵️ Fetching TMDB ID via text search for: "${title}"...`);
     try {
-        const searchUrl = `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_KEY}&query=${encodeURIComponent(cleanTitle)}&page=1`;
-        const searchRes = await fetch(searchUrl);
-        const searchData = await searchRes.json();
+        const encodedTitle = encodeURIComponent(title);
 
-        if (searchData.results && searchData.results.length > 0) {
-            const foundId = searchData.results[0].id;
-
-            titleCache[cleanTitle] = foundId;
-            localStorage.setItem(cacheKey, JSON.stringify(titleCache));
-
-            console.log(`🎯 TMDB Fallback Success! Found ID: ${foundId}`);
-            return foundId;
-        } else {
-            console.log(`🛑 TMDB returned nothing for "${title}".`);
+        // No year provided - Search multi
+        if (!year) {
+            const multiUrl = `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_KEY}&query=${encodedTitle}&page=1`;
+            const res = await fetch(multiUrl);
+            const data = await res.json();
+            
+            const valid = data.results?.find(item => item.media_type === 'movie' || item.media_type === 'tv');
+            
+            if (valid) {
+                //console.log(`🎬 TMDB Multi Success! Found ID: ${valid.id}, Type: ${valid.media_type}`);
+                return { id: valid.id, type: valid.media_type }; 
+            }
             return null;
         }
+
+        // Year provided - Search in movies first
+        const movieUrl = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_KEY}&query=${encodedTitle}&primary_release_year=${year}&page=1`;
+        const movieRes = await fetch(movieUrl);
+        const movieData = await movieRes.json();
+
+        if (movieData.results && movieData.results.length > 0) {
+            //console.log(`🎬 TMDB Movie Success! Found ID: ${movieData.results[0].id}, Type: movie`);
+            return { id: movieData.results[0].id, type: 'movie' };
+        }
+
+        // If no movie was found search in tv
+        const tvUrl = `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_KEY}&query=${encodedTitle}&first_air_date_year=${year}&page=1`;
+        const tvRes = await fetch(tvUrl);
+        const tvData = await tvRes.json();
+
+        if (tvData.results && tvData.results.length > 0) {
+            //console.log(`📺 TMDB TV Success! Found ID: ${tvData.results[0].id}, Type: tv`);
+            return { id: tvData.results[0].id, type: 'tv' };
+        }
+
+        // Both failed
+        console.log(`🛑 TMDB returned nothing matching the year ${title} ${year}.`);
+        return null;
+
     } catch (e) {
-        console.warn("TMDB text search failed.", e);
+        console.warn("TMDB search failed.", e);
         return null;
     }
 }

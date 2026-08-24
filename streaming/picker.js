@@ -12,7 +12,7 @@ import { fetchAnimeMapping } from '../api.js';
 
 // Import the "Brain" functions we built in metadata.js
 import { 
-    getTmdbIdFallback, 
+    getTmdbId, 
     getAnilistIdFromText, 
     getDirectSequel, 
     processKitsuFallback 
@@ -20,7 +20,7 @@ import {
 
 
 //#region Data Grouping
-export function preProcessTorrentData(videoFiles, mainShowTitle) {
+function preProcessEpisodeTorrentData(videoFiles, mainShowTitle) {
     const franchiseGroups = {};
 
     videoFiles.forEach(file => {
@@ -114,7 +114,7 @@ export async function openPicker(torrent) {
     let tmdbId = vaultData ? vaultData.id : null;
 
     if (!tmdbId) {
-        tmdbId = await getTmdbIdFallback(cleanName);
+        tmdbId = await getTmdbId(cleanName);
         console.log("Fetched TMDB id from fallback");
     }
 
@@ -130,7 +130,7 @@ export async function openPicker(torrent) {
     let torrentType = "";
     if (animeIds) torrentType = "anime";
 
-    const franchiseGroups = await preProcessTorrentData(videoFiles, cleanName);
+    const franchiseGroups = await preProcessEpisodeTorrentData(videoFiles, cleanName);
 
     const titledEpisodes = Object.keys(franchiseGroups).filter(key => {
         const group = franchiseGroups[key];
