@@ -26,6 +26,7 @@ export function renderInstalledAddons() {
     }
 
     userAddons.forEach(addon => {
+        console.log(addon);
         const clone = template.content.cloneNode(true);
         const firstLetter = (addon.name || 'A').charAt(0).toUpperCase();
 
@@ -39,6 +40,7 @@ export function renderInstalledAddons() {
         const capabilitiesContainer = clone.querySelector('.addon-capabilities');
         const typesContainer = clone.querySelector('.addon-types');
 
+        const addonShareBtn = clone.querySelector('.addon-share-btn');
         const configBtn = clone.querySelector('.addon-config-btn');
         const uninstallBtn = clone.querySelector('.addon-uninstall-btn');
 
@@ -91,11 +93,25 @@ export function renderInstalledAddons() {
             });
         }
 
+        // Wire addon share to the url
+        if (addon.url) {
+            addonShareBtn.classList.remove('hidden');
+            addonShareBtn.addEventListener('click', async () => {
+                try {
+                    await navigator.clipboard.writeText(addon.url);
+
+                    console.log("Copied to clipboard:", addon.url);
+
+                } catch (err) {
+                    console.error("Failed to copy URL: ", err);
+                }
+            });
+        }
+
         // 5. Wire up the Configure Button (if applicable)
         if (addon.configurable && configBtn) {
             configBtn.classList.remove('hidden');
             configBtn.addEventListener('click', () => {
-                // Remove /manifest.json to open the add-on's configuration page
                 const configUrl = addon.url.replace(/\/manifest\.json.*$/, '/configure');
                 window.open(configUrl, '_blank');
             });
@@ -409,8 +425,8 @@ function buildStreamBlueprint(stream) {
 
     // 1. Determine Audio Color cleanly using Optional Chaining
     let audioColor = "slate";
-    const audioTierString = stream.audioTier?.tier || "Standard"; 
-    
+    const audioTierString = stream.audioTier?.tier || "Standard";
+
     if (audioTierString === "Lossless") audioColor = "purple";
     else if (audioTierString === "Premium") audioColor = "blue";
 
@@ -425,7 +441,7 @@ function buildStreamBlueprint(stream) {
     // 2. Safely extract Codecs
     let displayAudio = null;
     const codecs = parsed.audioType?.codecs || []; // Now safely defaults to an array
-    
+
     if (codecs.length > 0) {
         displayAudio = codecs.join('/').toUpperCase();
     }

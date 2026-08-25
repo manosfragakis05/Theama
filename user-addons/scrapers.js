@@ -25,6 +25,9 @@ export async function submitNewAddon() {
     if (result.success) {
         const manifest = result.manifest;
         let userAddons = JSON.parse(localStorage.getItem('user_addons')) || [];
+        console.log(manifest);
+
+        const idPrefix = getStreamIdPrefixes(manifest);
 
         // 1. Build the complete add-on object
         const addonData = {
@@ -36,7 +39,7 @@ export async function submitNewAddon() {
             description: manifest.description || null,
             configurable: manifest.behaviorHints?.configurable || false,
             types: manifest.types || [],
-            idPrefixes: manifest.idPrefixes || [],
+            idPrefixes: idPrefix,
             capabilities: result.capabilities
         };
 
@@ -61,6 +64,24 @@ export async function submitNewAddon() {
     } else {
         showToast(`Error: ${result.error}`, "error");
     }
+}
+
+// Helper to see what ids the addon supports
+function getStreamIdPrefixes(manifest) {
+    if (manifest.idPrefixes && Array.isArray(manifest.idPrefixes)) {
+        return manifest.idPrefixes;
+    }
+
+    if (manifest.resources && Array.isArray(manifest.resources)) {
+        const streamResource = manifest.resources.find(
+            (res) => typeof res === 'object' && res.name === 'stream'
+        );
+
+        if (streamResource && Array.isArray(streamResource.idPrefixes)) {
+            return streamResource.idPrefixes;
+        }
+    }
+    return [];
 }
 
 async function detectAndValidateAddon(rawUrl) {
