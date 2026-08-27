@@ -1,7 +1,7 @@
 /**
  * ==========================================
  * metadata.js
- * Handles all TMDB, AniList, and Kitsu API interactions
+ * Handles all TMDB, AniList, and Kitsu interactions for the library matching
  * ==========================================
  */
 
@@ -29,8 +29,6 @@ export async function getPosterForLibrary(tmdbId, type) {
 export async function getTmdbId(title, year) {
     if (!title) return null;
 
-    console.log(`🕵️ Fetching TMDB ID for: "${title}", ${year}`);
-
     try {
         const encodedTitle = encodeURIComponent(title);
 
@@ -43,7 +41,6 @@ export async function getTmdbId(title, year) {
             const valid = data.results?.find(item => item.media_type === 'movie' || item.media_type === 'tv');
             
             if (valid) {
-                //console.log(`🎬 TMDB Multi Success! Found ID: ${valid.id}, Type: ${valid.media_type}`);
                 return { id: valid.id, type: valid.media_type }; 
             }
             return null;
@@ -55,7 +52,6 @@ export async function getTmdbId(title, year) {
         const movieData = await movieRes.json();
 
         if (movieData.results && movieData.results.length > 0) {
-            //console.log(`🎬 TMDB Movie Success! Found ID: ${movieData.results[0].id}, Type: movie`);
             return { id: movieData.results[0].id, type: 'movie' };
         }
 
@@ -65,7 +61,6 @@ export async function getTmdbId(title, year) {
         const tvData = await tvRes.json();
 
         if (tvData.results && tvData.results.length > 0) {
-            //console.log(`📺 TMDB TV Success! Found ID: ${tvData.results[0].id}, Type: tv`);
             return { id: tvData.results[0].id, type: 'tv' };
         }
 

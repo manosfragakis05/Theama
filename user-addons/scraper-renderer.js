@@ -1,6 +1,7 @@
 import { sendMagnetToTorbox } from "../services/torbox.js";
 import { parseFormated } from "../utils/parseMedia";
 import { showToast } from '../services/config.js';
+import { getScrapingProviders } from "./scrapers.js";
 
 //#region Render Addons
 
@@ -26,7 +27,6 @@ export function renderInstalledAddons() {
     }
 
     userAddons.forEach(addon => {
-        console.log(addon);
         const clone = template.content.cloneNode(true);
         const firstLetter = (addon.name || 'A').charAt(0).toUpperCase();
 
@@ -87,7 +87,7 @@ export function renderInstalledAddons() {
         // 4. Render Supported Types (Movies, Series, Anime, etc.)
         if (typesContainer && addon.types && addon.types.length > 0) {
             typesContainer.innerHTML = '';
-            // Only show the first 4 types so it doesn't wrap excessively on mobile
+            // Only show the first 4 types
             addon.types.slice(0, 4).forEach(type => {
                 typesContainer.innerHTML += `<span class="bg-slate-800 text-slate-300 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider border border-slate-700/50">${type}</span>`;
             });
@@ -100,7 +100,7 @@ export function renderInstalledAddons() {
                 try {
                     await navigator.clipboard.writeText(addon.url);
 
-                    console.log("Copied to clipboard:", addon.url);
+                    showToast("Copied your addons configuration", "success")
 
                 } catch (err) {
                     console.error("Failed to copy URL: ", err);
@@ -158,8 +158,6 @@ export function filterAndSortStreams(streams, addonName) {
         // Video Tier Classification
         let videoTier = parsed.source;
 
-        console.log(rawTitle, parsed);
-
         return {
             rawStream: stream,
             parsedData: parsed,
@@ -203,7 +201,7 @@ export function showStreamPicker(mainTitle) {
 
     document.getElementById('stream-picker-title').innerText = `${mainTitle}`;
 
-    const userAddons = JSON.parse(localStorage.getItem('user_addons')) || [];
+    const userAddons = getScrapingProviders();
 
     streamState.addons = {}; // Clean slate!
 

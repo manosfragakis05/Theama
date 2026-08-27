@@ -12,7 +12,6 @@ import { appState } from './services/config.js';
 import { initializeSupabase, changeAuthState, toggleAuthMode, toggleUpdateMode, logOutUser, sendPasswordResetEmail } from './services/db.js';
 
 import { goHome, toggleProfile, switchTab, handleSearch, openExternalPlayer } from './ui.js';
-import { initGlobalDrag } from './api.js';
 import { deleteTorrent } from './pages/library.js';
 
 import { closePicker } from './streaming/picker.js';
@@ -22,6 +21,8 @@ import { initFriendProfile, fetchFriendsList } from './network.js';
 
 import { submitNewAddon } from './user-addons/scrapers.js';
 import { renderInstalledAddons } from './user-addons/scraper-renderer.js';
+
+import { initGlobalDrag } from './user-addons/catalog-renderer.js';
 
 import {
     renderFriendsSidebar,

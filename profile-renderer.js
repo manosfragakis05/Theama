@@ -1,26 +1,25 @@
-// Expects the actual data arrays to be passed in!
+import { openEditListModal } from "./profile";
+
+// Pass data arrays
 export function renderAllWatchlists(customLists) {
     const container = document.getElementById('profile-watchlists-container');
     if (!container) return;
 
-    // 1. Clear the board for a fresh render
     container.innerHTML = '';
 
-    // 2. Handle Container Visibility
     if (customLists.length > 0) {
         container.classList.remove('hidden');
     } else {
         container.classList.add('hidden');
     }
 
-    // 3. Loop through lists and append the DOM for each track
     customLists.forEach(list => {
         const trackDOM = createWatchlistTrack(list);
         container.appendChild(trackDOM);
     });
 }
 
-// Helper: Builds the DOM for a single row (The "Shelf")
+// Build row
 function createWatchlistTrack(list) {
     const template = document.getElementById('watchlist-row-template');
     const clone = template.content.cloneNode(true);
@@ -29,10 +28,9 @@ function createWatchlistTrack(list) {
     const trackEl = clone.querySelector('.wl-row-track');
     const editBtn = clone.querySelector('.wl-row-edit-btn');
 
-    // Set Name
     nameEl.textContent = list.name;
 
-    // Add Public Icon if necessary
+    // Add icon
     if (!list.is_private) {
         nameEl.insertAdjacentHTML('afterend', `
             <svg class="w-[18px] h-[18px] text-slate-400 ml-2 inline-block align-middle relative -bottom-[1px] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" title="Public List">
@@ -46,7 +44,6 @@ function createWatchlistTrack(list) {
     // Attach Edit Event
     if (editBtn) editBtn.onclick = () => openEditListModal(list);
 
-    // Generate Safe ID for the track (so we can find it later to insert posters)
     const safeId = list.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
     trackEl.id = `watchlist-track-${safeId}`;
 
@@ -54,31 +51,18 @@ function createWatchlistTrack(list) {
 }
 
 // Render cards
-/**
- * Renders an array of media items into a specific track.
- * @param {Array} mediaData - The array of movie objects to render.
- * @param {string} trackId - The DOM ID of the container track.
- * @param {Function} onRemoveClick - Callback for when the remove button is clicked. If null, the button is hidden.
- * @param {Function} onCardClick - Callback for when the poster itself is clicked.
- */
 export function renderMediaCards(mediaData, trackId, onRemoveClick = null, onCardClick = null) {
     const trackEl = document.getElementById(trackId);
     if (!trackEl) return;
 
     const cardTemplate = document.getElementById('poster-card-template');
-    if (!cardTemplate) {
-        console.error('Missing required template: #poster-card-template');
-        return;
-    }
 
     const emptyState =
         trackEl.querySelector('.wl-row-empty') ||
         trackEl.querySelector('[id$="-empty-state"]');
 
-    // 1. Clear existing cards
     trackEl.querySelectorAll('.poster-card').forEach(card => card.remove());
 
-    // 2. Handle Empty State
     if (!mediaData || mediaData.length === 0) {
         if (emptyState) emptyState.style.display = 'block';
         return;
@@ -86,18 +70,31 @@ export function renderMediaCards(mediaData, trackId, onRemoveClick = null, onCar
 
     if (emptyState) emptyState.style.display = 'none';
 
-    // 3. Render Cards
+    // Render Cards
     mediaData.forEach(media => {
         const clone = cardTemplate.content.cloneNode(true);
         const card = clone.querySelector('.poster-card');
         const img = clone.querySelector('.poster-img');
         const title = clone.querySelector('.poster-title');
+        const yearEl = clone.querySelector('.poster-year');
         const skeleton = clone.querySelector('.poster-skeleton');
         const removeBtn = clone.querySelector('.remove-btn');
 
         title.textContent = media.title;
 
-        // Image Loading Logic
+        if (yearEl) yearEl.remove();
+
+        // Remove Button
+        if (onRemoveClick && removeBtn) {
+            removeBtn.classList.remove('hidden');
+            removeBtn.onclick = (e) => {
+                e.stopPropagation();
+                onRemoveClick(media.tmdb_id);
+            };
+        } else {
+            if (removeBtn) removeBtn.remove();
+        }
+
         if (media.poster_path) {
             const imgUrl = media.poster_path.startsWith('http')
                 ? media.poster_path
@@ -111,16 +108,6 @@ export function renderMediaCards(mediaData, trackId, onRemoveClick = null, onCar
             skeleton.classList.add('hidden');
         }
 
-        if (!onRemoveClick) {
-            if (removeBtn) removeBtn.remove();
-        } else {
-            removeBtn.onclick = (e) => {
-                e.stopPropagation();
-                onRemoveClick(media.tmdb_id);
-            };
-        }
-        
-        // 5. Attach Card Click Callback
         if (onCardClick) {
             card.onclick = () => onCardClick(media);
         }

@@ -216,54 +216,27 @@
                 </div>
             </div>
 
-            <div>
-                <h2 class="text-xl font-bold text-white mb-4 pl-1">Trending Movies</h2>
-                <div id="trending-movies-row"
-                    class="draggable-row flex overflow-x-auto gap-4 py-4 -mt-1 scrollbar-hide items-center"></div>
+            <div id="dynamic-catalogs-container" class="flex flex-col gap-10">
+                <!-- Javascript will inject cloned rows here -->
             </div>
 
-            <div>
-                <h2 class="text-xl font-bold text-white mb-4 pl-1">Trending Shows</h2>
-                <div id="trending-shows-row"
-                    class="draggable-row flex overflow-x-auto gap-4 py-4 -mt-1 scrollbar-hide items-center"></div>
-            </div>
-
-            <div>
-                <h2 class="text-xl font-bold text-white mb-4 pl-1">Action Packed</h2>
-                <div id="action-row"
-                    class="draggable-row flex overflow-x-auto gap-4 py-4 -mt-1 scrollbar-hide items-center"></div>
-            </div>
-
-            <div>
-                <h2 class="text-xl font-bold text-white mb-4 pl-1">Comedies</h2>
-                <div id="comedy-row"
-                    class="draggable-row flex overflow-x-auto gap-4 py-4 -mt-1 scrollbar-hide items-center"></div>
-            </div>
-
-            <div>
-                <h2 class="text-xl font-bold text-white mb-4 pl-1">Edge of Your Seat (Thrillers)</h2>
-                <div id="thriller-row"
-                    class="draggable-row flex overflow-x-auto gap-4 py-4 -mt-1 scrollbar-hide items-center"></div>
-            </div>
-
-            <div>
-                <h2 class="text-xl font-bold text-white mb-4 pl-1">Anime Features</h2>
-                <div id="anime-row"
-                    class="draggable-row flex overflow-x-auto gap-4 py-4 -mt-1 scrollbar-hide items-center"></div>
-            </div>
-
-            <div>
-                <h2 class="text-xl font-bold text-white mb-4 pl-1">All-Time Greats</h2>
-                <div id="top-row"
-                    class="draggable-row flex overflow-x-auto gap-4 py-4 -mt-1 scrollbar-hide items-center"></div>
-            </div>
-
-            <div>
-                <h2 class="text-xl font-bold text-white mb-4 pl-1">Devs Picks</h2>
-                <div id="my-picks-row"
-                    class="draggable-row flex overflow-x-auto gap-4 py-4 -mt-1 scrollbar-hide items-center"></div>
-            </div>
         </div>
+
+        <!-- Catalog rows -->
+        <template id="catalog-row-template">
+            <div class="catalog-section">
+                <h2 class="text-xl font-bold text-white mb-4 pl-1 flex items-center">
+                    <span class="catalog-title">Catalog Name</span>
+                    <span
+                        class="catalog-addon-badge ml-3 text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-400 px-2.5 py-1 rounded-md border border-slate-700/50 shadow-sm hidden md:inline-block">
+                        Addon Name
+                    </span>
+                </h2>
+                <div
+                    class="catalog-row draggable-row flex overflow-x-auto gap-4 py-4 -mt-1 scrollbar-hide items-center min-h-[220px]">
+                </div>
+            </div>
+        </template>
 
         <div id="profile-page" class="page-view hidden flex flex-col gap-10 max-w-6xl mx-auto w-full pt-4">
 
@@ -357,11 +330,11 @@
                 <div
                     class="bg-slate-800/30 backdrop-blur border border-slate-700/50 rounded-3xl p-6 sm:p-8 flex flex-col gap-10 shadow-lg">
 
-                    <div id="profile-watchlists-container" class="flex flex-col gap-10">
+                    <div id="profile-watchlists-container" class="flex flex-col">
                     </div>
 
                     <div id="default-watchlists-container" class="w-full">
-                        <h3 class="text-xl font-bold text-slate-100 mb-4 flex items-center gap-3">
+                        <h3 class="text-xl font-bold text-slate-100 mb-1 pl-1 flex items-center gap-3 relative z-10">
                             <div
                                 class="w-8 h-8 bg-red-500/10 rounded-lg flex items-center justify-center text-red-500 shadow-sm border border-red-500/20">
                                 <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
@@ -373,7 +346,7 @@
                         </h3>
 
                         <div id="watchlist-track-favourites"
-                            class="draggable-row flex overflow-x-auto gap-4 pb-2 scrollbar-hide items-center min-h-[160px]">
+                            class="draggable-row flex overflow-x-auto gap-4 py-6 px-4 -mx-4 -mt-4 scrollbar-hide items-start min-h-[160px]">
                             <div id="favourites-empty-state"
                                 class="flex-none w-full text-center py-12 bg-slate-900/50 border border-dashed border-slate-700/50 rounded-2xl">
                                 <p class="text-slate-400 font-medium">No favourites added yet.</p>
@@ -1028,9 +1001,9 @@
     </div>
 
     <template id="watchlist-row-template">
-        <div class="watchlist-section mb-2">
+        <div class="watchlist-section">
 
-            <h3 class="text-lg font-bold text-slate-200 mb-1 pl-1 flex items-center gap-2">
+            <h3 class="text-lg font-bold text-slate-200 pl-1 flex items-center gap-2 relative z-10">
                 <span class="wl-row-name">List Name</span>
                 <button
                     class="wl-row-edit-btn ml-auto p-2 text-slate-500 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors group focus:outline-none"
@@ -1045,13 +1018,11 @@
             </h3>
 
             <div
-                class="wl-row-track draggable-row flex overflow-x-auto gap-4 py-2 scrollbar-hide items-center min-h-[160px]">
-
+                class="wl-row-track draggable-row flex overflow-x-auto gap-4 py-6 px-4 -mx-4 -mt-4 scrollbar-hide items-start min-h-[160px]">
                 <div
                     class="wl-row-empty flex-none w-full text-center py-10 bg-slate-800/30 border border-dashed border-slate-700/50 rounded-2xl">
                     <p class="text-slate-500 text-sm">Nothing added yet.</p>
                 </div>
-
             </div>
         </div>
     </template>
@@ -1116,18 +1087,16 @@
 
     <template id="poster-card-template">
         <div
-            class="poster-card relative flex-none w-32 md:w-40 flex flex-col gap-2 shrink-0 cursor-pointer group select-none">
+            class="media-card poster-card relative flex-none w-32 md:w-40 flex flex-col shrink-0 cursor-pointer group select-none transition-all duration-150 ease-out hover:scale-105 hover:-translate-1">
 
             <div
-                class="relative w-full aspect-[2/3] rounded-xl overflow-hidden bg-slate-800 border border-slate-700/50 group-hover:border-blue-500 group-hover:shadow-[0_0_15px_rgba(59,130,246,0.3)] transition-all">
-
-                <div class="poster-skeleton absolute inset-0 bg-slate-700 animate-pulse"></div>
-                <img class="poster-img absolute inset-0 w-full h-full object-cover opacity-0 transition-opacity duration-300"
-                    draggable="false" alt="Poster">
+                class="relative w-full aspect-[2/3] rounded-xl overflow-hidden bg-slate-800 border border-slate-700/50 group-hover:border-blue-500 group-hover:shadow-[0_0_15px_rgba(59,130,246,0.3)] transition-all transform-gpu">
+                <img class="poster-img absolute inset-0 w-full h-full object-cover" draggable="false" loading="lazy"
+                    alt="Poster">
 
                 <button
-                    class="remove-btn absolute top-2 right-2 w-7 h-7 bg-black/60 hover:bg-red-600 backdrop-blur rounded-full flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-all z-10"
-                    title="Remove from list">
+                    class="remove-btn hidden absolute top-2 right-2 w-7 h-7 bg-black/60 hover:bg-red-600 backdrop-blur rounded-full flex items-start justify-center text-white opacity-0 group-hover:opacity-100 transition-all z-10"
+                    title="Remove">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
                         </path>
@@ -1136,8 +1105,13 @@
 
             </div>
 
-            <p class="poster-title text-xs text-slate-300 line-clamp-2 font-medium leading-tight text-center px-1">Title
-            </p>
+            <div class="mt-2 flex flex-col pl-1 pr-1">
+                <p
+                    class="poster-title text-xs text-slate-300 line-clamp-2 font-semibold leading-tight group-hover:text-white transition-colors">
+                </p>
+                <p class="poster-year hidden text-[10px] text-slate-500 mt-0.5"></p>
+            </div>
+
         </div>
     </template>
 

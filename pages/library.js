@@ -14,7 +14,7 @@ import { openPicker } from '../streaming/picker.js';
 
 // --- DATA FETCHING ---
 
-export async function fetchLibrary(bypassCache = false) {
+export async function fetchLibrary(bypassCache = true) {
     const key = getTbKey();
     if (!key) return;
 

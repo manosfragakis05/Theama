@@ -7,8 +7,8 @@
 
 import { appState, showToast } from './services/config.js';
 import { renderList } from './pages/library.js';
-import { searchTMDB, loadDiscover } from './api.js';
 import { stopPlayback } from './streaming/player.js';
+import { loadDiscover, searchTMDB } from './user-addons/catalogs.js';
 
 // --- NAVIGATION & TABS ---
 
@@ -52,10 +52,7 @@ function handlePageSpecificLogic(pageId) {
             // E.g., refresh library or reset views
             break;
         case 'discover-page':
-            // Only fetch from the API if the grid is empty!
-            if (document.getElementById('trending-movies-row').innerHTML.trim() === '') {
-                loadDiscover();
-            }
+            loadDiscover();
             break;
         case 'settings-tab':
             // E.g., load user preferences

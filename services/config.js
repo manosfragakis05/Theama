@@ -78,6 +78,6 @@ export function showToast(message, type = 'info') {
         toast.classList.remove('translate-y-0', 'opacity-100');
         toast.classList.add('opacity-0', 'scale-95');
         setTimeout(() => toast.remove(), 300);
-    }, 3000);
+    }, 500);
 }
 //#endregion

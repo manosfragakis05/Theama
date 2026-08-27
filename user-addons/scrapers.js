@@ -25,15 +25,17 @@ export async function submitNewAddon() {
     if (result.success) {
         const manifest = result.manifest;
         let userAddons = JSON.parse(localStorage.getItem('user_addons')) || [];
-        console.log(manifest);
 
         const idPrefix = getStreamIdPrefixes(manifest);
+
+        console.log(result);
 
         // 1. Build the complete add-on object
         const addonData = {
             id: manifest.id,
             name: manifest.name,
             url: result.url,
+            catalogs: manifest.catalogs || [], // ONLY IF ITS A METADATA PROVIDER
             version: manifest.version || '1.0.0',
             logo: manifest.logo || null,
             description: manifest.description || null,
@@ -101,7 +103,6 @@ async function detectAndValidateAddon(rawUrl) {
             response = await fetch(url);
         } catch (e) {
             console.warn("Direct fetch blocked by CORS. Using proxy...");
-            // Ensure MY_PROXY is defined or imported in this file
             const proxyUrl = MY_PROXY.replace('/?url=', '');
             response = await fetch(`${proxyUrl}/?url=${encodeURIComponent(url)}`);
         }
@@ -152,8 +153,14 @@ async function detectAndValidateAddon(rawUrl) {
 
 
 //#region Fetch Streams
-export async function loadAllAddonsParallel(type, streamId, season = null, episode = null) {
+export function getScrapingProviders() {
     const userAddons = JSON.parse(localStorage.getItem('user_addons')) || [];
+
+    return userAddons.filter(addon => addon.capabilities && addon.capabilities.streams === true);
+}
+
+export async function loadAllAddonsParallel(type, streamId, season = null, episode = null) {
+    const userAddons = getScrapingProviders();
 
     // Format the ID once for everyone
     let pathId = streamId;
@@ -166,10 +173,10 @@ export async function loadAllAddonsParallel(type, streamId, season = null, episo
         fetchSingleAddon(addon, type, pathId)
             .then(streams => {
                 if (streams === null) {
-                    console.log(`🚨 ${addon.name} is offline or failed.`);
+                    console.log(`${addon.name} is offline or failed.`);
                 }
                 else if (streams.length === 0) {
-                    console.log(`📭 ${addon.name} found 0 streams.`);
+                    console.log(`${addon.name} found 0 streams.`);
                 }
                 else {
                     const shortName = addon.name.split(' ')[0];
