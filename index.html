@@ -203,6 +203,48 @@
 
         <div id="discover-page" class="page-view hidden flex flex-col gap-10">
 
+            <!-- Dropdown filters -->
+            <div id="discover-filters"
+                class="flex flex-col sm:flex-row gap-4 bg-slate-800/40 backdrop-blur-md border border-slate-700/50 p-4 rounded-2xl shadow-lg mb-2">
+
+                <!-- Content type dropdown -->
+                <div class="relative flex-1">
+                    <label for="discover-type-select"
+                        class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 pl-1">
+                        Content Type
+                    </label>
+                    <div class="relative group">
+                        <select id="discover-type-select"
+                            class="appearance-none w-full bg-slate-900 border border-slate-700 py-3 pl-4 pr-10 rounded-xl text-sm font-bold text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all cursor-pointer shadow-inner hover:border-slate-600">
+                        </select>
+                        <svg class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none group-hover:text-white transition-colors"
+                            fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7">
+                            </path>
+                        </svg>
+                    </div>
+                </div>
+
+                <!-- Catalog source dropdown -->
+                <div class="relative flex-1">
+                    <label for="discover-catalog-select"
+                        class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 pl-1">
+                        Catalog Source
+                    </label>
+                    <div class="relative group">
+                        <select id="discover-catalog-select"
+                            class="appearance-none w-full bg-slate-900 border border-slate-700 py-3 pl-4 pr-10 rounded-xl text-sm font-bold text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all cursor-pointer shadow-inner hover:border-slate-600">
+                        </select>
+                        <svg class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none group-hover:text-white transition-colors"
+                            fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7">
+                            </path>
+                        </svg>
+                    </div>
+                </div>
+
+            </div>
+
             <div id="global-search-results"
                 class="hidden bg-slate-800/50 p-4 rounded-xl border border-blue-500/30 shadow-lg shadow-blue-900/10">
                 <h2 class="text-xl font-bold text-blue-400 mb-4 pl-1 flex items-center gap-2">
@@ -1095,7 +1137,7 @@
                     alt="Poster">
 
                 <button
-                    class="remove-btn hidden absolute top-2 right-2 w-7 h-7 bg-black/60 hover:bg-red-600 backdrop-blur rounded-full flex items-start justify-center text-white opacity-0 group-hover:opacity-100 transition-all z-10"
+                    class="remove-btn hidden absolute top-2 right-2 w-7 h-7 bg-black/60 hover:bg-red-600 backdrop-blur rounded-full flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-all z-10"
                     title="Remove">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
@@ -1107,7 +1149,7 @@
 
             <div class="mt-2 flex flex-col pl-1 pr-1">
                 <p
-                    class="poster-title text-xs text-slate-300 line-clamp-2 font-semibold leading-tight group-hover:text-white transition-colors">
+                    class="poster-title text-xs text-slate-300 line-clamp-2 font-semibold leading-tight group-hover:text-white transition-colors min-h-[30px]">
                 </p>
                 <p class="poster-year hidden text-[10px] text-slate-500 mt-0.5"></p>
             </div>

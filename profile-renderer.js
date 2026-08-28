@@ -77,7 +77,7 @@ export function renderMediaCards(mediaData, trackId, onRemoveClick = null, onCar
         const img = clone.querySelector('.poster-img');
         const title = clone.querySelector('.poster-title');
         const yearEl = clone.querySelector('.poster-year');
-        const skeleton = clone.querySelector('.poster-skeleton');
+        const skeleton = clone.getElementById('poster-skeleton');
         const removeBtn = clone.querySelector('.remove-btn');
 
         title.textContent = media.title;

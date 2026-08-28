@@ -1,4 +1,4 @@
-import { getTbKey, smartFetch, showToast } from '../services/config.js';
+import { getTbKey, smartFetch, showToast, MY_PROXY } from '../services/config.js';
 import { streamState, renderInstalledAddons, renderAddonData, filterAndSortStreams } from './scraper-renderer.js';
 
 //#region Addon Options

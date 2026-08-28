@@ -1,5 +1,5 @@
 import { openMasterDetail } from "../api";
-import { rowState, fetchNextBatch } from "./catalogs";
+import { addonState, rowState, fetchNextBatch, getActiveState } from "./catalogs";
 
 //#region Row Controllers
 export let isDragging = false;
@@ -72,20 +72,24 @@ export function initGlobalDrag() {
     window.addEventListener("mouseleave", stopDrag);
 }
 
+// Row observers
 const rowObservers = {};
-
 function getObserverFor(containerId) {
+    // Return cached observer if it already exists
     if (rowObservers[containerId]) return rowObservers[containerId];
 
     const rowElement = document.getElementById(containerId);
+    if (!rowElement) return null;
 
-    rowObservers[containerId] = new IntersectionObserver((entries) => {
+    // Create the observer
+    const observer = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
             if (entry.isIntersecting) {
-                const targetId = entry.target.dataset.targetRow;
-                rowObservers[targetId].unobserve(entry.target);
+                // Unobserve the triggered sentinel
+                observer.unobserve(entry.target);
 
-                renderRow(targetId);
+                // Fetch and render the next batch
+                fetchNextBatch(containerId);
             }
         });
     }, {
@@ -94,35 +98,101 @@ function getObserverFor(containerId) {
         threshold: 0
     });
 
-    return rowObservers[containerId];
+    rowObservers[containerId] = observer;
+    return observer;
+}
+
+// Add this near your other observer logic
+const viewportObserver = new IntersectionObserver((entries, observer) => {
+    entries.forEach(entry => {
+        if (entry.isIntersecting) {
+            const containerId = entry.target.id;
+            // Stop observing the row itself once the initial fetch triggers
+            observer.unobserve(entry.target); 
+            
+            // Fetch the first batch of data
+            fetchNextBatch(containerId);
+        }
+    });
+}, {
+    root: null, // Observes the browser viewport vertically
+    rootMargin: "0px 0px 800px 0px", // Trigger 800px before the row scrolls into view
+    threshold: 0
+});
+
+// Disconnect the observers
+export function destroyObserver(containerId) {
+    if (rowObservers[containerId]) {
+        rowObservers[containerId].disconnect();
+        delete rowObservers[containerId];
+    }
 }
 //#endregion
 
 //#region Renderers
-// 1. Create a variable outside the function to cache the template
-let cachedTemplate = null;
 
+export function renderSelectedCatalog() {
+    const typeSelect = document.getElementById('discover-type-select');
+    const catalogSelect = document.getElementById('discover-catalog-select');
+    const container = document.getElementById('dynamic-catalogs-container');
+    
+    if (!catalogSelect || !container || !typeSelect) return;
+
+    // Clear the screen completely
+    container.replaceChildren();
+
+    const selectedId = catalogSelect.value;
+    const selectedType = typeSelect.value;
+
+    // Route A: Render everything for the selected category
+    if (selectedId === 'all') {
+        // TMDB Rows
+        if (rowState[selectedType]) {
+            for (const catalogId in rowState[selectedType]) {
+                const catalogObject = rowState[selectedType][catalogId];
+                injectCatalogShell(catalogObject);
+            }
+        }
+        // Add-on Rows
+        if (addonState[selectedType]) {
+            for (const catalogId in addonState[selectedType]) {
+                const catalogObject = addonState[selectedType][catalogId];
+                injectCatalogShell(catalogObject);
+            }
+        }
+    } 
+    // Route B: Render the single selected catalog
+    else {
+        const catalogObject = getActiveState(selectedId);
+        if (catalogObject) {
+            injectCatalogShell(catalogObject);
+        }
+    }
+}
+
+// Cache the template
+let cachedTemplate = null;
+// Create poster card
 export function createCardElement(item) {
-    // Lazy-load the template cache on the very first run
+    // Cach if not cached
     if (!cachedTemplate) {
         cachedTemplate = document.getElementById("poster-card-template");
     }
-    
+
     if (!cachedTemplate || !item) return null;
 
     const posterUrl = item.poster || (item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : null);
     if (!posterUrl || item.type === "person" || item.media_type === "person") return null;
 
     const title = item.name || item.title || "Untitled";
+    const year = item.releaseInfo || item.year || parseInt(item.release_date) || parseInt(item.first_air_date) || "";
+
     const type = item.type || item.media_type || "movie";
     const backdrop = item.background || item.backdrop_path || "";
-    
-    const rawDate = item.releaseInfo || item.release_date || item.first_air_date || "N/A";
-    const year = item.releaseInfo || "N/A";
 
-    // 2. Clone the cached template
+    // Clone the cached template
     const clone = cachedTemplate.content.cloneNode(true);
-    
+
     const card = clone.querySelector(".media-card");
     const img = clone.querySelector(".poster-img");
     const titleEl = clone.querySelector(".poster-title");
@@ -144,39 +214,66 @@ export function createCardElement(item) {
 
     img.alt = title;
     img.src = posterUrl;
-    
+
     return card;
 }
 
-export function renderCardsToRow(items, containerId) {
+export function renderRow(newItems, catalogObject) {
+    const containerId = catalogObject.containerId; 
+    const row = document.getElementById(containerId);
+
+    if (!row) return; // Safety check in case the shell failed to inject
+
+    // Clear out any previous loading/error text
+    const messageEl = row.querySelector('.text-slate-500');
+    if (messageEl) messageEl.remove();
+
+    // Handle empty states
+    if (!newItems || newItems.length === 0) {
+        showRowMessage(containerId, "No items found");
+        return;
+    }
+
+    // Pass the data, string ID, and pagination boolean to the card builder
+    renderCardsToRow(newItems, containerId, catalogObject.hasMore); 
+}
+
+export function renderCardsToRow(items, containerId, hasMore) {
     const row = document.getElementById(containerId);
     if (!row || !Array.isArray(items)) return;
 
+    // 1. Clean up the old observer sentinel to prevent duplicate fetch triggers
     const oldSentinel = row.querySelector(".scroll-sentinel");
     if (oldSentinel) {
-        getObserverFor(containerId).unobserve(oldSentinel);
+        const observer = getObserverFor(containerId);
+        if (observer) observer.unobserve(oldSentinel);
         oldSentinel.remove();
     }
 
+    // 2. Build all new cards in memory first to prevent layout thrashing
     const fragment = document.createDocumentFragment();
     items.forEach(item => {
         const cardNode = createCardElement(item);
         if (cardNode) fragment.appendChild(cardNode);
     });
+    
+    // 3. Paint the batch to the screen in a single operation
     row.appendChild(fragment);
 
-    if (rowState[containerId]?.hasMore) {
+    // 4. Inject a new sentinel at the end of the row if pagination is supported
+    if (hasMore) {
         const sentinel = document.createElement("div");
         sentinel.className = "scroll-sentinel w-1 flex-none";
-        sentinel.dataset.targetRow = containerId;
         row.appendChild(sentinel);
 
-        getObserverFor(containerId).observe(sentinel);
+        // Attach the observer to watch this specific sentinel for horizontal scrolling
+        const observer = getObserverFor(containerId);
+        if (observer) observer.observe(sentinel);
     }
 }
 
-export function setupRowClickListener(containerId) {
-    const row = document.getElementById(containerId);
+function setupRowClickListener(catalogObject) {
+    const row = document.getElementById(catalogObject.containerId);
     if (!row || row.dataset.listenerAttached) return;
 
     row.addEventListener("click", (e) => {
@@ -191,81 +288,94 @@ export function setupRowClickListener(containerId) {
             card.dataset.title,
             card.dataset.type,
             card.dataset.poster,
-            card.dataset.backdrop
+            card.dataset.backdrop,
+            // Pass the addons prefix (tt, kitsu, mal...)
+            catalogObject.idPrefixes
         );
     });
 
     row.dataset.listenerAttached = "true";
 }
-
-export async function renderRow(containerId, isInitial = false) {
-    const state = rowState[containerId];
-    if (!state || state.loading || !state.hasMore) return;
-
-    state.loading = true;
-
-    if (isInitial) {
-        showRowMessage(containerId, "Loading");
-        const row = document.getElementById(containerId);
-        if (row) {
-            const oldSentinel = row.querySelector(".scroll-sentinel");
-            if (oldSentinel) getObserverFor(containerId).unobserve(oldSentinel);
-            row.innerHTML = "";
-        }
-    }
-
-    try {
-        const newItems = await fetchNextBatch(containerId, isInitial);
-
-        if (!newItems || newItems.length === 0) {
-            if (isInitial) showRowMessage(containerId, "No items found");
-        } else {
-            renderCardsToRow(newItems, containerId);
-        }
-
-    } catch (e) {
-        console.error(`Error on ${containerId}:`, e);
-        if (isInitial) showRowMessage(containerId, "Error");
-        state.hasMore = false;
-    } finally {
-        state.loading = false;
-    }
-}
 //#endregion
 
-// catalog-renderer.js
+// Inject the empty rows for the observer
+let cachedRowTemplate = null;
+export function injectCatalogShell(catalogObject) {
+    if (!cachedRowTemplate) {
+        cachedRowTemplate = document.getElementById("catalog-row-template");
+    }
 
-export function injectCatalogShell(containerId, catalogTitle, addonName) {
-    const template = document.getElementById("catalog-row-template");
     const container = document.getElementById("dynamic-catalogs-container");
-    
-    if (!template || !container) return;
+    if (!cachedRowTemplate || !container) return;
 
     // Clone the template content
-    const clone = template.content.cloneNode(true);
-    
-    // Set the Catalog Title (e.g., "Popular Movies")
+    const clone = cachedRowTemplate.content.cloneNode(true);
+
+    // Catalog Title
     const titleEl = clone.querySelector(".catalog-title");
-    if (titleEl) titleEl.textContent = catalogTitle;
-    
-    // Set the Add-on Name Badge (e.g., "Cinemeta")
+    if (titleEl) titleEl.textContent = catalogObject.title;
+
+    // Addon name badge
     const badgeEl = clone.querySelector(".catalog-addon-badge");
     if (badgeEl) {
-        badgeEl.textContent = addonName;
-        badgeEl.classList.remove("hidden"); // Ensure it displays
+        badgeEl.textContent = catalogObject.addonName;
+        badgeEl.classList.remove("hidden");
     }
-    
-    // Target the inner scrollable row and give it the unique ID
+
+    // Assign the unique ID to the row so the data go there later
     const rowEl = clone.querySelector(".catalog-row");
     if (rowEl) {
-        rowEl.id = containerId;
+        rowEl.id = catalogObject.containerId;
     }
-    
-    // Inject it into the DOM
+
     container.appendChild(clone);
+    console.log(`Created row ${rowEl}`)
+
+    // Card click event listener
+    setupRowClickListener(catalogObject);
+
+    const observer = getObserverFor(catalogObject.containerId);
+    if (observer && rowEl) {
+        viewportObserver.observe(rowEl);
+    }
+}
+
+export function populateTypeDropdown(typesList) {
+    const select = document.getElementById('discover-type-select');
+    if (!select) return;
+
+    select.replaceChildren();
+
+    typesList.forEach(type => {
+        const option = document.createElement('option');
+        option.value = type;
+        option.textContent = type.charAt(0).toUpperCase() + type.slice(1);
+        option.className = 'bg-slate-900 text-white';
+        select.appendChild(option);
+    });
+}
+
+export function populateCatalogDropdown(catalogsList) {
+    const select = document.getElementById('discover-catalog-select');
+    if (!select) return;
     
-    // Attach the click listener so cards can be opened later
-    setupRowClickListener(containerId);
+    select.replaceChildren();
+
+    // 1. Inject the 'All' option first
+    const allOption = document.createElement('option');
+    allOption.value = 'all';
+    allOption.textContent = 'All Catalogs';
+    allOption.className = 'bg-slate-900 text-white font-bold';
+    select.appendChild(allOption);
+
+    // 2. Iterate the flattened list directly
+    catalogsList.forEach(catalog => {
+        const option = document.createElement('option');
+        option.value = catalog.containerId;
+        option.textContent = `${catalog.addonName} - ${catalog.title}`;
+        option.className = 'bg-slate-900 text-white';
+        select.appendChild(option);
+    });
 }
 
 // Row message
