@@ -138,36 +138,38 @@ export function renderSelectedCatalog() {
     
     if (!catalogSelect || !container || !typeSelect) return;
 
-    // Clear the screen completely
+    // Clear the screen (Detached DOM nodes remain safe in our state objects)
     container.replaceChildren();
 
     const selectedId = catalogSelect.value;
     const selectedType = typeSelect.value;
 
-    // Route A: Render everything for the selected category
+    // Create a fragment for batch DOM insertions
+    const fragment = document.createDocumentFragment();
+
+    // Route A: Render everything
     if (selectedId === 'all') {
-        // TMDB Rows
         if (rowState[selectedType]) {
-            for (const catalogId in rowState[selectedType]) {
-                const catalogObject = rowState[selectedType][catalogId];
-                injectCatalogShell(catalogObject);
-            }
+            Object.values(rowState[selectedType]).forEach(catalogObject => {
+                injectCatalogShell(catalogObject, fragment);
+            });
         }
-        // Add-on Rows
         if (addonState[selectedType]) {
-            for (const catalogId in addonState[selectedType]) {
-                const catalogObject = addonState[selectedType][catalogId];
-                injectCatalogShell(catalogObject);
-            }
+            Object.values(addonState[selectedType]).forEach(catalogObject => {
+                injectCatalogShell(catalogObject, fragment);
+            });
         }
     } 
-    // Route B: Render the single selected catalog
+    // Route B: Single catalog
     else {
         const catalogObject = getActiveState(selectedId);
         if (catalogObject) {
-            injectCatalogShell(catalogObject);
+            injectCatalogShell(catalogObject, fragment);
         }
     }
+
+    // Paint everything to the screen in a single operation
+    container.appendChild(fragment);
 }
 
 // Cache the template
@@ -213,6 +215,7 @@ export function createCardElement(item) {
     }
 
     img.alt = title;
+    img.loading="lazy"
     img.src = posterUrl;
 
     return card;
@@ -272,70 +275,91 @@ export function renderCardsToRow(items, containerId, hasMore) {
     }
 }
 
-function setupRowClickListener(catalogObject) {
-    const row = document.getElementById(catalogObject.containerId);
-    if (!row || row.dataset.listenerAttached) return;
+let isClickListenerAttached = false;
 
-    row.addEventListener("click", (e) => {
-        if (isDragging) { e.preventDefault(); return; }
+export function initGlobalClickListener() {
+    if (isClickListenerAttached) return;
+    
+    const container = document.getElementById("dynamic-catalogs-container");
+    if (!container) return;
+
+    container.addEventListener("click", (e) => {
+        // Prevent accidental clicks while dragging
+        if (isDragging) { 
+            e.preventDefault(); 
+            return; 
+        }
 
         const card = e.target.closest(".media-card");
         if (!card) return;
 
-        // TMDB Route
+        // Find the parent row to get the correct catalog ID
+        const rowEl = card.closest(".catalog-row");
+        if (!rowEl) return;
+
+        // Retrieve the state to get the add-on specific prefixes
+        const catalogObject = getActiveState(rowEl.id);
+        const prefixes = catalogObject ? catalogObject.idPrefixes : [];
+
+        // Route to details
         openMasterDetail(
             card.dataset.id,
             card.dataset.title,
             card.dataset.type,
             card.dataset.poster,
             card.dataset.backdrop,
-            // Pass the addons prefix (tt, kitsu, mal...)
-            catalogObject.idPrefixes
+            prefixes
         );
     });
 
-    row.dataset.listenerAttached = "true";
+    isClickListenerAttached = true;
 }
 //#endregion
 
 // Inject the empty rows for the observer
 let cachedRowTemplate = null;
-export function injectCatalogShell(catalogObject) {
+export function injectCatalogShell(catalogObject, targetContainer) {
+    // Use the passed fragment, or fallback to the live container
+    const container = targetContainer || document.getElementById("dynamic-catalogs-container");
+    if (!container) return;
+
+    if (catalogObject.domNode) {
+        container.appendChild(catalogObject.domNode);
+        if (!catalogObject.loading && (!catalogObject.items || catalogObject.items.length === 0)) {
+            const rowEl = catalogObject.domNode.querySelector(".catalog-row");
+            if (rowEl) viewportObserver.observe(rowEl);
+        }
+        return;
+    }
+
     if (!cachedRowTemplate) {
         cachedRowTemplate = document.getElementById("catalog-row-template");
     }
+    if (!cachedRowTemplate) return;
 
-    const container = document.getElementById("dynamic-catalogs-container");
-    if (!cachedRowTemplate || !container) return;
-
-    // Clone the template content
     const clone = cachedRowTemplate.content.cloneNode(true);
+    const shellNode = clone.firstElementChild; 
 
-    // Catalog Title
-    const titleEl = clone.querySelector(".catalog-title");
+    const titleEl = shellNode.querySelector(".catalog-title");
     if (titleEl) titleEl.textContent = catalogObject.title;
 
-    // Addon name badge
-    const badgeEl = clone.querySelector(".catalog-addon-badge");
+    const badgeEl = shellNode.querySelector(".catalog-addon-badge");
     if (badgeEl) {
         badgeEl.textContent = catalogObject.addonName;
         badgeEl.classList.remove("hidden");
     }
 
-    // Assign the unique ID to the row so the data go there later
-    const rowEl = clone.querySelector(".catalog-row");
+    const rowEl = shellNode.querySelector(".catalog-row");
     if (rowEl) {
         rowEl.id = catalogObject.containerId;
     }
 
-    container.appendChild(clone);
-    console.log(`Created row ${rowEl}`)
+    catalogObject.domNode = shellNode;
 
-    // Card click event listener
-    setupRowClickListener(catalogObject);
+    // Append to the fragment in memory instead of the live screen
+    container.appendChild(shellNode);
 
-    const observer = getObserverFor(catalogObject.containerId);
-    if (observer && rowEl) {
+    if (rowEl) {
         viewportObserver.observe(rowEl);
     }
 }

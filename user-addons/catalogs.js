@@ -5,13 +5,15 @@ import {
     renderSelectedCatalog,
     populateTypeDropdown,
     populateCatalogDropdown,
-    showRowMessage
+    showRowMessage,
+    initGlobalClickListener
 } from "./catalog-renderer";
 
 // APP BOOTER
 export async function loadDiscover() {
     initGlobalDrag();
     initCustomCatalogsState();
+    initGlobalClickListener();
 
     const typeSelect = document.getElementById('discover-type-select');
     const catalogSelect = document.getElementById('discover-catalog-select');
@@ -211,40 +213,54 @@ export function initCustomCatalogsState() {
 export async function fetchNextBatch(catalogId) {
     const catalogObject = getActiveState(catalogId);
 
-    // Safety check in case the ID is invalid
-    if (!catalogObject) return [];
+    // Safety checks: Invalid ID, already loading, or permanently out of data
+    if (!catalogObject || catalogObject.loading || catalogObject.hasMore === false) return [];
 
+    // Lock the state to prevent duplicate observer triggers
+    catalogObject.loading = true;
     let newItems = [];
 
-    // TMDB Logic
+    // Route 1: TMDB Logic
     if (catalogObject.endpoint) {
         let fetchUrl = catalogObject.endpoint;
 
-        // Handle global search override
         if (catalogId === 'global-search-grid' && catalogObject.query) {
             fetchUrl = `search/multi?query=${encodeURIComponent(catalogObject.query)}`;
         }
 
-        const data = await fetchTMDBEndpoint(fetchUrl, catalogObject.page);
+        // Fetch using the current page state
+        const data = await fetchTMDBEndpoint(fetchUrl, catalogObject.page || 1);
         newItems = data.results || [];
-
-        if (newItems.length > 0) catalogObject.page += 1;
+        
+        // Increment page for the next horizontal scroll, or disable pagination
+        if (newItems.length > 0) {
+            catalogObject.page = (catalogObject.page || 1) + 1;
+        } else {
+            catalogObject.hasMore = false;
+        }
     }
-
-    // Add-on Logic
+    // Route 2: Stremio Add-on Logic
     else {
         const metas = await fetchAddonCatalog(catalogObject);
-
         newItems = metas || [];
-
-        // Skip by the amount of items returned
-        if (newItems.length > 0) catalogObject.skip += newItems.length;
+        
+        // Increment skip by the exact amount of items returned
+        if (newItems.length > 0) {
+            catalogObject.skip = (catalogObject.skip || 0) + newItems.length;
+        } else {
+            catalogObject.hasMore = false;
+        }
     }
 
     if (newItems.length > 0) {
+        // Cache the raw data array in the object
+        catalogObject.items = catalogObject.items || [];
+        catalogObject.items.push(...newItems);
+        
         renderRow(newItems, catalogObject);
     }
 
+    console.log(catalogObject.title, catalogObject.addonName, newItems)
     catalogObject.loading = false;
     return newItems;
 }
