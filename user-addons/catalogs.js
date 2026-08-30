@@ -35,8 +35,7 @@ export async function loadDiscover() {
         renderSelectedCatalog(); // Update screen when catalog changes
     });
 
-    if(catalogSelect && catalogSelect.value)
-    {
+    if (catalogSelect && catalogSelect.value) {
         renderSelectedCatalog();
     }
 }
@@ -73,7 +72,7 @@ export function getCatalogsByType(type) {
     // Flatten both state dictionaries into a single array of objects
     const tmdbCatalogs = rowState[type] ? Object.values(rowState[type]) : [];
     const addonCatalogs = addonState[type] ? Object.values(addonState[type]) : [];
-    
+
     return [...tmdbCatalogs, ...addonCatalogs];
 }
 
@@ -231,7 +230,7 @@ export async function fetchNextBatch(catalogId) {
         // Fetch using the current page state
         const data = await fetchTMDBEndpoint(fetchUrl, catalogObject.page || 1);
         newItems = data.results || [];
-        
+
         // Increment page for the next horizontal scroll, or disable pagination
         if (newItems.length > 0) {
             catalogObject.page = (catalogObject.page || 1) + 1;
@@ -243,7 +242,7 @@ export async function fetchNextBatch(catalogId) {
     else {
         const metas = await fetchAddonCatalog(catalogObject);
         newItems = metas || [];
-        
+
         // Increment skip by the exact amount of items returned
         if (newItems.length > 0) {
             catalogObject.skip = (catalogObject.skip || 0) + newItems.length;
@@ -253,11 +252,21 @@ export async function fetchNextBatch(catalogId) {
     }
 
     if (newItems.length > 0) {
-        // Cache the raw data array in the object
+        // Map over raw API data to keep only what the UI needs
+        const prunedItems = newItems.map(item => ({
+            id: item.id,
+            title: item.name || item.title || "Untitled",
+            type: item.type || item.media_type || "movie",
+            poster: item.poster || (item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : null),
+            backdrop: item.background || item.backdrop_path || ""
+        }));
+
+        // Cache the lightweight array in the object[cite: 2]
         catalogObject.items = catalogObject.items || [];
-        catalogObject.items.push(...newItems);
-        
-        renderRow(newItems, catalogObject);
+        catalogObject.items.push(...prunedItems);
+
+        // Pass the pruned data to the renderer[cite: 2]
+        renderRow(prunedItems, catalogObject);
     }
 
     console.log(catalogObject.title, catalogObject.addonName, newItems)

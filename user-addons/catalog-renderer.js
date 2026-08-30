@@ -319,27 +319,18 @@ export function initGlobalClickListener() {
 // Inject the empty rows for the observer
 let cachedRowTemplate = null;
 export function injectCatalogShell(catalogObject, targetContainer) {
-    // Use the passed fragment, or fallback to the live container
     const container = targetContainer || document.getElementById("dynamic-catalogs-container");
     if (!container) return;
 
-    if (catalogObject.domNode) {
-        container.appendChild(catalogObject.domNode);
-        if (!catalogObject.loading && (!catalogObject.items || catalogObject.items.length === 0)) {
-            const rowEl = catalogObject.domNode.querySelector(".catalog-row");
-            if (rowEl) viewportObserver.observe(rowEl);
-        }
-        return;
-    }
+    // (Remove the old domNode check here)
 
     if (!cachedRowTemplate) {
         cachedRowTemplate = document.getElementById("catalog-row-template");
     }
-    if (!cachedRowTemplate) return;
-
+    
     const clone = cachedRowTemplate.content.cloneNode(true);
     const shellNode = clone.firstElementChild; 
-
+    
     const titleEl = shellNode.querySelector(".catalog-title");
     if (titleEl) titleEl.textContent = catalogObject.title;
 
@@ -350,16 +341,16 @@ export function injectCatalogShell(catalogObject, targetContainer) {
     }
 
     const rowEl = shellNode.querySelector(".catalog-row");
-    if (rowEl) {
-        rowEl.id = catalogObject.containerId;
-    }
+    if (rowEl) rowEl.id = catalogObject.containerId;
 
-    catalogObject.domNode = shellNode;
-
-    // Append to the fragment in memory instead of the live screen
     container.appendChild(shellNode);
 
-    if (rowEl) {
+    // REHYDRATION LOGIC: Check if we already fetched data for this row
+    if (catalogObject.items && catalogObject.items.length > 0) {
+        // Instantly restore the exact same cards without network requests
+        renderCardsToRow(catalogObject.items, catalogObject.containerId, catalogObject.hasMore);
+    } else if (rowEl) {
+        // Only observe for fetching if the row is truly empty
         viewportObserver.observe(rowEl);
     }
 }

@@ -3,7 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Theama — a polished media library and discovery interface.">
     <title>Theama</title>
 
     <meta name="theme-color" content="#0f172a">
@@ -13,9 +14,11 @@
 
     <link rel="icon" type="image/png" href="/pwa-icon.png" />
     <link rel="stylesheet" href="style.css">
+
+
 </head>
 
-<body class="bg-slate-900 text-slate-100 font-sans pb-20">
+<body class="bg-slate-900 text-slate-100 font-sans pb-0">
 
     <div id="pwa-splash" class="hidden fixed inset-0 z-[100] bg-slate-900 flex flex-col items-center justify-center">
         <div class="text-center">
@@ -24,656 +27,688 @@
         </div>
     </div>
 
-    <header class="sticky top-0 left-0 w-full z-40 bg-slate-900/95 backdrop-blur border-b border-slate-800 h-[72px]">
-        <div
-            class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md px-16 md:px-4 z-10 flex gap-2">
-            <form class="relative flex-1">
-                <input id="search-input" type="text" placeholder="Search or Paste Link..."
-                    class="w-full bg-slate-800 border border-slate-700 text-white pl-10 pr-4 py-2.5 rounded-xl text-sm focus:ring-2 focus:ring-blue-600 outline-none transition-all shadow-inner">
-                <svg class="absolute left-3 top-3 w-5 h-5 text-slate-400 pointer-events-none" fill="none"
-                    stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                </svg>
-            </form>
-        </div>
+    <div id="app-layout" class="flex h-[100dvh] w-full overflow-hidden">
 
-        <div class="absolute top-1/2 right-6 -translate-y-1/2 z-20">
-            <button id="header-profile-toggle"
-                class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold border-2 border-slate-800 focus:outline-none hover:bg-blue-500 transition shadow-lg shadow-blue-900/20">
-                <svg class="w-5 h-5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
-                </svg>
-            </button>
+        <!--PC-->
+        <nav id="desktop-sidebar"
+            class="hidden md:flex flex-col w-64 bg-slate-900/95 border-r border-slate-800 z-50 overflow-hidden shrink-0 transition-[width] duration-300">
+            
+            <div class="flex-1 min-h-0 px-4 mt-4 space-y-2 overflow-hidden">
+                <button data-target="library-page"
+                    class="nav-link active w-full text-center px-4 py-3 rounded-xl font-bold transition-all text-slate-400 hover:bg-slate-800 hover:text-white [&.active]:bg-blue-600 [&.active]:text-white [&.active]:hover:bg-blue-600">
+                    Library
+                </button>
 
-            <div id="profile-dropdown"
-                class="hidden absolute right-0 mt-2 w-64 bg-slate-800 rounded-xl shadow-2xl border border-slate-700 z-50 p-4">
+                <button data-target="discover-page"
+                    class="nav-link w-full text-center px-4 py-3 rounded-xl font-bold transition-all text-slate-400 hover:bg-slate-800 hover:text-white [&.active]:bg-blue-600 [&.active]:text-white [&.active]:hover:bg-blue-600">
+                    Discover
+                </button>
 
-                <!-- Logged In State -->
-                <div id="profile-logged-in" class="hidden">
-                    <div class="mb-4">
-                        <p class="font-bold text-white text-lg truncate">Welcome <span id="dropdown-username"></span>!
-                        </p>
-                        <p id="dropdown-email" class="text-xs text-slate-400 truncate"></p>
-                    </div>
-                    <hr class="border-slate-700 my-2">
-                    <button id="dropdown-profile-btn"
-                        class="w-full text-left px-3 py-2 hover:bg-slate-700 rounded-lg text-sm text-slate-300 transition-colors">
-                        Public Profile
-                    </button>
-                    <button id="dropdown-logout-btn"
-                        class="w-full text-left px-3 py-2 hover:bg-red-500/20 hover:text-red-400 rounded-lg text-sm text-slate-400 transition-colors mt-1">
-                        Log Out
-                    </button>
-                </div>
+                <button data-target="profile-page"
+                    class="nav-link w-full text-center px-4 py-3 rounded-xl font-bold transition-all text-slate-400 hover:bg-slate-800 hover:text-white [&.active]:bg-blue-600 [&.active]:text-white [&.active]:hover:bg-blue-600">
+                    Profile
+                </button>
 
-                <!-- Logged Out State -->
-                <div id="profile-logged-out" class="hidden">
-                    <div class="mb-4">
-                        <p class="font-bold text-white text-lg">Guest</p>
-                        <p class="text-xs text-slate-400">Not logged in</p>
-                    </div>
-                    <button id="profile-dropdown-login"
-                        class="w-full text-center bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold transition-all shadow-lg">
-                        Log In / Sign Up
-                    </button>
-                </div>
+                <button data-target="settings-page"
+                    class="nav-link w-full text-center px-4 py-3 rounded-xl font-bold transition-all text-slate-400 hover:bg-slate-800 hover:text-white [&.active]:bg-blue-600 [&.active]:text-white [&.active]:hover:bg-blue-600">
+                    Settings
+                </button>
 
-            </div>
-        </div>
-    </header>
+                <div class="mt-8 pt-6 border-t border-slate-800/80 flex min-h-0 flex-col">
+                    <h3 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3 px-4">
+                        Following
+                    </h3>
 
-    <!--PC-->
-    <nav
-        class="hidden md:flex flex-col fixed top-0 left-0 h-screen w-64 bg-slate-900/95 border-r border-slate-800 z-50">
-        <div class="p-6 pb-[15px] border-b border-slate-800">
-            <button id="home-logo-btn" class="text-2xl font-extrabold text-white">Theama</button>
-        </div>
-        <div class="flex-1 px-4 mt-4 space-y-2">
-            <button data-target="library-page"
-                class="nav-link active w-full text-center px-4 py-3 rounded-xl font-bold transition-all text-slate-400 hover:bg-slate-800 hover:text-white [&.active]:bg-blue-600 [&.active]:text-white [&.active]:hover:bg-blue-600">
-                Library
-            </button>
+                    <div id="sidebar-following-list"
+                        class="space-y-1 flex-1 min-h-0 overflow-y-auto max-h-[35vh] custom-scrollbar px-2 hide-scrollbar">
 
-            <button data-target="discover-page"
-                class="nav-link w-full text-center px-4 py-3 rounded-xl font-bold transition-all text-slate-400 hover:bg-slate-800 hover:text-white [&.active]:bg-blue-600 [&.active]:text-white [&.active]:hover:bg-blue-600">
-                Discover
-            </button>
-
-            <button data-target="profile-page"
-                class="nav-link w-full text-center px-4 py-3 rounded-xl font-bold transition-all text-slate-400 hover:bg-slate-800 hover:text-white [&.active]:bg-blue-600 [&.active]:text-white [&.active]:hover:bg-blue-600">
-                Profile
-            </button>
-
-            <button data-target="settings-page"
-                class="nav-link w-full text-center px-4 py-3 rounded-xl font-bold transition-all text-slate-400 hover:bg-slate-800 hover:text-white [&.active]:bg-blue-600 [&.active]:text-white [&.active]:hover:bg-blue-600">
-                Settings
-            </button>
-
-            <div class="mt-8 pt-6 border-t border-slate-800/80">
-                <h3 class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3 px-4">
-                    Following
-                </h3>
-
-                <div id="sidebar-following-list"
-                    class="space-y-1 overflow-y-auto max-h-[35vh] custom-scrollbar px-2 hide-scrollbar">
-
-                    <div id="sidebar-following-empty" class="hidden text-center py-6 px-2">
-                        <p class="text-xs text-slate-500 font-medium">No one here yet.</p>
-                    </div>
-
-                </div>
-
-                <template id="following-user-template">
-                    <button
-                        class="following-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-slate-400 hover:bg-slate-800 hover:text-white group outline-none focus:bg-slate-800">
-                        <div
-                            class="following-avatar w-8 h-8 flex-shrink-0 rounded-full bg-blue-500/10 text-blue-500 flex items-center justify-center font-bold text-sm border border-blue-500/20 group-hover:border-blue-500/50 transition-colors">
+                        <div id="sidebar-following-empty" class="hidden text-center py-6 px-2">
+                            <p class="text-xs text-slate-500 font-medium">No one here yet.</p>
                         </div>
-                        <span class="following-name font-medium text-sm truncate">
-                        </span>
-                    </button>
-                </template>
-            </div>
-        </div>
-    </nav>
 
-    <!--MOBILE-->
-    <nav class="md:hidden fixed bottom-0 left-0 w-full bg-slate-900/95 backdrop-blur border-t border-slate-800 z-50">
-        <div class="flex justify-around items-center h-16">
-            <button data-target="library-page"
-                class="nav-link flex-1 h-full text-blue-500 font-bold text-sm">Library</button>
-            <button data-target="discover-page"
-                class="nav-link flex-1 h-full text-slate-400 font-bold text-sm">Discover</button>
-            <button data-target="settings-page"
-                class="nav-link flex-1 h-full text-slate-400 font-bold text-sm">Settings</button>
-        </div>
-    </nav>
-
-    <div id="player-wrapper" class="hidden w-full bg-black shadow-2xl transition-all duration-300 z-30 relative">
-        <div class="max-w-7xl mx-auto">
-            <div class="artplayer-app w-full aspect-video"></div>
-        </div>
-    </div>
-
-    <main class="max-w-7xl mx-auto w-full p-4 pt-10 pb-24 md:pb-6 transition-all">
-        <div id="toast-container"
-            class="fixed top-5 right-5 z-[9999] flex flex-col gap-3 pointer-events-none items-end"></div>
-
-        <div id="library-page" class="page-view min-h-[50vh]">
-            <div id="library-info-text" class="text-center text-slate-500 mt-10">Loading your cloud...</div>
-
-            <div id="file-list" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4"></div>
-
-            <div class="mt-16 pt-8 border-t border-slate-800">
-                <div class="flex justify-between items-center mb-6 pl-1">
-                    <div>
-                        <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                            <svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                            </svg>
-                            Device Library
-                        </h2>
-                        <p class="text-xs text-slate-400 mt-1">Play and track local files directly.</p>
                     </div>
 
-                    <input type="file" id="local-file-input" class="hidden"
-                        accept="video/mp4,video/x-matroska,.mkv,.mp4" onchange="processLocalFile(event)">
-
-                    <button id="trigger-local-file-btn"
-                        class="bg-slate-800 hover:bg-emerald-600 text-white text-xs font-bold px-4 py-2.5 rounded-lg border border-slate-700 transition shadow-lg flex items-center gap-2">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                        </svg>
-                        Add File
-                    </button>
-                </div>
-
-                <div id="local-file-list" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4"></div>
-
-                <div id="local-empty-state"
-                    class="bg-slate-800/50 border border-dashed border-slate-700 rounded-2xl p-8 text-center mt-4">
-                    <p class="text-slate-400 text-sm">No downloaded content added yet.</p>
-                    <p class="text-slate-500 text-xs mt-1">Add a file from your device.</p>
+                    <template id="following-user-template">
+                        <button
+                            class="following-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-slate-400 hover:bg-slate-800 hover:text-white group outline-none focus:bg-slate-800">
+                            <div
+                                class="following-avatar w-8 h-8 flex-shrink-0 rounded-full bg-blue-500/10 text-blue-500 flex items-center justify-center font-bold text-sm border border-blue-500/20 group-hover:border-blue-500/50 transition-colors">
+                            </div>
+                            <span class="following-name font-medium text-sm truncate">
+                            </span>
+                        </button>
+                    </template>
                 </div>
             </div>
-        </div>
+        </nav>
 
-        <div id="discover-page" class="page-view hidden flex flex-col gap-10">
+        <div id="main-wrapper" class="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-            <!-- Dropdown filters -->
-            <div id="discover-filters"
-                class="flex flex-col sm:flex-row gap-4 bg-slate-800/40 backdrop-blur-md border border-slate-700/50 p-4 rounded-2xl shadow-lg mb-2">
-
-                <!-- Content type dropdown -->
-                <div class="relative flex-1">
-                    <label for="discover-type-select"
-                        class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 pl-1">
-                        Content Type
-                    </label>
-                    <div class="relative group">
-                        <select id="discover-type-select"
-                            class="appearance-none w-full bg-slate-900 border border-slate-700 py-3 pl-4 pr-10 rounded-xl text-sm font-bold text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all cursor-pointer shadow-inner hover:border-slate-600">
-                        </select>
-                        <svg class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none group-hover:text-white transition-colors"
-                            fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7">
-                            </path>
-                        </svg>
-                    </div>
+            <header id="app-header"
+                class="sticky top-0 z-40 bg-slate-900/95 backdrop-blur border-b border-slate-800 h-[72px]">
+                <div class="p-6 pb-[15px] border-b border-slate-800">
+                    <button id="home-logo-btn" class="text-2xl font-extrabold text-white">Theama</button>
                 </div>
 
-                <!-- Catalog source dropdown -->
-                <div class="relative flex-1">
-                    <label for="discover-catalog-select"
-                        class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 pl-1">
-                        Catalog Source
-                    </label>
-                    <div class="relative group">
-                        <select id="discover-catalog-select"
-                            class="appearance-none w-full bg-slate-900 border border-slate-700 py-3 pl-4 pr-10 rounded-xl text-sm font-bold text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all cursor-pointer shadow-inner hover:border-slate-600">
-                        </select>
-                        <svg class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none group-hover:text-white transition-colors"
-                            fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7">
-                            </path>
-                        </svg>
-                    </div>
-                </div>
-
-            </div>
-
-            <div id="global-search-results"
-                class="hidden bg-slate-800/50 p-4 rounded-xl border border-blue-500/30 shadow-lg shadow-blue-900/10">
-                <h2 class="text-xl font-bold text-blue-400 mb-4 pl-1 flex items-center gap-2">
-                    <svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
-                        <path stroke-linecap="round" stroke-linejoin="round"
-                            d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-                    </svg>
-                    Search Results
-                </h2>
-                <div id="global-search-grid" class="draggable-row flex overflow-x-auto gap-4 pb-4 scrollbar-hide">
-                </div>
-            </div>
-
-            <div id="dynamic-catalogs-container" class="flex flex-col gap-10">
-                <!-- Javascript will inject cloned rows here -->
-            </div>
-
-        </div>
-
-        <!-- Catalog rows -->
-        <template id="catalog-row-template">
-            <div class="catalog-section">
-                <h2 class="text-xl font-bold text-white mb-4 pl-1 flex items-center">
-                    <span class="catalog-title">Catalog Name</span>
-                    <span
-                        class="catalog-addon-badge ml-3 text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-400 px-2.5 py-1 rounded-md border border-slate-700/50 shadow-sm hidden md:inline-block">
-                        Addon Name
-                    </span>
-                </h2>
                 <div
-                    class="catalog-row draggable-row flex overflow-x-auto gap-4 py-4 -mt-1 scrollbar-hide items-center min-h-[220px]">
-                </div>
-            </div>
-        </template>
-
-        <div id="profile-page" class="page-view hidden flex flex-col gap-10 max-w-6xl mx-auto w-full pt-4">
-
-            <div
-                class="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-800/40 backdrop-blur-md p-6 md:p-8 rounded-3xl border border-slate-700/50 shadow-xl gap-6">
-
-                <div>
-                    <button id="back-to-profile-btn"
-                        class="hidden -mt-3 mb-1 text-blue-500 hover:text-blue-400 font-bold flex items-center gap-2 transition cursor-pointer">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
-                        </svg>
-                        Back
-                    </button>
-
-                    <h1 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight">
-                        Welcome, <span id="profile-username-display"
-                            class="text-blue-500 drop-shadow-[0_0_5px_rgba(59,130,246,0.3)]">Guest</span>!
-                    </h1>
-                    <p class="text-slate-400 mt-2 text-sm sm:text-base">Your personal space for watchlists and stats.
-                    </p>
-                </div>
-
-                <div class="shrink-0 self-start sm:self-auto flex items-center">
-
-
-                    <button id="profile-follow-btn" onclick="handleFollowToggle()" data-friend-id=""
-                        class="hidden px-6 py-3 rounded-2xl font-bold text-sm transition-all items-center gap-2 border shadow-sm outline-none">
-                        <svg id="follow-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        </svg>
-                        <span id="follow-text">Follow</span>
-                    </button>
-
-
-                    <button id="profile-settings-btn"
-                        class="p-4 bg-slate-900/50 hover:bg-blue-600 text-slate-300 hover:text-white rounded-2xl transition-all border border-slate-700/50 hover:border-blue-500 shadow-sm group">
-                        <svg class="w-6 h-6 group-hover:rotate-90 transition-transform duration-300" fill="none"
+                    class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md px-16 md:px-4 z-10 flex gap-2">
+                    <form class="relative flex-1">
+                        <input id="search-input" type="text" placeholder="Search or Paste Link..."
+                            class="w-full bg-slate-800 border border-slate-700 text-white pl-10 pr-4 py-2.5 rounded-xl text-sm focus:ring-2 focus:ring-blue-600 outline-none transition-all shadow-inner">
+                        <svg class="absolute left-3 top-3 w-5 h-5 text-slate-400 pointer-events-none" fill="none"
                             stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
-                            </path>
+                                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                        </svg>
+                    </form>
+                </div>
+
+                <div class="absolute top-1/2 right-6 -translate-y-1/2 z-20">
+                    <button id="header-profile-toggle"
+                        class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold border-2 border-slate-800 focus:outline-none hover:bg-blue-500 transition shadow-lg shadow-blue-900/20">
+                        <svg class="w-5 h-5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
                         </svg>
                     </button>
 
-                    <button id="profile-share-btn"
-                        class="p-4 ml-2 bg-slate-900/50 hover:bg-blue-600 text-slate-300 hover:text-white rounded-2xl transition-all border border-slate-700/50 hover:border-blue-500 shadow-sm group"
-                        title="Share Profile">
+                    <div id="profile-dropdown"
+                        class="hidden absolute right-0 mt-2 w-64 bg-slate-800 rounded-xl shadow-2xl border border-slate-700 z-50 p-4">
 
-                        <svg class="w-6 h-6 group-hover:-translate-y-0.5 transition-transform duration-300" fill="none"
-                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                            viewBox="0 0 24 24">
-                            <circle cx="18" cy="5" r="3"></circle>
-                            <circle cx="6" cy="12" r="3"></circle>
-                            <circle cx="18" cy="19" r="3"></circle>
-                            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
-                            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
-                        </svg>
+                        <!-- Logged In State -->
+                        <div id="profile-logged-in" class="hidden">
+                            <div class="mb-4">
+                                <p class="font-bold text-white text-lg truncate">Welcome <span
+                                        id="dropdown-username"></span>!
+                                </p>
+                                <p id="dropdown-email" class="text-xs text-slate-400 truncate"></p>
+                            </div>
+                            <hr class="border-slate-700 my-2">
+                            <button id="dropdown-profile-btn"
+                                class="w-full text-left px-3 py-2 hover:bg-slate-700 rounded-lg text-sm text-slate-300 transition-colors">
+                                Public Profile
+                            </button>
+                            <button id="dropdown-logout-btn"
+                                class="w-full text-left px-3 py-2 hover:bg-red-500/20 hover:text-red-400 rounded-lg text-sm text-slate-400 transition-colors mt-1">
+                                Log Out
+                            </button>
+                        </div>
 
-                    </button>
+                        <!-- Logged Out State -->
+                        <div id="profile-logged-out" class="hidden">
+                            <div class="mb-4">
+                                <p class="font-bold text-white text-lg">Guest</p>
+                                <p class="text-xs text-slate-400">Not logged in</p>
+                            </div>
+                            <button id="profile-dropdown-login"
+                                class="w-full text-center bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold transition-all shadow-lg">
+                                Log In / Sign Up
+                            </button>
+                        </div>
 
+                    </div>
+                </div>
+            </header>
+
+            <!--MOBILE-->
+            <nav
+                class="md:hidden fixed bottom-0 left-0 w-full bg-slate-900/95 backdrop-blur border-t border-slate-800 z-50">
+                <div class="flex justify-around items-center h-16">
+                    <button data-target="library-page"
+                        class="nav-link flex-1 h-full text-blue-500 font-bold text-sm">Library</button>
+                    <button data-target="discover-page"
+                        class="nav-link flex-1 h-full text-slate-400 font-bold text-sm">Discover</button>
+                    <button data-target="settings-page"
+                        class="nav-link flex-1 h-full text-slate-400 font-bold text-sm">Settings</button>
+                </div>
+            </nav>
+
+            <div id="player-wrapper"
+                class="hidden w-full bg-black shadow-2xl transition-all duration-300 z-30 relative">
+                <div class="max-w-7xl mx-auto">
+                    <div class="artplayer-app w-full aspect-video"></div>
                 </div>
             </div>
 
-            <section class="flex flex-col gap-6">
+            <main id="app-main" class="flex-1 overflow-y-auto min-w-0 transition-all relative">
 
-                <div class="flex items-center justify-between px-2">
-                    <h2 class="text-2xl font-bold text-white flex items-center gap-3">
-                        <div
-                            class="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center text-emerald-500 border border-emerald-500/20 shadow-inner">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path>
-                            </svg>
+                <div id="library-page" class="page-view min-h-[50vh]">
+                    <div id="library-info-text" class="text-center text-slate-500 mt-10">Loading your cloud...</div>
+
+                    <div id="file-list" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4"></div>
+
+                    <div class="mt-16 pt-8 border-t border-slate-800">
+                        <div class="flex justify-between items-center mb-6 pl-1">
+                            <div>
+                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                                    <svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor"
+                                        viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                                    </svg>
+                                    Device Library
+                                </h2>
+                                <p class="text-xs text-slate-400 mt-1">Play and track local files directly.</p>
+                            </div>
+
+                            <input type="file" id="local-file-input" class="hidden"
+                                accept="video/mp4,video/x-matroska,.mkv,.mp4" onchange="processLocalFile(event)">
+
+                            <button id="trigger-local-file-btn"
+                                class="bg-slate-800 hover:bg-emerald-600 text-white text-xs font-bold px-4 py-2.5 rounded-lg border border-slate-700 transition shadow-lg flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M12 4v16m8-8H4" />
+                                </svg>
+                                Add File
+                            </button>
                         </div>
-                        My Watchlists
-                    </h2>
 
-                    <button onclick="document.getElementById('create-list-modal').classList.remove('hidden')"
-                        class="bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold px-5 py-2.5 rounded-xl border border-blue-500 transition-all shadow-[0_0_15px_rgba(37,99,235,0.2)] hover:shadow-[0_0_20px_rgba(37,99,235,0.4)] flex items-center gap-2 group">
-                        <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4">
-                            </path>
-                        </svg>
-                        New List
-                    </button>
+                        <div id="local-file-list" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4"></div>
+
+                        <div id="local-empty-state"
+                            class="bg-slate-800/50 border border-dashed border-slate-700 rounded-2xl p-8 text-center mt-4">
+                            <p class="text-slate-400 text-sm">No downloaded content added yet.</p>
+                            <p class="text-slate-500 text-xs mt-1">Add a file from your device.</p>
+                        </div>
+                    </div>
                 </div>
 
-                <div
-                    class="bg-slate-800/30 backdrop-blur border border-slate-700/50 rounded-3xl p-6 sm:p-8 flex flex-col gap-10 shadow-lg">
+                <div id="discover-page" class="page-view hidden flex flex-col gap-10">
 
-                    <div id="profile-watchlists-container" class="flex flex-col">
-                    </div>
+                    <!-- Dropdown filters -->
+                    <div id="discover-filters"
+                        class="flex flex-col sm:flex-row gap-4 bg-slate-800/40 backdrop-blur-md border border-slate-700/50 p-4 rounded-2xl shadow-lg mb-2">
 
-                    <div id="default-watchlists-container" class="w-full">
-                        <h3 class="text-xl font-bold text-slate-100 mb-1 pl-1 flex items-center gap-3 relative z-10">
-                            <div
-                                class="w-8 h-8 bg-red-500/10 rounded-lg flex items-center justify-center text-red-500 shadow-sm border border-red-500/20">
-                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                                    <path
-                                        d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                        <!-- Content type dropdown -->
+                        <div class="relative flex-1">
+                            <label for="discover-type-select"
+                                class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 pl-1">
+                                Content Type
+                            </label>
+                            <div class="relative group">
+                                <select id="discover-type-select"
+                                    class="appearance-none w-full bg-slate-900 border border-slate-700 py-3 pl-4 pr-10 rounded-xl text-sm font-bold text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all cursor-pointer shadow-inner hover:border-slate-600">
+                                </select>
+                                <svg class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none group-hover:text-white transition-colors"
+                                    fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M19 9l-7 7-7-7">
+                                    </path>
                                 </svg>
                             </div>
-                            Favourites
-                        </h3>
-
-                        <div id="watchlist-track-favourites"
-                            class="draggable-row flex overflow-x-auto gap-4 py-6 px-4 -mx-4 -mt-4 scrollbar-hide items-start min-h-[160px]">
-                            <div id="favourites-empty-state"
-                                class="flex-none w-full text-center py-12 bg-slate-900/50 border border-dashed border-slate-700/50 rounded-2xl">
-                                <p class="text-slate-400 font-medium">No favourites added yet.</p>
-                                <p class="text-slate-500 text-sm mt-1">Start exploring and save your top picks!</p>
-                            </div>
-                        </div>
-                    </div>
-
-                </div>
-            </section>
-        </div>
-
-        <div id="settings-page" class="page-view hidden max-w-4xl mx-auto w-full flex flex-col gap-10">
-
-            <div>
-                <h1 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight">Settings</h1>
-                <p class="text-slate-400 mt-2">Manage your integrations, accounts, and extensions.</p>
-            </div>
-
-            <section>
-                <h2 class="text-xl font-bold text-white mb-4 pl-1 flex items-center gap-2">
-                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
-                    </svg>
-                    Theama Account
-                </h2>
-
-                <div
-                    class="bg-slate-800/40 backdrop-blur border border-slate-700/50 p-6 rounded-2xl shadow-lg flex flex-col md:flex-row gap-8">
-
-                    <form id="account-form" class="flex-1 space-y-4" novalidate>
-
-                        <h1 id="account-message"
-                            class="text-l font-bold text-slate-200 mb-4 pl-1 flex items-center gap-2">Log in to optimize
-                            your experience</h1>
-
-                        <div id="edit-profile-toggle" class="hidden mb-6 pl-1">
-                            <button id="edit-profile-btn"
-                                class="text-sm text-blue-400 hover:text-blue-300 font-bold transition-colors outline-none focus:underline">
-                                Edit Profile
-                            </button>
                         </div>
 
-                        <div id="multi-container" class="hidden">
-                            <div class="flex items-center gap-2 mb-2 pl-1">
-                                <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider">
-                                    Email or Username
-                                </label>
-
-                                <div class="relative group flex items-center justify-center">
-
-                                    <button type="button"
-                                        class="w-4 h-4 rounded-full bg-slate-800 text-slate-400 text-[9px] font-bold flex items-center justify-center border border-slate-700 hover:bg-slate-700 hover:text-white transition-colors cursor-help outline-none">
-                                        i
-                                    </button>
-
-                                    <div
-                                        class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2.5 w-48 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 pointer-events-none z-10">
-                                        <div
-                                            class="bg-slate-700 text-slate-200 text-xs p-2.5 rounded-lg border border-slate-600 shadow-xl normal-case tracking-normal font-normal text-center">
-                                            If you registered with an email you have to use that email.
-                                        </div>
-                                        <div
-                                            class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-slate-700 border-b border-r border-slate-600 transform rotate-45">
-                                        </div>
-                                    </div>
-
-                                </div>
-                            </div>
-                            <input id="settings-multi" type="text" placeholder="Email/Username" autocomplete="email"
-                                class="w-full bg-slate-900 border border-slate-700 p-3.5 rounded-xl text-sm text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600">
-
-                            <p data-target="multi"
-                                class="auth-error-msg hidden text-red-500 text-xs mt-1.5 pl-1 font-medium"></p>
-                        </div>
-
-                        <div id="username-container">
-                            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 pl-1">
-                                Username
+                        <!-- Catalog source dropdown -->
+                        <div class="relative flex-1">
+                            <label for="discover-catalog-select"
+                                class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 pl-1">
+                                Catalog Source
                             </label>
-                            <input id="settings-username" type="text" placeholder="Username" autocomplete="off"
-                                class="w-full bg-slate-900 border border-slate-700 p-3.5 rounded-xl text-sm text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600">
-
-                            <p data-target="username"
-                                class="auth-error-msg hidden text-red-500 text-xs mt-1.5 pl-1 font-medium"></p>
+                            <div class="relative group">
+                                <select id="discover-catalog-select"
+                                    class="appearance-none w-full bg-slate-900 border border-slate-700 py-3 pl-4 pr-10 rounded-xl text-sm font-bold text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all cursor-pointer shadow-inner hover:border-slate-600">
+                                </select>
+                                <svg class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none group-hover:text-white transition-colors"
+                                    fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M19 9l-7 7-7-7">
+                                    </path>
+                                </svg>
+                            </div>
                         </div>
 
-                        <div id="email-container">
-                            <div class="flex items-center gap-2 mb-2 pl-1">
-                                <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider">
-                                    Email Address (Optional)
-                                </label>
+                    </div>
 
-                                <div class="relative group flex items-center justify-center">
+                    <div id="global-search-results"
+                        class="hidden bg-slate-800/50 p-4 rounded-xl border border-blue-500/30 shadow-lg shadow-blue-900/10">
+                        <h2 class="text-xl font-bold text-blue-400 mb-4 pl-1 flex items-center gap-2">
+                            <svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                            </svg>
+                            Search Results
+                        </h2>
+                        <div id="global-search-grid"
+                            class="draggable-row flex overflow-x-auto gap-4 pb-4 scrollbar-hide">
+                        </div>
+                    </div>
 
-                                    <button type="button"
-                                        class="w-4 h-4 rounded-full bg-slate-800 text-slate-400 text-[9px] font-bold flex items-center justify-center border border-slate-700 hover:bg-slate-700 hover:text-white transition-colors cursor-help outline-none">
-                                        i
-                                    </button>
+                    <div id="dynamic-catalogs-container" class="flex flex-col gap-10">
+                        <!-- Javascript will inject cloned rows here -->
+                    </div>
 
+                </div>
+
+                <!-- Catalog rows -->
+                <template id="catalog-row-template">
+                    <div class="catalog-section">
+                        <h2 class="text-xl font-bold text-white mb-4 pl-1 flex items-center">
+                            <span class="catalog-title">Catalog Name</span>
+                            <span
+                                class="catalog-addon-badge ml-3 text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-400 px-2.5 py-1 rounded-md border border-slate-700/50 shadow-sm hidden md:inline-block">
+                                Addon Name
+                            </span>
+                        </h2>
+                        <div
+                            class="catalog-row draggable-row flex overflow-x-auto gap-4 py-4 -mt-1 scrollbar-hide items-center min-h-[220px]">
+                        </div>
+                    </div>
+                </template>
+
+                <div id="profile-page" class="page-view hidden flex flex-col gap-10 max-w-6xl mx-auto w-full pt-4">
+
+                    <div
+                        class="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-800/40 backdrop-blur-md p-6 md:p-8 rounded-3xl border border-slate-700/50 shadow-xl gap-6">
+
+                        <div>
+                            <button id="back-to-profile-btn"
+                                class="hidden -mt-3 mb-1 text-blue-500 hover:text-blue-400 font-bold flex items-center gap-2 transition cursor-pointer">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                                </svg>
+                                Back
+                            </button>
+
+                            <h1 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight">
+                                Welcome, <span id="profile-username-display"
+                                    class="text-blue-500 drop-shadow-[0_0_5px_rgba(59,130,246,0.3)]">Guest</span>!
+                            </h1>
+                            <p class="text-slate-400 mt-2 text-sm sm:text-base">Your personal space for watchlists and
+                                stats.
+                            </p>
+                        </div>
+
+                        <div class="shrink-0 self-start sm:self-auto flex items-center">
+
+
+                            <button id="profile-follow-btn" onclick="handleFollowToggle()" data-friend-id=""
+                                class="hidden px-6 py-3 rounded-2xl font-bold text-sm transition-all items-center gap-2 border shadow-sm outline-none">
+                                <svg id="follow-icon" class="w-5 h-5" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24">
+                                </svg>
+                                <span id="follow-text">Follow</span>
+                            </button>
+
+
+                            <button id="profile-settings-btn"
+                                class="p-4 bg-slate-900/50 hover:bg-blue-600 text-slate-300 hover:text-white rounded-2xl transition-all border border-slate-700/50 hover:border-blue-500 shadow-sm group">
+                                <svg class="w-6 h-6 group-hover:rotate-90 transition-transform duration-300" fill="none"
+                                    stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
+                                    </path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                </svg>
+                            </button>
+
+                            <button id="profile-share-btn"
+                                class="p-4 ml-2 bg-slate-900/50 hover:bg-blue-600 text-slate-300 hover:text-white rounded-2xl transition-all border border-slate-700/50 hover:border-blue-500 shadow-sm group"
+                                title="Share Profile">
+
+                                <svg class="w-6 h-6 group-hover:-translate-y-0.5 transition-transform duration-300"
+                                    fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round" viewBox="0 0 24 24">
+                                    <circle cx="18" cy="5" r="3"></circle>
+                                    <circle cx="6" cy="12" r="3"></circle>
+                                    <circle cx="18" cy="19" r="3"></circle>
+                                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+                                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+                                </svg>
+
+                            </button>
+
+                        </div>
+                    </div>
+
+                    <section class="flex flex-col gap-6">
+
+                        <div class="flex items-center justify-between px-2">
+                            <h2 class="text-2xl font-bold text-white flex items-center gap-3">
+                                <div
+                                    class="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center text-emerald-500 border border-emerald-500/20 shadow-inner">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path>
+                                    </svg>
+                                </div>
+                                My Watchlists
+                            </h2>
+
+                            <button onclick="document.getElementById('create-list-modal').classList.remove('hidden')"
+                                class="bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold px-5 py-2.5 rounded-xl border border-blue-500 transition-all shadow-[0_0_15px_rgba(37,99,235,0.2)] hover:shadow-[0_0_20px_rgba(37,99,235,0.4)] flex items-center gap-2 group">
+                                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M12 4v16m8-8H4">
+                                    </path>
+                                </svg>
+                                New List
+                            </button>
+                        </div>
+
+                        <div
+                            class="bg-slate-800/30 backdrop-blur border border-slate-700/50 rounded-3xl p-6 sm:p-8 flex flex-col gap-10 shadow-lg">
+
+                            <div id="profile-watchlists-container" class="flex flex-col">
+                            </div>
+
+                            <div id="default-watchlists-container" class="w-full">
+                                <h3
+                                    class="text-xl font-bold text-slate-100 mb-1 pl-1 flex items-center gap-3 relative z-10">
                                     <div
-                                        class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2.5 w-48 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 pointer-events-none z-10">
-                                        <div
-                                            class="bg-slate-700 text-slate-200 text-xs p-2.5 rounded-lg border border-slate-600 shadow-xl normal-case tracking-normal font-normal text-center">
-                                            Only used for password recovery. If left blank, you will remain completely
-                                            anonymous.
-                                        </div>
-                                        <div
-                                            class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-slate-700 border-b border-r border-slate-600 transform rotate-45">
-                                        </div>
+                                        class="w-8 h-8 bg-red-500/10 rounded-lg flex items-center justify-center text-red-500 shadow-sm border border-red-500/20">
+                                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                            <path
+                                                d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                                        </svg>
                                     </div>
+                                    Favourites
+                                </h3>
 
+                                <div id="watchlist-track-favourites"
+                                    class="draggable-row flex overflow-x-auto gap-4 py-6 px-4 -mx-4 -mt-4 scrollbar-hide items-start min-h-[160px]">
+                                    <div id="favourites-empty-state"
+                                        class="flex-none w-full text-center py-12 bg-slate-900/50 border border-dashed border-slate-700/50 rounded-2xl">
+                                        <p class="text-slate-400 font-medium">No favourites added yet.</p>
+                                        <p class="text-slate-500 text-sm mt-1">Start exploring and save your top picks!
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
 
-                            <input id="settings-email" type="email" placeholder="your@email.com" autocomplete="email"
-                                class="w-full bg-slate-900 border border-slate-700 p-3.5 rounded-xl text-sm text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600">
-
-                            <p data-target="email"
-                                class="auth-error-msg hidden text-red-500 text-xs mt-1.5 pl-1 font-medium"></p>
                         </div>
+                    </section>
+                </div>
 
-                        <div id="password-container">
-                            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 pl-1">
-                                Password</label>
-                            <input id="settings-password" type="password" placeholder="••••••••"
-                                autocomplete="new-password"
-                                class="w-full bg-slate-900 border border-slate-700 p-3.5 rounded-xl text-sm text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600">
+                <div id="settings-page" class="page-view hidden max-w-4xl mx-auto w-full flex flex-col gap-10">
 
-                            <p data-target="password"
-                                class="auth-error-msg hidden text-red-500 text-xs mt-1.5 pl-1 font-medium"></p>
-                        </div>
-
-                        <button id="submit" type="submit"
-                            class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-xl transition-all font-bold text-sm shadow-[0_0_15px_rgba(37,99,235,0.2)]">
-                            Create Account
-                        </button>
-
-                        <div id="settings-auth-toggle" class="pt-2 text-sm">
-                            <span id="toggle-text" class="text-slate-400">Already have an account?</span>
-
-                            <button id="toggle-auth-mode-btn"
-                                class="text-blue-400 hover:text-blue-300 font-bold ml-1.5 transition-colors outline-none focus:underline">
-                                Log In
-                            </button>
-                            <button id="forgot-password-btn" type="button"
-                                class="hidden text-blue-400 hover:text-blue-300 font-bold ml-3 transition-colors outline-none focus:underline">
-                                Forgot Password
-                            </button>
-                        </div>
-                    </form>
-
-                    <div
-                        class="md:w-72 flex flex-col justify-center border-t md:border-t-0 md:border-l border-slate-700/50 pt-6 md:pt-0 md:pl-8">
-                        <div class="mb-4">
-                            <h3 class="font-bold text-white text-lg">Sign Out</h3>
-                            <p class="text-sm text-slate-400 mt-1">Disconnect this device and clear local data.</p>
-                        </div>
-
-                        <button id="settings-logout-btn"
-                            class="w-full bg-red-500/10 hover:bg-red-500/20 text-red-500 py-3 rounded-xl transition-all font-bold text-sm border border-red-500/20 hover:border-red-500/40">
-                            Log Out of Theama
-                        </button>
+                    <div>
+                        <h1 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight">Settings</h1>
+                        <p class="text-slate-400 mt-2">Manage your integrations, accounts, and extensions.</p>
                     </div>
 
-                </div>
-            </section>
+                    <section>
+                        <h2 class="text-xl font-bold text-white mb-4 pl-1 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                            </svg>
+                            Theama Account
+                        </h2>
 
-            <section>
-                <h2 class="text-xl font-bold text-white mb-4 pl-1 flex items-center gap-2">
-                    <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1">
-                        </path>
-                    </svg>
-                    Integrations
-                </h2>
+                        <div
+                            class="bg-slate-800/40 backdrop-blur border border-slate-700/50 p-6 rounded-2xl shadow-lg flex flex-col md:flex-row gap-8">
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <form id="account-form" class="flex-1 space-y-4" novalidate>
 
-                    <div
-                        class="bg-slate-800/40 backdrop-blur border border-slate-700/50 p-6 rounded-2xl flex flex-col justify-between gap-6 shadow-lg">
+                                <h1 id="account-message"
+                                    class="text-lg font-bold text-slate-200 mb-4 pl-1 flex items-center gap-2">Log in to
+                                    optimize
+                                    your experience</h1>
 
-                        <div class="flex justify-between items-start">
-                            <div>
-                                <h3 class="font-bold text-white text-lg">TorBox API</h3>
-                                <p class="text-sm text-slate-400 mt-1">Your core cloud provider</p>
+                                <div id="edit-profile-toggle" class="hidden mb-6 pl-1">
+                                    <button type="button" id="edit-profile-btn"
+                                        class="text-sm text-blue-400 hover:text-blue-300 font-bold transition-colors outline-none focus:underline">
+                                        Edit Profile
+                                    </button>
+                                </div>
+
+                                <div id="multi-container" class="hidden">
+                                    <div class="flex items-center gap-2 mb-2 pl-1">
+                                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                            Email or Username
+                                        </label>
+
+                                        <div class="relative group flex items-center justify-center">
+
+                                            <button type="button"
+                                                class="w-4 h-4 rounded-full bg-slate-800 text-slate-400 text-[9px] font-bold flex items-center justify-center border border-slate-700 hover:bg-slate-700 hover:text-white transition-colors cursor-help outline-none">
+                                                i
+                                            </button>
+
+                                            <div
+                                                class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2.5 w-48 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 pointer-events-none z-10">
+                                                <div
+                                                    class="bg-slate-700 text-slate-200 text-xs p-2.5 rounded-lg border border-slate-600 shadow-xl normal-case tracking-normal font-normal text-center">
+                                                    If you registered with an email you have to use that email.
+                                                </div>
+                                                <div
+                                                    class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-slate-700 border-b border-r border-slate-600 transform rotate-45">
+                                                </div>
+                                            </div>
+
+                                        </div>
+                                    </div>
+                                    <input id="settings-multi" type="text" placeholder="Email/Username"
+                                        autocomplete="email"
+                                        class="w-full bg-slate-900 border border-slate-700 p-3.5 rounded-xl text-sm text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600">
+
+                                    <p data-target="multi"
+                                        class="auth-error-msg hidden text-red-500 text-xs mt-1.5 pl-1 font-medium"></p>
+                                </div>
+
+                                <div id="username-container">
+                                    <label
+                                        class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 pl-1">
+                                        Username
+                                    </label>
+                                    <input id="settings-username" type="text" placeholder="Username" autocomplete="off"
+                                        class="w-full bg-slate-900 border border-slate-700 p-3.5 rounded-xl text-sm text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600">
+
+                                    <p data-target="username"
+                                        class="auth-error-msg hidden text-red-500 text-xs mt-1.5 pl-1 font-medium"></p>
+                                </div>
+
+                                <div id="email-container">
+                                    <div class="flex items-center gap-2 mb-2 pl-1">
+                                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                            Email Address (Optional)
+                                        </label>
+
+                                        <div class="relative group flex items-center justify-center">
+
+                                            <button type="button"
+                                                class="w-4 h-4 rounded-full bg-slate-800 text-slate-400 text-[9px] font-bold flex items-center justify-center border border-slate-700 hover:bg-slate-700 hover:text-white transition-colors cursor-help outline-none">
+                                                i
+                                            </button>
+
+                                            <div
+                                                class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2.5 w-48 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 pointer-events-none z-10">
+                                                <div
+                                                    class="bg-slate-700 text-slate-200 text-xs p-2.5 rounded-lg border border-slate-600 shadow-xl normal-case tracking-normal font-normal text-center">
+                                                    Only used for password recovery. If left blank, you will remain
+                                                    completely
+                                                    anonymous.
+                                                </div>
+                                                <div
+                                                    class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-slate-700 border-b border-r border-slate-600 transform rotate-45">
+                                                </div>
+                                            </div>
+
+                                        </div>
+                                    </div>
+
+                                    <input id="settings-email" type="email" placeholder="your@email.com"
+                                        autocomplete="email"
+                                        class="w-full bg-slate-900 border border-slate-700 p-3.5 rounded-xl text-sm text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600">
+
+                                    <p data-target="email"
+                                        class="auth-error-msg hidden text-red-500 text-xs mt-1.5 pl-1 font-medium"></p>
+                                </div>
+
+                                <div id="password-container">
+                                    <label
+                                        class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 pl-1">
+                                        Password</label>
+                                    <input id="settings-password" type="password" placeholder="••••••••"
+                                        autocomplete="new-password"
+                                        class="w-full bg-slate-900 border border-slate-700 p-3.5 rounded-xl text-sm text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600">
+
+                                    <p data-target="password"
+                                        class="auth-error-msg hidden text-red-500 text-xs mt-1.5 pl-1 font-medium"></p>
+                                </div>
+
+                                <button id="submit" type="submit"
+                                    class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-xl transition-all font-bold text-sm shadow-[0_0_15px_rgba(37,99,235,0.2)]">
+                                    Create Account
+                                </button>
+
+                                <div id="settings-auth-toggle" class="pt-2 text-sm">
+                                    <span id="toggle-text" class="text-slate-400">Already have an account?</span>
+
+                                    <button type="button" id="toggle-auth-mode-btn"
+                                        class="text-blue-400 hover:text-blue-300 font-bold ml-1.5 transition-colors outline-none focus:underline">
+                                        Log In
+                                    </button>
+                                    <button id="forgot-password-btn" type="button"
+                                        class="hidden text-blue-400 hover:text-blue-300 font-bold ml-3 transition-colors outline-none focus:underline">
+                                        Forgot Password
+                                    </button>
+                                </div>
+                            </form>
+
+                            <div
+                                class="md:w-72 flex flex-col justify-center border-t md:border-t-0 md:border-l border-slate-700/50 pt-6 md:pt-0 md:pl-8">
+                                <div class="mb-4">
+                                    <h3 class="font-bold text-white text-lg">Sign Out</h3>
+                                    <p class="text-sm text-slate-400 mt-1">Disconnect this device and clear local data.
+                                    </p>
+                                </div>
+
+                                <button id="settings-logout-btn"
+                                    class="w-full bg-red-500/10 hover:bg-red-500/20 text-red-500 py-3 rounded-xl transition-all font-bold text-sm border border-red-500/20 hover:border-red-500/40">
+                                    Log Out of Theama
+                                </button>
                             </div>
 
-                            <span id="tb-status-connected"
-                                class="hidden items-center gap-1.5 bg-green-500/10 text-green-500 px-2.5 py-1 rounded-md text-xs font-bold border border-green-500/20">
-                                <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> Connected
-                            </span>
-
-                            <span id="tb-status-disconnected"
-                                class="flex items-center gap-1.5 bg-slate-900/50 text-slate-300 px-2.5 py-1 rounded-md text-xs font-bold border border-slate-700">
-                                <span class="w-2 h-2 bg-red-500 rounded-full"></span> Disconnected
-                            </span>
                         </div>
+                    </section>
 
-                        <form id="torbox-auth-form" class="flex flex-col gap-3">
-                            <input id="api-input" type="password" placeholder="Enter TorBox API Key" autocomplete="off"
-                                class="w-full bg-slate-900 border border-slate-700 p-3.5 rounded-xl text-sm text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600">
+                    <section>
+                        <h2 class="text-xl font-bold text-white mb-4 pl-1 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1">
+                                </path>
+                            </svg>
+                            Integrations
+                        </h2>
 
-                            <button id="login-btn" type="submit"
-                                class="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl transition-all font-bold text-sm shadow-[0_0_15px_rgba(37,99,235,0.2)]">
-                                Connect TorBox
-                            </button>
-                        </form>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-                        <div id="torbox-connected-actions" class="hidden">
-                            <button id="disconnect-torbox-btn"
-                                class="w-full bg-slate-800 hover:bg-red-500/20 text-slate-300 hover:text-red-400 py-3 rounded-xl transition-all font-bold text-sm border border-slate-700 hover:border-red-500/30">
-                                Disconnect TorBox
-                            </button>
-                        </div>
+                            <div
+                                class="bg-slate-800/40 backdrop-blur border border-slate-700/50 p-6 rounded-2xl flex flex-col justify-between gap-6 shadow-lg">
 
-                    </div>
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <h3 class="font-bold text-white text-lg">TorBox API</h3>
+                                        <p class="text-sm text-slate-400 mt-1">Your core cloud provider</p>
+                                    </div>
 
-                    <div
-                        class="bg-slate-800/40 backdrop-blur border border-slate-700/50 p-6 rounded-2xl flex flex-col justify-between gap-6 shadow-lg">
-                        <div class="flex justify-between items-start">
-                            <div>
-                                <h3 class="font-bold text-white text-lg">Trakt.tv</h3>
-                                <p class="text-sm text-slate-400 mt-1">Sync your watch history</p>
+                                    <span id="tb-status-connected"
+                                        class="hidden items-center gap-1.5 bg-green-500/10 text-green-500 px-2.5 py-1 rounded-md text-xs font-bold border border-green-500/20">
+                                        <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> Connected
+                                    </span>
+
+                                    <span id="tb-status-disconnected"
+                                        class="flex items-center gap-1.5 bg-slate-900/50 text-slate-300 px-2.5 py-1 rounded-md text-xs font-bold border border-slate-700">
+                                        <span class="w-2 h-2 bg-red-500 rounded-full"></span> Disconnected
+                                    </span>
+                                </div>
+
+                                <form id="torbox-auth-form" class="flex flex-col gap-3">
+                                    <input id="api-input" type="password" placeholder="Enter TorBox API Key"
+                                        autocomplete="off"
+                                        class="w-full bg-slate-900 border border-slate-700 p-3.5 rounded-xl text-sm text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600">
+
+                                    <button id="login-btn" type="submit"
+                                        class="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl transition-all font-bold text-sm shadow-[0_0_15px_rgba(37,99,235,0.2)]">
+                                        Connect TorBox
+                                    </button>
+                                </form>
+
+                                <div id="torbox-connected-actions" class="hidden">
+                                    <button id="disconnect-torbox-btn"
+                                        class="w-full bg-slate-800 hover:bg-red-500/20 text-slate-300 hover:text-red-400 py-3 rounded-xl transition-all font-bold text-sm border border-slate-700 hover:border-red-500/30">
+                                        Disconnect TorBox
+                                    </button>
+                                </div>
+
                             </div>
-                            <span
-                                class="flex items-center gap-1.5 bg-slate-900/50 text-slate-300 px-2.5 py-1 rounded-md text-xs font-bold border border-slate-700">
-                                <span id="trakt-status-dot" class="w-2 h-2 bg-red-500 rounded-full"></span> Status
-                            </span>
+
+                            <div
+                                class="bg-slate-800/40 backdrop-blur border border-slate-700/50 p-6 rounded-2xl flex flex-col justify-between gap-6 shadow-lg">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <h3 class="font-bold text-white text-lg">Trakt.tv</h3>
+                                        <p class="text-sm text-slate-400 mt-1">Sync your watch history</p>
+                                    </div>
+                                    <span
+                                        class="flex items-center gap-1.5 bg-slate-900/50 text-slate-300 px-2.5 py-1 rounded-md text-xs font-bold border border-slate-700">
+                                        <span id="trakt-status-dot" class="w-2 h-2 bg-red-500 rounded-full"></span>
+                                        Status
+                                    </span>
+                                </div>
+                                <button id="trakt-action-btn" onclick="handleTraktAuth()"
+                                    class="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl transition-all font-bold text-sm shadow-[0_0_15px_rgba(37,99,235,0.2)]">
+                                    Connect Trakt
+                                </button>
+                            </div>
+
                         </div>
-                        <button id="trakt-action-btn" onclick="handleTraktAuth()"
-                            class="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl transition-all font-bold text-sm shadow-[0_0_15px_rgba(37,99,235,0.2)]">
-                            Connect Trakt
-                        </button>
-                    </div>
+                    </section>
 
-                </div>
-            </section>
+                    <section>
+                        <h2 class="text-xl font-bold text-white mb-4 pl-1 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4">
+                                </path>
+                            </svg>
+                            Scrapers & Add-ons
+                        </h2>
 
-            <section>
-                <h2 class="text-xl font-bold text-white mb-4 pl-1 flex items-center gap-2">
-                    <svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4">
-                        </path>
-                    </svg>
-                    Scrapers & Add-ons
-                </h2>
+                        <div class="bg-slate-800/40 backdrop-blur border border-slate-700/50 p-6 rounded-2xl shadow-lg">
 
-                <div class="bg-slate-800/40 backdrop-blur border border-slate-700/50 p-6 rounded-2xl shadow-lg">
+                            <p class="text-sm text-slate-400 mb-6">Install community add-ons by pasting their manifest
+                                URL
+                                below.</p>
 
-                    <p class="text-sm text-slate-400 mb-6">Install community add-ons by pasting their manifest URL
-                        below.</p>
-
-                    <button id="show-addon-input-btn"
-                        class="w-full sm:w-auto text-sm bg-slate-700 hover:bg-slate-600 text-white px-6 py-3 rounded-xl transition-all font-bold mb-4 border border-slate-600 shadow-sm">
-                        + Add New Add-On
-                    </button>
-
-                    <div id="addon-input-container" class="hidden mt-2">
-                        <div class="flex flex-col sm:flex-row gap-3">
-                            <input id="addon-url-input" type="text" placeholder="https://example.com/manifest.json"
-                                class="flex-1 bg-slate-900 border border-slate-600 p-3.5 rounded-xl text-sm text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600">
-
-                            <button id="install-addon-btn"
-                                class="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3.5 rounded-xl transition-all font-bold text-sm shrink-0 shadow-[0_0_15px_rgba(37,99,235,0.2)]">
-                                Install Add-on
+                            <button id="show-addon-input-btn"
+                                class="w-full sm:w-auto text-sm bg-slate-700 hover:bg-slate-600 text-white px-6 py-3 rounded-xl transition-all font-bold mb-4 border border-slate-600 shadow-sm">
+                                + Add New Add-On
                             </button>
-                        </div>
-                    </div>
 
-                    <div class="mt-4 pt-4 border-t border-slate-700/50">
-                        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Installed Add-ons
-                        </h3>
-                        <div id="installed-addons-list" class="flex flex-col gap-3"></div>
-                    </div>
+                            <div id="addon-input-container" class="hidden mt-2">
+                                <div class="flex flex-col sm:flex-row gap-3">
+                                    <input id="addon-url-input" type="text"
+                                        placeholder="https://example.com/manifest.json"
+                                        class="flex-1 bg-slate-900 border border-slate-600 p-3.5 rounded-xl text-sm text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600">
+
+                                    <button id="install-addon-btn"
+                                        class="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3.5 rounded-xl transition-all font-bold text-sm shrink-0 shadow-[0_0_15px_rgba(37,99,235,0.2)]">
+                                        Install Add-on
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="mt-4 pt-4 border-t border-slate-700/50">
+                                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Installed
+                                    Add-ons
+                                </h3>
+                                <div id="installed-addons-list" class="flex flex-col gap-3"></div>
+                            </div>
+
+                        </div>
+                    </section>
 
                 </div>
-            </section>
 
+            </main>
         </div>
-
-    </main>
+    </div>
 
     <div id="trakt-modal" class="hidden fixed inset-0 z-50 bg-black/90 flex flex-col justify-center p-6 text-center">
         <h2 class="text-2xl font-bold text-blue-500 mb-4">Connect Trakt</h2>
@@ -695,7 +730,7 @@
                     class="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-full transition flex-shrink-0">✕</button>
             </div>
             <div id="picker-list"
-                class="overflow-y-auto p-4 md:p-6 grid grid-cols-2 md:grid-cols-3 gap-4 flex-1 auto-rows-max content-start hide-scrollbar">
+                class="overflow-y-auto min-h-0 p-4 md:p-6 grid grid-cols-2 md:grid-cols-3 gap-4 flex-1 auto-rows-max content-start hide-scrollbar overscroll-contain">
             </div>
         </div>
     </div>
@@ -715,20 +750,20 @@
                 </div>
 
                 <div id="addon-tabs-container"
-                    class="hidden flex overflow-x-auto px-4 pb-4 gap-2 hide-scrollbar w-full mask-fade-edges">
+                    class="hidden flex flex-nowrap overflow-x-auto px-4 pb-4 gap-2 hide-scrollbar w-full mask-fade-edges overscroll-contain">
                 </div>
 
             </div>
 
             <div id="stream-picker-list"
-                class="overflow-y-auto flex-1 flex flex-col p-4 gap-3 bg-slate-900/50 hide-scrollbar">
+                class="overflow-y-auto min-h-0 flex-1 flex flex-col p-4 gap-3 bg-slate-900/50 hide-scrollbar overscroll-contain">
             </div>
 
         </div>
     </div>
 
     <div id="full-detail-view"
-        class="fixed inset-0 z-50 h-screen overflow-y-auto bg-slate-900 transition-transform duration-300 ease-in-out translate-y-full">
+        class="fixed inset-0 z-50 h-[100dvh] overflow-y-auto overscroll-contain bg-slate-900 transition-transform duration-300 ease-in-out translate-y-full">
         <button onclick="closeMovieDetail()"
             class="fixed top-6 right-6 z-[70] bg-slate-900/40 backdrop-blur-xl p-3 rounded-full text-slate-200 hover:text-white hover:bg-blue-600 border border-white/10 shadow-lg group">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -830,100 +865,6 @@
             </div>
         </div>
 
-        <template id="addon-panel-template">
-            <div class="addon-panel flex-col w-full hidden">
-                <div
-                    class="panel-loading flex flex-col items-center justify-center py-12 mt-4 bg-slate-800/20 border border-slate-700/30 rounded-xl">
-                    <svg class="animate-spin h-8 w-8 text-blue-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none"
-                        viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4">
-                        </circle>
-                        <path class="opacity-75" fill="currentColor"
-                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
-                        </path>
-                    </svg>
-                    <span
-                        class="loading-text text-xs font-bold text-slate-400 tracking-widest uppercase animate-pulse">Searching
-                        Sources...</span>
-                </div>
-
-                <div class="panel-content flex flex-col gap-3 w-full hidden"></div>
-            </div>
-        </template>
-
-        <template id="installed-addon-template">
-            <div
-                class="flex p-4 bg-slate-900/70 rounded-2xl hover:bg-slate-800/80 transition-colors gap-4 items-start shadow-sm border border-transparent hover:border-slate-700/50">
-
-                <!-- Bigger Logo Container -->
-                <div
-                    class="w-14 h-14 rounded-xl bg-slate-800 flex items-center justify-center shrink-0 p-1 shadow-inner overflow-hidden">
-                    <img class="addon-logo hidden w-full h-full object-contain rounded-lg" alt="logo"
-                        draggable="false" />
-                    <div
-                        class="addon-fallback flex items-center justify-center w-full h-full text-blue-400 font-bold text-xl uppercase">
-                    </div>
-                </div>
-
-                <!-- Content Area -->
-                <div class="flex-1 min-w-0 flex flex-col justify-center">
-
-                    <div class="flex items-center gap-2">
-                        <h4 class="addon-name font-bold text-white text-base truncate"></h4>
-                        <span
-                            class="addon-version text-[10px] bg-slate-700/50 text-slate-300 px-1.5 py-0.5 rounded font-mono"></span>
-                    </div>
-
-                    <!-- Description (Borderless, directly underneath) -->
-                    <p class="addon-description text-sm text-slate-400 line-clamp-2 mt-1"></p>
-
-                    <!-- Metadata Badges -->
-                    <div class="flex flex-wrap items-center gap-1.5 mt-2.5">
-                        <div class="addon-capabilities flex flex-wrap gap-1.5"></div>
-                        <div class="addon-types flex flex-wrap gap-1.5"></div>
-                    </div>
-
-                </div>
-
-                <!-- Action Buttons -->
-                <div class="flex items-center gap-2 shrink-0 ml-2">
-
-                    <button
-                        class="addon-share-btn hidden p-2.5 bg-slate-800 hover:bg-blue-600 text-slate-300 hover:text-white rounded-xl transition-all shadow-sm"
-                        title="Share">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z">
-                            </path>
-                        </svg>
-                    </button>
-
-                    <button
-                        class="addon-config-btn hidden p-2.5 bg-slate-800 hover:bg-blue-600 text-slate-300 hover:text-white rounded-xl transition-all shadow-sm"
-                        title="Configure Add-on">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
-                            </path>
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                        </svg>
-                    </button>
-
-                    <button
-                        class="addon-uninstall-btn p-2.5 bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white rounded-xl transition-all shadow-sm"
-                        title="Uninstall Add-on">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
-                            </path>
-                        </svg>
-                    </button>
-
-                </div>
-            </div>
-        </template>
-
         <template id="tv-controls-template">
             <div class="tv-controls-container flex flex-col w-full">
                 <div class="tmdb-season-wrapper relative w-fit max-w-full mb-3">
@@ -931,7 +872,7 @@
                     <button
                         class="tmdb-season-trigger w-full bg-slate-800/80 backdrop-blur text-white px-3 py-2 rounded-lg border border-slate-700 outline-none hover:border-blue-500 focus:border-blue-500 shadow shadow-black/20 font-semibold flex justify-between items-center gap-4 text-left group transition-colors">
 
-                        <span class="tmdb-season-text text-m break-words">Season 1</span>
+                        <span class="tmdb-season-text text-sm break-words">Season 1</span>
 
                         <svg class="tmdb-season-chevron w-6 h-6 text-slate-400 group-hover:text-white flex-shrink-0 transition-transform duration-200"
                             fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -945,7 +886,8 @@
                     </div>
                 </div>
 
-                <div class="tmdb-episode-list flex gap-3 overflow-x-auto pb-4 custom-scrollbar draggable-row w-full">
+                <div
+                    class="tmdb-episode-list flex gap-3 overflow-x-auto pb-4 custom-scrollbar draggable-row w-full overscroll-contain">
                 </div>
             </div>
         </template>
@@ -1021,6 +963,99 @@
         </div>
     </div>
 
+    <template id="addon-panel-template">
+        <div class="addon-panel flex-col w-full hidden">
+            <div
+                class="panel-loading flex flex-col items-center justify-center py-12 mt-4 bg-slate-800/20 border border-slate-700/30 rounded-xl">
+                <svg class="animate-spin h-8 w-8 text-blue-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none"
+                    viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4">
+                    </circle>
+                    <path class="opacity-75" fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                    </path>
+                </svg>
+                <span
+                    class="loading-text text-xs font-bold text-slate-400 tracking-widest uppercase animate-pulse">Searching
+                    Sources...</span>
+            </div>
+
+            <div class="panel-content flex flex-col gap-3 w-full hidden"></div>
+        </div>
+    </template>
+
+    <template id="installed-addon-template">
+        <div
+            class="flex p-4 bg-slate-900/70 rounded-2xl hover:bg-slate-800/80 transition-colors gap-4 items-start shadow-sm border border-transparent hover:border-slate-700/50">
+
+            <!-- Bigger Logo Container -->
+            <div
+                class="w-14 h-14 rounded-xl bg-slate-800 flex items-center justify-center shrink-0 p-1 shadow-inner overflow-hidden">
+                <img class="addon-logo hidden w-full h-full object-contain rounded-lg" alt="logo" draggable="false" />
+                <div
+                    class="addon-fallback flex items-center justify-center w-full h-full text-blue-400 font-bold text-xl uppercase">
+                </div>
+            </div>
+
+            <!-- Content Area -->
+            <div class="flex-1 min-w-0 flex flex-col justify-center">
+
+                <div class="flex items-center gap-2">
+                    <h4 class="addon-name font-bold text-white text-base truncate"></h4>
+                    <span
+                        class="addon-version text-[10px] bg-slate-700/50 text-slate-300 px-1.5 py-0.5 rounded font-mono"></span>
+                </div>
+
+                <!-- Description (Borderless, directly underneath) -->
+                <p class="addon-description text-sm text-slate-400 line-clamp-2 mt-1"></p>
+
+                <!-- Metadata Badges -->
+                <div class="flex flex-wrap items-center gap-1.5 mt-2.5">
+                    <div class="addon-capabilities flex flex-wrap gap-1.5"></div>
+                    <div class="addon-types flex flex-wrap gap-1.5"></div>
+                </div>
+
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex items-center gap-2 shrink-0 ml-2">
+
+                <button
+                    class="addon-share-btn hidden p-2.5 bg-slate-800 hover:bg-blue-600 text-slate-300 hover:text-white rounded-xl transition-all shadow-sm"
+                    title="Share">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z">
+                        </path>
+                    </svg>
+                </button>
+
+                <button
+                    class="addon-config-btn hidden p-2.5 bg-slate-800 hover:bg-blue-600 text-slate-300 hover:text-white rounded-xl transition-all shadow-sm"
+                    title="Configure Add-on">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
+                        </path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    </svg>
+                </button>
+
+                <button
+                    class="addon-uninstall-btn p-2.5 bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white rounded-xl transition-all shadow-sm"
+                    title="Uninstall Add-on">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                        </path>
+                    </svg>
+                </button>
+
+            </div>
+        </div>
+    </template>
+
     <div id="watchlist-picker-modal"
         class="hidden fixed inset-0 z-[100] bg-black/90 flex flex-col justify-end sm:justify-center p-4 backdrop-blur-sm">
 
@@ -1037,7 +1072,7 @@
             </div>
 
             <div id="watchlist-options-container"
-                class="p-4 flex flex-col gap-3 bg-slate-900/50 overflow-y-auto hide-scrollbar">
+                class="p-4 flex flex-col gap-3 bg-slate-900/50 overflow-y-auto min-h-0 hide-scrollbar overscroll-contain">
             </div>
         </div>
     </div>
@@ -1129,7 +1164,7 @@
 
     <template id="poster-card-template">
         <div
-            class="media-card poster-card relative flex-none w-32 md:w-40 flex flex-col shrink-0 cursor-pointer group select-none transition-all duration-150 ease-out hover:scale-105 hover:-translate-1">
+            class="media-card poster-card relative flex-none w-32 md:w-40 flex flex-col shrink-0 cursor-pointer group select-none transition-all duration-150 ease-out hover:scale-105 hover:-translate-y-1">
 
             <div
                 class="relative w-full aspect-[2/3] rounded-xl overflow-hidden bg-slate-800 border border-slate-700/50 group-hover:border-blue-500 group-hover:shadow-[0_0_15px_rgba(59,130,246,0.3)] transition-all transform-gpu">
@@ -1168,7 +1203,8 @@
                     class="p-2 text-slate-400 hover:text-white transition">✕</button>
             </div>
 
-            <div class="p-4 flex flex-col gap-3 bg-slate-900/50 overflow-y-auto hide-scrollbar">
+            <div
+                class="p-4 flex flex-col gap-3 bg-slate-900/50 overflow-y-auto min-h-0 hide-scrollbar overscroll-contain">
 
                 <button onclick="openExternalPlayer('vlc')"
                     class="flex items-center gap-4 p-3 rounded-xl bg-slate-800 hover:bg-orange-600/20 border border-slate-700 hover:border-orange-500 transition text-left group">
@@ -1227,6 +1263,9 @@
 
             </div>
         </div>
+    </div>
+
+    <div id="toast-container" class="fixed top-5 right-5 z-[9999] flex flex-col gap-3 pointer-events-none items-end">
     </div>
 
     <script type="module" src="/main.js"></script>
