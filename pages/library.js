@@ -83,7 +83,7 @@ export async function deleteTorrent(torrentId, event) {
 export function renderList(items) {
     const libraryText = document.getElementById('library-info-text');
     const list = document.getElementById('file-list');
-    list.innerHTML = '';
+    list.replaceChildren();
 
     if (items.length === 0) {
         libraryText.innerText = "No files added yet.";
@@ -125,7 +125,7 @@ export function renderList(items) {
         // Inject HTML
         card.innerHTML = `
             <div class="relative w-full aspect-[2/3] bg-slate-800 rounded-lg shadow-lg overflow-hidden border border-slate-700/50">
-                <img id="img-${t.id}" src="${vaultData?.poster || ''}" class="absolute inset-0 w-full h-full object-cover ${vaultData?.poster ? '' : 'hidden'}" draggable="false">
+                <img id="img-${t.id}" src="${vaultData?.poster || ''}" class="absolute inset-0 w-full h-full loading="lazy" object-cover ${vaultData?.poster ? '' : 'hidden'}" draggable="false">
                 <div id="fallback-${t.id}" class="absolute inset-0 flex items-center justify-center p-4 text-center text-slate-500 font-bold text-sm bg-slate-800 ${vaultData?.poster ? 'hidden' : ''}">
                     ${cleanName}
                 </div>

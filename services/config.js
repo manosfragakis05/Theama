@@ -45,7 +45,6 @@ export function showToast(message, type = 'info') {
 
     const toast = document.createElement('div');
 
-    // 1. Premium frosted-glass colored backgrounds tailored for dark mode
     let bgColors = "bg-blue-600/60 border-blue-400/30 shadow-blue-900/50";
     let icon = 'ℹ️';
 
@@ -57,27 +56,24 @@ export function showToast(message, type = 'info') {
         icon = '❌';
     }
 
-    // 2. Build the UI
-    toast.className = `${bgColors} text-white border p-4 rounded-xl shadow-lg transition-all duration-300 transform translate-y-[-20px] opacity-0 flex items-center gap-3 backdrop-blur-md pointer-events-auto w-max max-w-sm`;
+    toast.className = `${bgColors} text-white border p-4 rounded-xl shadow-lg transition-all duration-300 transform translate-y-[-20px] opacity-0 flex items-center gap-3 backdrop-blur-md pointer-events-auto w-max max-w-[calc(100vw-2.5rem)]`;
     
     toast.innerHTML = `
-        <span class="text-xl drop-shadow-md">${icon}</span> 
-        <span class="text-sm font-bold tracking-wide leading-tight">${message}</span>
+        <span class="text-xl drop-shadow-md shrink-0">${icon}</span> 
+        <span class="text-sm font-bold tracking-wide leading-tight break-words">${message}</span>
     `;
 
     container.appendChild(toast);
 
-    // 3. Animate In
     setTimeout(() => {
         toast.classList.remove('translate-y-[-20px]', 'opacity-0');
         toast.classList.add('translate-y-0', 'opacity-100');
     }, 10);
 
-    // 4. Animate Out
     setTimeout(() => {
         toast.classList.remove('translate-y-0', 'opacity-100');
         toast.classList.add('opacity-0', 'scale-95');
         setTimeout(() => toast.remove(), 300);
-    }, 500);
+    }, 3000);
 }
 //#endregion

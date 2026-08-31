@@ -113,16 +113,26 @@ window.addEventListener('click', function (event) {
 
 let searchTimeout = null;
 
-export function handleSearch() {
-    const query = document.getElementById('search-input').value.toLowerCase().trim();
+export function handleSearch(event) {
+    const desktopSearch = document.getElementById('search-input');
+    const mobileSearch = document.getElementById('search-input-mobile');
 
-    // Filter the local TorBox library instantly
+    const rawValue = event.target.value;
+    const query = rawValue.toLowerCase().trim();
+
+    if (event.target === desktopSearch && mobileSearch) {
+        mobileSearch.value = rawValue;
+    } else if (event.target === mobileSearch && desktopSearch) {
+        desktopSearch.value = rawValue;
+    }
+
+    // Filter TorBox library
     const filtered = appState.allTorrents.filter(t => t.name.toLowerCase().includes(query));
     renderList(filtered);
 
     clearTimeout(searchTimeout);
 
-    // If the query is 3 letters or more, trigger the TMDB global search
+    // 800ms debounce
     if (query.length >= 3) {
         searchTimeout = setTimeout(() => {
             switchTab('discover-page');
@@ -179,6 +189,12 @@ export function openExternalPlayer(player) {
 
     // Trigger the OS app
     window.location.href = deepLink;
+}
+
+export function toggleSidebar()
+{
+    const sidebar = document.getElementById('desktop-sidebar');
+    sidebar.classList.toggle('collapsed');
 }
 
 // Auth Listener

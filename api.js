@@ -643,7 +643,7 @@ async function handleSeasonChangeClick(targetSeason) {
 }
 
 // Global close function
-window.closeMovieDetail = () => {
+export function closeMovieDetail () {
     mediaStore.clear();
 
     document.getElementById('full-detail-view').classList.add('translate-y-full');

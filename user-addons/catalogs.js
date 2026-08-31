@@ -120,10 +120,11 @@ export async function searchTMDB(query) {
 
     container.classList.remove('hidden');
 
-    rowState[containerId].query = query;
-    rowState[containerId].page = 1;
-    rowState[containerId].hasMore = true;
-    rowState[containerId].loading = true;
+    const state = rowState.other[containerId];
+    state.query = query;
+    state.page = 1;
+    state.hasMore = true;
+    state.loading = true;
 
     try {
         const endpoint = `search/multi?query=${encodeURIComponent(query)}`;
@@ -131,23 +132,18 @@ export async function searchTMDB(query) {
 
         row.replaceChildren();
 
-        if (data.results.length === 0) {
-            showRowMessage(containerId, "Empty");
-            rowState[containerId].hasMore = false;
-            return;
-        }
+        // 1. Evaluate pagination before passing state to the renderer
+        state.hasMore = data.page < data.total_pages;
 
-        renderCardsToRow(data.results, containerId);
+        // 2. Delegate empty checks, error clearing, and DOM building to renderRow
+        renderRow(data.results, state);
 
-        if (data.page >= data.total_pages) {
-            rowState[containerId].hasMore = false;
-        }
     } catch (e) {
         console.error("Search failed:", e);
         showRowMessage(containerId, "Error");
-        rowState[containerId].hasMore = false;
+        state.hasMore = false;
     } finally {
-        rowState[containerId].loading = false;
+        state.loading = false;
     }
 }
 //#endregion

@@ -11,7 +11,7 @@ import { authenticateTorboxUser, checkAuth, logoutTorBox, closeStreamPicker } fr
 import { appState } from './services/config.js';
 import { initializeSupabase, changeAuthState, toggleAuthMode, toggleUpdateMode, logOutUser, sendPasswordResetEmail } from './services/db.js';
 
-import { goHome, toggleProfile, switchTab, handleSearch, openExternalPlayer } from './ui.js';
+import { goHome, toggleProfile, switchTab, handleSearch, openExternalPlayer, toggleSidebar } from './ui.js';
 import { deleteTorrent } from './pages/library.js';
 
 import { closePicker } from './streaming/picker.js';
@@ -23,6 +23,8 @@ import { submitNewAddon } from './user-addons/scrapers.js';
 import { renderInstalledAddons } from './user-addons/scraper-renderer.js';
 
 import { initGlobalDrag } from './user-addons/catalog-renderer.js';
+
+import { closeMovieDetail } from './api.js';
 
 import {
     renderFriendsSidebar,
@@ -59,9 +61,14 @@ function setupStaticEventListeners() {
         accountForm.addEventListener('submit', changeAuthState);
     }
 
+    // Attach pc and mobile listeners
     const searchInput = document.getElementById('search-input');
     if (searchInput) {
         searchInput.addEventListener('input', handleSearch);
+    }
+    const mobileSearch = document.getElementById('search-input-mobile');
+    if (mobileSearch) {
+        mobileSearch.addEventListener('input', handleSearch);
     }
 
     // 2. Navigation (Using Event Delegation for all .nav-link classes)
@@ -107,12 +114,13 @@ function setupStaticEventListeners() {
     document.getElementById('profile-settings-btn')?.addEventListener('click', () => switchTab('settings-page'));
     document.getElementById('header-profile-toggle')?.addEventListener('click', toggleProfile);
     document.getElementById('home-logo-btn')?.addEventListener('click', goHome);
+    document.getElementById('sidebar-collapse-btn')?.addEventListener('click', toggleSidebar);
 
     document.getElementById('dropdown-profile-btn')?.addEventListener('click', () => switchTab('profile-page'));
-    
+
     //Offline.js
     document.getElementById('trigger-local-file-btn')?.addEventListener('click', triggerLocalFilePicker);
-    
+
     //Torbox.js
     document.getElementById('disconnect-torbox-btn')?.addEventListener('click', logoutTorBox);
     document.getElementById('close-stream-picker-btn')?.addEventListener('click', closeStreamPicker);
@@ -130,9 +138,12 @@ function setupStaticEventListeners() {
 
     //Picker.js
     document.getElementById('close-episode-picker-btn')?.addEventListener('click', closePicker);
-    
+
     //Scraper.js
     document.getElementById('install-addon-btn')?.addEventListener('click', submitNewAddon);
+    
+    //Api.js
+    document.getElementById('close-full-detail-view-btn')?.addEventListener('click', closeMovieDetail);
 
 }
 
@@ -210,4 +221,39 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     bootApp();
+});
+
+// 1. Target your main scrolling container
+const mainContainer = document.getElementById('app-main');
+
+// 2. Create a Map to store the scroll positions in memory
+const scrollCache = new Map();
+
+// Track the currently active tab (assuming library-page is your default)
+let currentTabId = 'library-page';
+
+// 3. Attach click listeners to your existing nav buttons
+document.querySelectorAll('.nav-link').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        // Find which tab we are trying to open based on your HTML
+        const targetId = e.currentTarget.getAttribute('data-target');
+
+        // Prevent unnecessary re-renders if clicking the active tab
+        if (targetId === currentTabId) return;
+
+        // Step A: Save the exact scroll position of the CURRENT tab before it hides
+        scrollCache.set(currentTabId, mainContainer.scrollTop);
+
+        // Step B: Toggle visibility (hiding the old, showing the new)
+        document.getElementById(currentTabId).classList.add('hidden');
+        document.getElementById(targetId).classList.remove('hidden');
+
+        // Step C: Restore the saved scroll position for the NEW tab, or default to 0 (top)
+        mainContainer.scrollTop = scrollCache.get(targetId) || 0;
+
+        // Step D: Update the active tracker
+        currentTabId = targetId;
+
+        // Optional: Update your active button UI states here (e.g., adding/removing text-blue-400)
+    });
 });

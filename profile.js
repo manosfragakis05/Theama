@@ -403,7 +403,7 @@ export async function openWatchlists() {
             </div>
         </div>
     `;
-    favBtn.addEventListener('click', async () => await addToWatchlist(favList)); // <- FIXED: async and object
+    favBtn.addEventListener('click', async () => await addToWatchlist(favList));
     container.appendChild(favBtn);
 
     // Custom lists

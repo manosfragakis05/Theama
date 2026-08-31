@@ -108,8 +108,8 @@ const viewportObserver = new IntersectionObserver((entries, observer) => {
         if (entry.isIntersecting) {
             const containerId = entry.target.id;
             // Stop observing the row itself once the initial fetch triggers
-            observer.unobserve(entry.target); 
-            
+            observer.unobserve(entry.target);
+
             // Fetch the first batch of data
             fetchNextBatch(containerId);
         }
@@ -135,7 +135,7 @@ export function renderSelectedCatalog() {
     const typeSelect = document.getElementById('discover-type-select');
     const catalogSelect = document.getElementById('discover-catalog-select');
     const container = document.getElementById('dynamic-catalogs-container');
-    
+
     if (!catalogSelect || !container || !typeSelect) return;
 
     // Clear the screen (Detached DOM nodes remain safe in our state objects)
@@ -159,7 +159,7 @@ export function renderSelectedCatalog() {
                 injectCatalogShell(catalogObject, fragment);
             });
         }
-    } 
+    }
     // Route B: Single catalog
     else {
         const catalogObject = getActiveState(selectedId);
@@ -190,12 +190,12 @@ export function createCardElement(item) {
     const year = item.releaseInfo || item.year || parseInt(item.release_date) || parseInt(item.first_air_date) || "";
 
     const type = item.type || item.media_type || "movie";
-    const backdrop = item.background || item.backdrop_path || "";
+    const backdrop = item.backdrop_path || item.backdrop;
 
     // Clone the cached template
     const clone = cachedTemplate.content.cloneNode(true);
 
-    const card = clone.querySelector(".media-card");
+    const card = clone.querySelector(".poster-card");
     const img = clone.querySelector(".poster-img");
     const titleEl = clone.querySelector(".poster-title");
     const yearEl = clone.querySelector(".poster-year");
@@ -215,14 +215,14 @@ export function createCardElement(item) {
     }
 
     img.alt = title;
-    img.loading="lazy"
+    img.loading = "lazy"
     img.src = posterUrl;
 
     return card;
 }
 
 export function renderRow(newItems, catalogObject) {
-    const containerId = catalogObject.containerId; 
+    const containerId = catalogObject.containerId;
     const row = document.getElementById(containerId);
 
     if (!row) return; // Safety check in case the shell failed to inject
@@ -238,7 +238,7 @@ export function renderRow(newItems, catalogObject) {
     }
 
     // Pass the data, string ID, and pagination boolean to the card builder
-    renderCardsToRow(newItems, containerId, catalogObject.hasMore); 
+    renderCardsToRow(newItems, containerId, catalogObject.hasMore);
 }
 
 export function renderCardsToRow(items, containerId, hasMore) {
@@ -259,7 +259,7 @@ export function renderCardsToRow(items, containerId, hasMore) {
         const cardNode = createCardElement(item);
         if (cardNode) fragment.appendChild(cardNode);
     });
-    
+
     // 3. Paint the batch to the screen in a single operation
     row.appendChild(fragment);
 
@@ -279,22 +279,22 @@ let isClickListenerAttached = false;
 
 export function initGlobalClickListener() {
     if (isClickListenerAttached) return;
-    
-    const container = document.getElementById("dynamic-catalogs-container");
+
+    const container = document.getElementById("discover-page");
     if (!container) return;
 
     container.addEventListener("click", (e) => {
         // Prevent accidental clicks while dragging
-        if (isDragging) { 
-            e.preventDefault(); 
-            return; 
+        if (isDragging) {
+            e.preventDefault();
+            return;
         }
 
-        const card = e.target.closest(".media-card");
+        const card = e.target.closest(".poster-card");
         if (!card) return;
 
         // Find the parent row to get the correct catalog ID
-        const rowEl = card.closest(".catalog-row");
+        const rowEl = card.closest(".catalog-row, .search-row");
         if (!rowEl) return;
 
         // Retrieve the state to get the add-on specific prefixes
@@ -307,8 +307,7 @@ export function initGlobalClickListener() {
             card.dataset.title,
             card.dataset.type,
             card.dataset.poster,
-            card.dataset.backdrop,
-            prefixes
+            card.dataset.backdrop
         );
     });
 
@@ -327,10 +326,10 @@ export function injectCatalogShell(catalogObject, targetContainer) {
     if (!cachedRowTemplate) {
         cachedRowTemplate = document.getElementById("catalog-row-template");
     }
-    
+
     const clone = cachedRowTemplate.content.cloneNode(true);
-    const shellNode = clone.firstElementChild; 
-    
+    const shellNode = clone.firstElementChild;
+
     const titleEl = shellNode.querySelector(".catalog-title");
     if (titleEl) titleEl.textContent = catalogObject.title;
 
@@ -345,14 +344,16 @@ export function injectCatalogShell(catalogObject, targetContainer) {
 
     container.appendChild(shellNode);
 
-    // REHYDRATION LOGIC: Check if we already fetched data for this row
-    if (catalogObject.items && catalogObject.items.length > 0) {
-        // Instantly restore the exact same cards without network requests
-        renderCardsToRow(catalogObject.items, catalogObject.containerId, catalogObject.hasMore);
-    } else if (rowEl) {
-        // Only observe for fetching if the row is truly empty
-        viewportObserver.observe(rowEl);
-    }
+    setTimeout(() => {
+        // REHYDRATION LOGIC: Check if we already fetched data for this row
+        if (catalogObject.items && catalogObject.items.length > 0) {
+            // Instantly restore the exact same cards without network requests
+            renderCardsToRow(catalogObject.items, catalogObject.containerId, catalogObject.hasMore);
+        } else if (rowEl) {
+            // Only observe for fetching if the row is truly empty
+            viewportObserver.observe(rowEl);
+        }
+    }, 0);
 }
 
 export function populateTypeDropdown(typesList) {
@@ -373,7 +374,7 @@ export function populateTypeDropdown(typesList) {
 export function populateCatalogDropdown(catalogsList) {
     const select = document.getElementById('discover-catalog-select');
     if (!select) return;
-    
+
     select.replaceChildren();
 
     // 1. Inject the 'All' option first
