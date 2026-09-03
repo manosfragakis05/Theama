@@ -80,6 +80,17 @@ function setupStaticEventListeners() {
         });
     });
 
+    const extPlayers = document.querySelectorAll('.external-player-btn');
+    extPlayers.forEach(player => {
+        player.addEventListener('click', (e) => {
+            const target = e.currentTarget.dataset.player;
+
+            if (target) {
+                openExternalPlayer(target);
+            }
+        });
+    });
+
     // 3. Static Profile & UI Buttons
     const profileShareBtn = document.getElementById('profile-share-btn');
     if (profileShareBtn) {
@@ -117,7 +128,7 @@ function setupStaticEventListeners() {
     document.getElementById('sidebar-collapse-btn')?.addEventListener('click', toggleSidebar);
 
     document.getElementById('dropdown-profile-btn')?.addEventListener('click', () => switchTab('profile-page'));
-    
+
     //Network.js
     document.getElementById('profile-follow-btn')?.addEventListener('click', handleFollowToggle);
 
@@ -144,7 +155,7 @@ function setupStaticEventListeners() {
 
     //Scraper.js
     document.getElementById('install-addon-btn')?.addEventListener('click', submitNewAddon);
-    
+
     //Api.js
     document.getElementById('close-full-detail-view-btn')?.addEventListener('click', closeMovieDetail);
 

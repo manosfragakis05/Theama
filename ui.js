@@ -157,7 +157,7 @@ export function openExternalPlayer(player) {
     }
 
     if (videoUrl.startsWith('blob:')) {
-        showToast("Local device files cannot be cast to external players. Please play them directly in the browser.", "error");
+        showToast("Local device files cannot be cast to external players. You try to open directly in the external player.", "error");
         document.getElementById('external-player-modal').classList.add('hidden');
         return;
     }
@@ -175,7 +175,7 @@ export function openExternalPlayer(player) {
             break;
 
         case 'outplayer':
-            deepLink = `outplayer://${encodedUrl}`;
+            deepLink = `outplayer://${url}`;
             break;
 
         case 'mxplayer':
@@ -183,7 +183,7 @@ export function openExternalPlayer(player) {
             break;
 
         case 'iina':
-            deepLink = `iina://weblink?url=${encodedUrl}`;
+            deepLink = `iina://weblink?url=${url}`;
             break;
     }
 
