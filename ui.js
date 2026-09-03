@@ -175,7 +175,7 @@ export function openExternalPlayer(player) {
             break;
 
         case 'outplayer':
-            deepLink = `outplayer://${url}`;
+            deepLink = `outplayer://${videoUrl}`;
             break;
 
         case 'mxplayer':

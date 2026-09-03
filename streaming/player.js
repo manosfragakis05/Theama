@@ -124,7 +124,7 @@ export function startPlayer(url, name) {
         autoPlayback: true,
         miniProgressBar: false,
         screenshot: false,
-        subtitles: true,
+        subtitles: false,
         subtitleOffset: false,
         playbackRate: false,
 
