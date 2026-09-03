@@ -113,11 +113,16 @@ export function renderList(items) {
         card.className = "relative flex-col cursor-pointer transition-transform hover:scale-105 select-none group";
 
         // Build Action Buttons
-        let actionButtonsHTML = `<button data-id="${t.id}" data-action="delete" class="text-red-500 hover:text-red-400 p-1 bg-black/50 rounded-full transition z-10 w-8 h-8 flex items-center justify-center backdrop-blur-sm shadow-md">🗑️</button>`;
+        let actionButtonsHTML = `<button data-id="${t.id}" data-action="delete" class="text-red-500 hover:text-red-400 p-1 bg-black/50 rounded-full transition z-10 w-8 h-8 flex items-center justify-center backdrop-blur-sm"
+        title="Delete from library">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor">
+                <use href="#icon-delete"></use>
+            </svg>
+        </button>`;
 
         if (!isShow && hasVid) {
             actionButtonsHTML = `
-                <button data-id="${t.id}" data-action="download" class="text-blue-400 hover:text-blue-300 p-1 bg-black/50 rounded-full transition z-10 w-8 h-8 flex items-center justify-center backdrop-blur-sm shadow-md mr-2">⬇️</button>
+                <button data-id="${t.id}" data-action="download" class="text-blue-400 hover:text-blue-300 p-1 bg-black/50 rounded-full transition z-10 w-8 h-8 flex items-center justify-center backdrop-blur-sm mr-2">⬇️</button>
                 ${actionButtonsHTML}
             `;
         }
@@ -196,7 +201,7 @@ async function processBatchFetches(items, vault) {
 
     // Create an array of independent promises
     const promises = items.map(async (item, index) => {
-        
+
         // 1. Stagger the start time based on index in the queue
         await new Promise(resolve => setTimeout(resolve, index * RATE_LIMIT_MS));
 

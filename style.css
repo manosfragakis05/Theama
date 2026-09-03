@@ -2,9 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
-html {
-    color-scheme: dark;
-    scroll-behavior: smooth;
+html, body {
+    width: 100%;
+    height: 100vh;
+    min-height: 100dvh;
+    margin: 0;
+    padding: 0;
+    overflow: hidden; 
 }
 
 button,
@@ -12,7 +16,7 @@ input,
 select,
 textarea {
     font: inherit;
-    touch-action: manipulation; 
+    touch-action: manipulation;
     -webkit-user-select: none;
     user-select: none;
     -webkit-tap-highlight-color: transparent;
@@ -45,8 +49,7 @@ textarea:focus-visible {
     /* Keep your existing padding for safe areas */
     padding-left: 1rem;
     padding-right: 1rem;
-    padding-top: max(1rem, env(safe-area-inset-top));
-    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    padding-top: max(1.5rem, env(safe-area-inset-top));
 }
 
 .poster-card {
@@ -60,7 +63,8 @@ textarea:focus-visible {
 }
 
 #desktop-sidebar.collapsed {
-    width: 5rem; /* Shrunk width */
+    width: 5rem;
+    /* Shrunk width */
 }
 
 /* Hide all text elements when collapsed */
@@ -86,7 +90,7 @@ textarea:focus-visible {
 
 /* Flip the chevron icon 180 degrees to point right */
 #desktop-sidebar.collapsed #sidebar-collapse-btn svg {
-    transform: rotate(180deg);
+    transform: rotate(270deg);
 }
 
 /* --- CUSTOM CSS --- */
@@ -94,11 +98,11 @@ textarea:focus-visible {
     0% {
         transform: rotate(0deg);
     }
-    
+
     50% {
         transform: rotate(360deg);
     }
-    
+
     100% {
         transform: rotate(360deg);
     }

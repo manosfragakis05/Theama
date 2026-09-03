@@ -17,7 +17,7 @@ import { deleteTorrent } from './pages/library.js';
 import { closePicker } from './streaming/picker.js';
 import { playDirect } from './streaming/player.js';
 
-import { initFriendProfile, fetchFriendsList } from './network.js';
+import { initFriendProfile, fetchFriendsList, handleFollowToggle } from './network.js';
 
 import { submitNewAddon } from './user-addons/scrapers.js';
 import { renderInstalledAddons } from './user-addons/scraper-renderer.js';
@@ -117,9 +117,12 @@ function setupStaticEventListeners() {
     document.getElementById('sidebar-collapse-btn')?.addEventListener('click', toggleSidebar);
 
     document.getElementById('dropdown-profile-btn')?.addEventListener('click', () => switchTab('profile-page'));
+    
+    //Network.js
+    document.getElementById('profile-follow-btn')?.addEventListener('click', handleFollowToggle);
 
     //Offline.js
-    document.getElementById('trigger-local-file-btn')?.addEventListener('click', triggerLocalFilePicker);
+    document.getElementById('trigger-local-file-btn')?.addEventListener('click', () => triggerLocalFilePicker());
 
     //Torbox.js
     document.getElementById('disconnect-torbox-btn')?.addEventListener('click', logoutTorBox);

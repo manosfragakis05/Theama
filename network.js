@@ -250,7 +250,7 @@ async function toggleFollowState(friendId, isCurrentlyFollowing) {
 }
 
 // Follow / Unfollow
-window.handleFollowToggle = async () => {
+export async function handleFollowToggle() {
     const btn = document.getElementById('profile-follow-btn');
     if (!btn) return;
 

@@ -9,12 +9,15 @@ import { appState, showToast } from './services/config.js';
 import { renderList } from './pages/library.js';
 import { stopPlayback } from './streaming/player.js';
 import { loadDiscover, searchTMDB } from './user-addons/catalogs.js';
+import { returnToMyProfile } from './profile.js';
 
 // --- NAVIGATION & TABS ---
 
 export function goHome() {
     stopPlayback();
 
+    returnToMyProfile();
+    
     document.getElementById('player-wrapper').classList.add('hidden');
     document.getElementById('search-input').value = '';
     switchTab('library-page');
