@@ -120,7 +120,7 @@ export function startPlayer(url, name) {
         lock: true,
         fastForward: true,
         theme: '#3b82f6',
-        pip: true,
+        pip: !isIOS,
         autoPlayback: true,
         miniProgressBar: false,
         screenshot: false,
@@ -213,6 +213,7 @@ export function startPlayer(url, name) {
     let scoutSent = false;
     art.on('video:playing', async () => {
         if (isMkv && !scoutSent && art.mkvEngine) {
+
             scoutSent = true;
             console.log("🕵️ Fetching tracks from existing engine...");
 
@@ -220,56 +221,82 @@ export function startPlayer(url, name) {
                 const player = art.mkvEngine;
                 const audioTracks = player.getAudioTracks();
 
-                // Grab the gear button again so we can control it
+                // Fetch subtitle tracks from your custom engine
+                const subtitleTracks = player.getSubtitleTracks();
+
                 const gearBtn = art.template.$bottom.querySelector('.art-control-setting');
 
-                // ONLY RUN IF THERE ARE MULTIPLE TRACKS
-                if (audioTracks && audioTracks.length > 1) {
-                    console.log(`🎧 Found ${audioTracks.length} tracks! Enabling menu...`);
+                const hasAudioMenu = audioTracks && audioTracks.length > 1;
+                const hasSubMenu = subtitleTracks && subtitleTracks.length > 0;
+
+                if (hasAudioMenu || hasSubMenu) {
+                    if (gearBtn) gearBtn.style.display = ''; // Unhide gear
 
                     const langMap = {
                         'eng': 'English', 'gr': 'Greek', 'jpn': 'Japanese', 'spa': 'Spanish',
                         'fre': 'French', 'ger': 'German', 'ita': 'Italian', 'und': 'Unknown'
                     };
 
-                    const trackOptions = audioTracks.map((t, index) => {
-                        let langName = langMap[t.language] || (index === 0 ? 'Primary' : `Track ${t.track_number}`);
-                        const codecName = t.codec_string ? ` (${t.codec_string})` : '';
+                    // --- AUDIO TRACKS ---
+                    if (hasAudioMenu) {
+                        const trackOptions = audioTracks.map((t, index) => {
 
-                        return {
-                            html: `${langName}${codecName}`,
-                            trackNumber: t.track_number,
-                            default: index === 0
-                        };
-                    });
+                            let langName = langMap[t.language] || (index === 0 ? 'Primary' : `Track ${t.track_number}`);
+                            const codecName = t.codec_string ? ` (${t.codec_string})` : '';
+                            return { html: `${langName}${codecName}`, trackNumber: t.track_number, default: index === 0 };
+                        });
 
-                    // UNHIDE THE NATIVE GEAR ICON!
-                    if (gearBtn) gearBtn.style.display = '';
+                        art.setting.add({
+                            html: 'Audio Track',
+                            tooltip: trackOptions[0].html,
+                            selector: trackOptions,
+                            onSelect: async function (item) {
 
-                    // POPULATE THE NATIVE SETTINGS MENU
-                    art.setting.add({
-                        html: 'Audio Track',
-                        tooltip: trackOptions[0].html,
-                        selector: trackOptions,
-                        onSelect: async function (item) {
-                            art.notice.show = `Swapping audio...`;
-                            const savedTime = art.currentTime;
-                            const wasPlaying = art.playing;
+                                art.notice.show = `Swapping audio...`;
+                                const savedTime = art.currentTime;
+                                const wasPlaying = art.playing;
 
-                            player.setAudioTrack(item.trackNumber);
+                                player.setAudioTrack(item.trackNumber);
 
-                            const restoreVideo = () => {
-                                art.currentTime = savedTime;
-                                if (wasPlaying) art.play();
-                                art.video.removeEventListener('loadeddata', restoreVideo);
-                            };
-                            art.video.addEventListener('loadeddata', restoreVideo);
+                                const restoreVideo = () => {
 
-                            return item.html;
-                        }
-                    });
+                                    art.currentTime = savedTime;
+                                    if (wasPlaying) art.play();
+                                    art.video.removeEventListener('loadeddata', restoreVideo);
+                                };
+                                art.video.addEventListener('loadeddata', restoreVideo);
+
+                                return item.html;
+                            }
+                        });
+                    }
+
+                    // --- SUBTITLE TRACKS ---
+                    if (hasSubMenu) {
+                        const subOptions = subtitleTracks.map((t, index) => {
+                            let langName = langMap[t.language] || `Subtitle ${t.track_number}`;
+                            const codecName = t.codec_string ? ` (${t.codec_string})` : '';
+                            return { html: `${langName}`, trackNumber: t.track_number, default: false };
+                        });
+
+                        // Add an option to disable subtitles
+                        subOptions.unshift({ html: 'Off', trackNumber: -1, default: true });
+
+                        art.setting.add({
+                            html: 'Subtitles',
+                            tooltip: 'Off',
+                            selector: subOptions,
+                            onSelect: function (item) {
+                                art.notice.show = `Subtitles: ${item.html}`;
+
+                                // Assuming your engine handles subtitle rendering internally
+                                player.setSubtitleTrack(item.trackNumber);
+
+                                return item.html;
+                            }
+                        });
+                    }
                 } else {
-                    // FORCE HIDE IF ONLY 1 TRACK
                     if (gearBtn) gearBtn.style.display = 'none';
                 }
             } catch (e) {
