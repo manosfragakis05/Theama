@@ -8,14 +8,14 @@ function cleanSubtitleText(codec, rawText) {
     if (codec === "S_TEXT/ASS" || codec === "S_TEXT/SSA") {
         const parts = rawText.split(',');
         if (parts.length >= 9) {
-            let text = parts.slice(8).join(','); 
+            let text = parts.slice(8).join(',');
             text = text.replace(/\\N/gi, '\n');
             text = text.replace(/\{[^}]+\}/g, '');
             return text;
         }
     }
     // S_TEXT/UTF8 (SRT) comes through completely clean out of the box!
-    return rawText; 
+    return rawText;
 }
 
 // Bypasses background tab throttling
@@ -31,8 +31,43 @@ function getWasmMemory() {
     if (wasm.asm && wasm.asm.memory && wasm.asm.memory.buffer) return wasm.asm.memory.buffer;
     if (wasm.memory && wasm.memory.buffer) return wasm.memory.buffer;
     if (wasm.wasmMemory && wasm.wasmMemory.buffer) return wasm.wasmMemory.buffer;
-    console.error("🔍 WASM Object Dump:", wasm);
-    throw new Error("CRITICAL: Emscripten memory buffer not found! Check the console dump.");
+    console.error("WASM Object Dump:", wasm);
+    throw new Error("Emscripten memory buffer not found.");
+}
+
+const RANGE_FETCH_TIMEOUT_MS = 15000;
+
+class FetchWatchdog {
+    constructor(timeoutMs, externalSignal) {
+        this.controller = new AbortController();
+        this.timeoutMs = timeoutMs;
+        this._timer = null;
+        this._externalSignal = externalSignal || null;
+        this._onExternalAbort = () => this.controller.abort(externalSignal.reason);
+
+        if (this._externalSignal) {
+            if (this._externalSignal.aborted) this.controller.abort(this._externalSignal.reason);
+            else this._externalSignal.addEventListener('abort', this._onExternalAbort);
+        }
+        this.bump();
+    }
+
+    get signal() { return this.controller.signal; }
+
+    bump() {
+        clearTimeout(this._timer);
+        this._timer = setTimeout(() => {
+            this.controller.abort(new DOMException(
+                `No response/activity for ${this.timeoutMs}ms — treating connection as stalled.`,
+                'TimeoutError'
+            ));
+        }, this.timeoutMs);
+    }
+
+    dispose() {
+        clearTimeout(this._timer);
+        if (this._externalSignal) this._externalSignal.removeEventListener('abort', this._onExternalAbort);
+    }
 }
 
 class MKVFetcher {
@@ -42,6 +77,7 @@ class MKVFetcher {
         this.size = Infinity;
     }
 
+    // SETS SIZE REGARDLESS OF TYPE
     async init() {
         if (this.source instanceof File) {
             this.type = 'file';
@@ -49,34 +85,75 @@ class MKVFetcher {
             return;
         }
 
-        try {
-            const res = await fetch(this.source, {
-                method: 'HEAD',
-                signal: AbortSignal.timeout(3000)
-            });
-            const length = parseInt(res.headers.get('content-length'));
-            if (length && !isNaN(length)) {
-                this.size = length;
-                return;
-            }
-        } catch (e) {
-            console.warn("HEAD request ignored or timed out. Dropping to GET fallback...");
-        }
+        let finalSize = null;
 
+        // Phase 1: Try HEAD
         try {
             const controller = new AbortController();
-            const res = await fetch(this.source, {
-                headers: { 'Range': 'bytes=0-0' },
-                signal: controller.signal
-            });
-            const cr = res.headers.get('content-range');
-            if (cr) this.size = parseInt(cr.split('/')[1]);
-            controller.abort();
+            const timeoutId = setTimeout(() => controller.abort(), 3000);
+            const headRes = await fetch(this.source, { method: 'HEAD', signal: controller.signal });
+            clearTimeout(timeoutId);
+
+            const length = parseInt(headRes.headers.get('content-length'));
+            // Safety check: Ensure length is a valid number larger than 1 byte
+            if (length && length > 1) finalSize = length;
         } catch (e) {
-            console.warn("Could not fetch file size. Engine will run in blind mode.");
+            console.log("🌐 [Network] HEAD failed or timed out.");
         }
+
+        // Phase 2: The 1-Byte Range Request
+        if (!finalSize) {
+            const watchdog = new FetchWatchdog(RANGE_FETCH_TIMEOUT_MS, null);
+            try {
+                const getRes = await fetch(this.source, {
+                    headers: { 'Range': 'bytes=0-0' },
+                    signal: watchdog.signal
+                });
+                const contentRange = getRes.headers.get('content-range');
+
+                if (contentRange) {
+                    const totalSize = contentRange.split('/')[1];
+                    if (totalSize && totalSize !== '*') finalSize = parseInt(totalSize, 10);
+                }
+
+                if (getRes.body) await getRes.body.cancel().catch(() => { });
+            } catch (e) {
+                console.log("🌐 [Network] Range probe failed or timed out.");
+            } finally {
+                watchdog.dispose();
+            }
+        }
+
+        // Phase 3: The Aborted GET (Ultimate CORS Failsafe)
+        if (!finalSize) {
+            console.log("🌐 [Network] Range hidden. Falling back to aborted GET.");
+            const watchdog = new FetchWatchdog(RANGE_FETCH_TIMEOUT_MS, null);
+            try {
+                const getRes = await fetch(this.source, { signal: watchdog.signal });
+                const length = parseInt(getRes.headers.get('content-length'));
+
+                if (length && length > 1) finalSize = length;
+
+                if (getRes.body) await getRes.body.cancel().catch(() => { });
+                watchdog.controller.abort(); // we only wanted the headers — cut the body now that we have them
+            } catch (e) { }
+            finally {
+                watchdog.dispose();
+            }
+        }
+
+        // Apply size or fallback to blind mode
+        if (finalSize) {
+            this.size = finalSize;
+            console.log(`✅ File size locked in at: ${(finalSize / 1024 / 1024).toFixed(2)} MB`);
+        } else {
+            console.warn("⚠️ Could not fetch file size. Running in blind mode.");
+            this.size = Infinity;
+        }
+        console.log(this.size);
     }
 
+    // FINDS THE SEEK TABLE (skip indexes) FROM THE SeekID (table of contents)
     async read(start, end, signal) {
         if (this.size !== Infinity && end > this.size) end = this.size;
         if (start >= end) return new Uint8Array(0);
@@ -84,50 +161,79 @@ class MKVFetcher {
         if (this.type === 'file') {
             return new Uint8Array(await this.source.slice(start, end).arrayBuffer());
         } else {
-            const res = await fetch(this.source, {
-                headers: { 'Range': `bytes=${start}-${end - 1}` },
-                signal: signal
-            });
-            if (!res.ok) {
-                if (res.status === 416) return new Uint8Array(0);
-                throw new Error(`HTTP Error ${res.status} for range ${start}-${end - 1}`);
+            const watchdog = new FetchWatchdog(RANGE_FETCH_TIMEOUT_MS, signal);
+            try {
+                const res = await fetch(this.source, {
+                    headers: { 'Range': `bytes=${start}-${end - 1}` },
+                    signal: watchdog.signal
+                });
+                if (!res.ok) {
+                    if (res.status === 416) return new Uint8Array(0);
+                    throw new Error(`HTTP Error ${res.status} for range ${start}-${end - 1}`);
+                }
+                watchdog.bump(); // headers are in — give the body download its own fresh window
+                return new Uint8Array(await res.arrayBuffer());
+            } finally {
+                watchdog.dispose();
             }
-            return new Uint8Array(await res.arrayBuffer());
         }
     }
 
+    // Requests chunks but yields the data in tiny fragments to feed bytes in wasm immediately
     async *stream(start, end, signal) {
         if (this.size !== Infinity && end > this.size) end = this.size;
         if (start >= end) return;
 
         let streamObj;
+        let watchdog = null;
         if (this.type === 'file') {
             streamObj = this.source.slice(start, end).stream();
         } else {
-            const res = await fetch(this.source, {
-                headers: { 'Range': `bytes=${start}-${end - 1}` },
-                signal: signal
-            });
+            // Same stalled-connection risk as read(), but here we can do better:
+            // once bytes start flowing we reset the deadline on every chunk, so a
+            // connection has to go fully silent (not just slow) to get killed.
+            watchdog = new FetchWatchdog(RANGE_FETCH_TIMEOUT_MS, signal);
+            let res;
+            try {
+                res = await fetch(this.source, {
+                    headers: { 'Range': `bytes=${start}-${end - 1}` },
+                    signal: watchdog.signal
+                });
+            } catch (err) {
+                watchdog.dispose();
+                throw err;
+            }
             if (!res.ok) {
+                watchdog.dispose();
                 if (res.status === 416) return;
                 throw new Error(`HTTP Error ${res.status} for range ${start}-${end - 1}`);
             }
+            watchdog.bump(); // headers are in — the body reads below will keep bumping this
             streamObj = res.body;
         }
 
         const reader = streamObj.getReader();
+        let naturallyFinished = false; // Track if the chunk completed gracefully
+
         try {
             while (true) {
                 const { done, value } = await reader.read();
-                if (done) break;
+                if (watchdog) watchdog.bump(); // saw activity — push the stall deadline back out
+                if (done) {
+                    naturallyFinished = true; // The chunk is 100% downloaded
+                    break;
+                }
                 yield value;
             }
         } catch (err) {
+            // AbortError = a real cancellation (seek/destroy/track switch) — end quietly.
+            // Anything else, including our own TimeoutError from a stalled connection,
+            // propagates up so callers (e.g. _streamLoop's retry/backoff) can react to it.
             if (err.name !== 'AbortError') throw err;
         } finally {
             reader.releaseLock();
-            // 🛑 THE FIX: Forcefully kill the HTTP connection when we stop reading!
-            if (streamObj && typeof streamObj.cancel === 'function') {
+            if (watchdog) watchdog.dispose();
+            if (!naturallyFinished && streamObj && typeof streamObj.cancel === 'function') {
                 streamObj.cancel().catch(() => { });
             }
         }
@@ -159,7 +265,34 @@ function readVintJS(buffer, offset, maxOffset) {
     return { value: value, length: length };
 }
 
+function patchSegmentToUnknown(buffer) {
+    // Search for the main MKV Segment ID: 0x18 0x53 0x80 0x67
+    for (let i = 0; i < buffer.length - 8; i++) {
+        if (buffer[i] === 0x18 && buffer[i + 1] === 0x53 &&
+            buffer[i + 2] === 0x80 && buffer[i + 3] === 0x67) {
+
+            const vintOffset = i + 4;
+            const vint = readVintJS(buffer, vintOffset, buffer.length);
+
+            if (vint && vint.length > 0) {
+                console.log(`🔨 [Patch] Found Segment at byte ${i}. Patching ${vint.length}-byte size to 'Unknown'...`);
+
+                // An "Unknown" size in EBML is represented by setting all payload bits to 1.
+                // This calculates the correct leading bits for the existing byte length:
+                buffer[vintOffset] = 0xFF >> (vint.length - 1);
+
+                // Fill all subsequent bytes of the size integer with 1s (0xFF)
+                for (let j = 1; j < vint.length; j++) {
+                    buffer[vintOffset + j] = 0xFF;
+                }
+            }
+            break; // Stop after patching the Segment tag
+        }
+    }
+}
+
 class Demuxer {
+    // Allocate wasm memory to convert the js codec string
     constructor(videoId, audioId, width, height, duration, codecId) {
         const encoder = new TextEncoder();
         const codecBytes = encoder.encode(codecId + "\0");
@@ -223,7 +356,7 @@ class Demuxer {
 class CoreEngine {
     constructor() {
         this.video = null;
-        this.chunkSize = 5 * 1024 * 1024;
+        this.chunkSize = 10 * 1024 * 1024;
 
         this.downloadBuffer = [];
         this.isRecording = false;
@@ -287,11 +420,11 @@ class CoreEngine {
                 this.log(`Hardware accepted ${test.channels} channels (${test.vbr ? 'VBR' : 'CBR'}).`);
                 finalConfig = config;
                 finalChannels = test.channels;
-                break; // Stop testing once the hardware accepts one!
+                break; // Stop testing once the hardware accepts one
             }
         }
 
-        // 3. Absolute Fail-Safe (If everything fails)
+        // Absolute Fail-Safe (If everything fails)
         if (!finalConfig) {
             this.log("Hardware rejected all configs. Forcing basic stereo.");
             finalChannels = 2;
@@ -338,22 +471,23 @@ class CoreEngine {
         if (this.subtitleTracks && this.subtitleTracks.length > 0) {
             this.subtitleTracks.forEach((track, index) => {
                 const t = this.video.addTextTrack("subtitles", track.language, track.language);
-                t.mode = (index === 0) ? "showing" : "hidden"; 
-                
+                t.mode = (index === 0) ? "showing" : "hidden";
+
                 this.textTracks[track.track_number] = {
                     htmlTrack: t,
                     codec: track.codec_id
                 };
             });
         }
-        
+
         this.video.disableRemotePlayback = true;
         this.video.onseeking = () => this._onSeeking();
         this.video.ontimeupdate = () => this._onTimeUpdate();
 
         this.video.onwaiting = () => this._streamLoop();
         this.video.onstalled = () => this._streamLoop();
-        window.addEventListener('online', () => { this._streamLoop(); });
+        this._onlineHandler = () => this._streamLoop();
+        window.addEventListener('online', this._onlineHandler);
 
         this.video.src = URL.createObjectURL(this.mediaSource);
         this.log("Video tag attached. Stream routed to screen.");
@@ -362,7 +496,6 @@ class CoreEngine {
     async preload(fetcher) {
         this._resetState();
         this.sourceInput = fetcher;
-        await this.sourceInput.init();
 
         this.log("Probing for MKV clusters...");
 
@@ -383,8 +516,13 @@ class CoreEngine {
             const probeController = new AbortController();
             let jumped = false;
 
+            // 1. Calculate a bounded end to stop ghost connections
+            const probeEnd = Math.min(absoluteFileOffset + capacity, this.sourceInput.size);
+
             try {
-                for await (const chunk of this.sourceInput.stream(absoluteFileOffset, this.sourceInput.size, probeController.signal)) {
+                // 2. Request only up to probeEnd instead of this.sourceInput.size
+                for await (const chunk of this.sourceInput.stream(absoluteFileOffset, probeEnd, probeController.signal)) {
+                    console.log(`🧠 [Probe] Copying ${chunk.length} bytes to WASM RAM. Current Buffer: ${currentSize}`);
 
                     if (currentSize + chunk.length > capacity) {
                         let oldPtr = ptr;
@@ -410,6 +548,7 @@ class CoreEngine {
                     for (let i = scanStart; i < currentSize - 4; i++) {
                         if (wasmHeap[i] === 0x1F && wasmHeap[i + 1] === 0x43 &&
                             wasmHeap[i + 2] === 0xB6 && wasmHeap[i + 3] === 0x75) {
+                            console.log(`[Probe] CLUSTER FOUND at absolute offset: ${absoluteFileOffset - currentSize + i}`); // ADD THIS
 
                             clusterFound = true;
                             this.firstClusterOffset = absoluteFileOffset - currentSize + i;
@@ -427,7 +566,7 @@ class CoreEngine {
                                 if (vint.value < 1024 * 1024) continue;
 
                                 const skipAmount = 4 + vint.length + vint.value;
-                                this.log(`🎯 Attachments skipped! Size: ${(vint.value / 1024 / 1024).toFixed(2)} MB.`);
+                                this.log(`Attachments skipped! Size: ${(vint.value / 1024 / 1024).toFixed(2)} MB.`);
 
                                 const startOfBufferOffset = absoluteFileOffset - currentSize;
                                 absoluteFileOffset = startOfBufferOffset + i + skipAmount;
@@ -451,15 +590,33 @@ class CoreEngine {
 
         if (!clusterFound) throw new Error("Could not find Video Track.");
 
-        // Clean slice so no cluster ends into the headers
+        patchSegmentToUnknown(wasmHeap);
+
         this.initialHeaderData = wasmHeap.slice(0, firstClusterIndex);
 
         let jsonPtr = wasm._get_mkv_info_fast_json(ptr, currentSize);
-        this.mkvHeader = JSON.parse(wasm.UTF8ToString(jsonPtr));
+
+        const jsonStr = wasm.UTF8ToString(jsonPtr);
+
+        this.mkvHeader = JSON.parse(jsonStr);
         wasm._free_string(jsonPtr);
         wasm._free_memory(ptr, capacity);
 
-        const videoTrack = this.mkvHeader.tracks.find(t => t.track_type === "video");
+        const videoTrack = (this.mkvHeader.tracks && this.mkvHeader.tracks.length > 0)
+            ? this.mkvHeader.tracks.find(t => t.track_type === "video")
+            : null;
+
+        if (!videoTrack) {
+            console.error(" [Debug] FATAL: Rust failed to find a video track! The MKV headers might be corrupted from the attachment jump.");
+            return;
+        }
+
+        if (videoTrack.codec_id !== "V_MPEG4/ISO/AVC" && videoTrack.codec_id !== "V_MPEGH/ISO/HEVC") {
+            this.log(`Critical: Unsupported video codec ${videoTrack.codec_id}`);
+            alert(`Sorry, only H.264 and HEVC (H.265) video tracks are supported!`);
+            throw new Error("Unsupported video codec.");
+        }
+
         this.audioTracks = this.mkvHeader.tracks.filter(t => t.track_type === "audio");
         const audioTrack = this.audioTracks.length > 0 ? this.audioTracks[0] : null;
 
@@ -471,7 +628,28 @@ class CoreEngine {
 
         if (this.mkvHeader.cues_position) {
             const pos = Number(this.mkvHeader.cues_position);
-            const cuesData = await this.sourceInput.read(pos, this.sourceInput.size, null);
+
+            // 1. Fetch just the first 12 bytes of the Cues element to read its size header
+            const headerBytes = await this.sourceInput.read(pos, pos + 12, null);
+
+            // 2. Verify it's actually the Cues ID (0x1C53BB6B)
+            let totalCuesSize = 0;
+            if (headerBytes.length >= 5 && headerBytes[0] === 0x1C && headerBytes[1] === 0x53 &&
+                headerBytes[2] === 0xBB && headerBytes[3] === 0x6B) {
+
+                // 3. Calculate the exact payload size using your existing VINT reader
+                const vint = readVintJS(headerBytes, 4, headerBytes.length);
+                if (vint) {
+                    totalCuesSize = 4 + vint.length + vint.value;
+                }
+            }
+
+            // 4. Fetch the exact size, with a 5MB fallback just in case the file is corrupted
+            const endPos = totalCuesSize > 0
+                ? pos + totalCuesSize
+                : Math.min(pos + (5 * 1024 * 1024), this.sourceInput.size);
+
+            const cuesData = await this.sourceInput.read(pos, endPos, null);
 
             const cPtr = wasm._alloc_memory(cuesData.length);
             new Uint8Array(getWasmMemory(), cPtr, cuesData.length).set(cuesData);
@@ -490,14 +668,13 @@ class CoreEngine {
             this.mkvHeader.duration * 1000, videoTrack.codec_id
         );
 
-        // --- NEW SUBTITLE INJECTION ---
-        // 1. Find all text tracks that are pure SRT
+        // Find all text tracks that are SRT
         console.log("🕵️ Raw MKV Tracks from Rust:", this.mkvHeader.tracks);
 
         // 1. Expand the filter to catch SRT, ASS, and SSA
         const supportedSubCodecs = ["S_TEXT/UTF8", "S_TEXT/ASS", "S_TEXT/SSA"];
-        
-        this.subtitleTracks = this.mkvHeader.tracks.filter(t => 
+
+        this.subtitleTracks = this.mkvHeader.tracks.filter(t =>
             t.track_type === "subtitle" && supportedSubCodecs.includes(t.codec_id)
         );
 
@@ -597,200 +774,203 @@ class CoreEngine {
         let myStreamId = this.currentStreamId;
         if (this.isFetching || this.currentOffset >= this.sourceInput.size) return;
         this.isFetching = true;
+        this._activeLoops = (this._activeLoops || 0) + 1;
 
-        while (this.currentOffset < this.sourceInput.size && myStreamId === this.currentStreamId) {
-            if (this.mediaSource.readyState !== 'open') break;
+        try {
+            while (this.currentOffset < this.sourceInput.size && myStreamId === this.currentStreamId) {
+                if (this.mediaSource.readyState !== 'open') break;
 
-            let bufferedEnd = this.video ? this.video.currentTime : 0;
+                let bufferedEnd = this.video ? this.video.currentTime : 0;
 
-            for (let i = 0; i < this.sourceBuffer.buffered.length; i++) {
-                let end = this.sourceBuffer.buffered.end(i);
-                if (end > bufferedEnd) bufferedEnd = end;
-            }
-
-            try {
                 for (let i = 0; i < this.sourceBuffer.buffered.length; i++) {
                     let end = this.sourceBuffer.buffered.end(i);
                     if (end > bufferedEnd) bufferedEnd = end;
                 }
-            } catch (e) {
-                break; // Buffer was removed, kill the loop cleanly
-            }
 
-            // THE NEW DYNAMIC RAM LIMITER
-            let limit = this.video ? (bufferedEnd - this.video.currentTime) : bufferedEnd;
-
-            // 1. Calculate the average bytes per second of the current video
-            // (Using Math.max to prevent divide-by-zero if the duration header is missing)
-            const durationSeconds = Math.max(this.mkvHeader.duration, 1);
-            const bytesPerSecond = this.sourceInput.size / durationSeconds;
-
-            // 2. Convert the forward buffer time into Megabytes
-            let forwardBufferMB = (limit * bytesPerSecond) / (1024 * 1024);
-
-            // 3. Stop fetching if we have parked more than 50MB in the browser's RAM
-            if (forwardBufferMB > 50 && !this.isRecording) {
-                break;
-            }
-
-            this.abortController = new AbortController();
-            try {
-                let bytesProcessed = 0;
-
-                for await (const chunkData of this.sourceInput.stream(this.currentOffset, this.currentOffset + this.chunkSize, this.abortController.signal)) {
-                    if (myStreamId !== this.currentStreamId) break;
-
-                    const isFinal = (this.currentOffset + bytesProcessed + chunkData.length) >= this.sourceInput.size;
-                    const framesStaged = this.demuxer.parse_chunk(chunkData, isFinal);
-
-                    if (this.subtitleTracks && this.subtitleTracks.length > 0) {
-                        // Ask Rust if there are any subtitles waiting (Fast C++ call)
-                        const pendingCues = wasm._demuxer_get_subtitle_count(this.demuxer.ptr);
-                        
-                        if (pendingCues > 0) {
-                            // Pull the JSON string from Rust
-                            const subJsonPtr = wasm._demuxer_pull_subtitles_json(this.demuxer.ptr);
-                            const subJsonStr = wasm.UTF8ToString(subJsonPtr);
-                            wasm._free_string(subJsonPtr); // Free the memory!
-                    
-                            const cues = JSON.parse(subJsonStr);
-                            
-                            for (let cueData of cues) {
-                                const trackObj = this.textTracks[cueData.track_id];
-                                if (trackObj && cueData.duration_ms > 0) {
-                                    // Convert milliseconds to seconds for the browser
-                                    const startTime = cueData.start_ms / 1000;
-                                    const endTime = startTime + (cueData.duration_ms / 1000);
-                                    const cleanText = cleanSubtitleText(trackObj.codec, cueData.text);
-                    
-                                    try {
-                                        // Create the native subtitle cue and inject it!
-                                        const cue = new VTTCue(startTime, endTime, cleanText);
-                                        trackObj.htmlTrack.addCue(cue);
-                                    } catch(e) { } // Ignore overlapping cue errors
-                                }
-                            }
-                        }
+                try {
+                    for (let i = 0; i < this.sourceBuffer.buffered.length; i++) {
+                        let end = this.sourceBuffer.buffered.end(i);
+                        if (end > bufferedEnd) bufferedEnd = end;
                     }
-
-                    if (this.audioTrack && this.needsAudioTranscode && this.audioEncoder?.state === 'configured') {
-
-                        // 1. Read the negotiated limits (from our hardware handshake!)
-                        const numChannels = this.encoderChannels || 2;
-                        const sampleRate = this.audioTrack.sample_rate || 48000;
-                        const BYTES_PER_PLANE = 768000;
-
-                        while (true) {
-                            const samples = wasm._demuxer_decode_next_audio_frame(this.demuxer.ptr);
-                            if (samples <= 0) break;
-
-                            const pcmPtr = wasm._get_audio_ptr();
-                            const dtsBigInt = wasm._demuxer_get_last_audio_dts(this.demuxer.ptr);
-
-                            let planarData = [];
-
-                            // 2. Dynamically scoop the exact number of channels in the standard SMPTE order
-                            for (let ch = 0; ch < numChannels; ch++) {
-                                const planeOffset = pcmPtr + (ch * BYTES_PER_PLANE);
-                                const rawBytes = new Uint8Array(getWasmMemory(), planeOffset, samples * 4).slice();
-                                planarData.push(new Float32Array(rawBytes.buffer));
-                            }
-
-                            // 3. Flatten the multi-dimensional planes into one contiguous array for WebCodecs
-                            const totalLength = planarData.reduce((acc, arr) => acc + arr.length, 0);
-                            const combinedFloats = new Float32Array(totalLength);
-                            let offset = 0;
-                            for (let plane of planarData) {
-                                combinedFloats.set(plane, offset);
-                                offset += plane.length;
-                            }
-
-                            // 4. Build the AudioData object dynamically
-                            const audioData = new AudioData({
-                                format: 'f32-planar',
-                                sampleRate: sampleRate,
-                                numberOfChannels: numChannels,
-                                numberOfFrames: samples,
-                                timestamp: Number((BigInt(dtsBigInt) * 1000000n) / BigInt(sampleRate)),
-                                data: combinedFloats
-                            });
-
-                            this.audioEncoder.encode(audioData);
-                            audioData.close();
-                            this.audioFramesIn++;
-                        }
-
-                        // Wait for the encoder queue to empty naturally
-                        while (this.audioEncoder && this.audioEncoder.encodeQueueSize > 0 && this.audioEncoder.state === 'configured') {
-                            await yieldThread();
-                        }
-                        await yieldThread();
-                    }
-
-                    if (framesStaged >= 30 || isFinal) {
-                        const segment = this.demuxer.get_mp4_segment();
-
-                        if (this.isRecording && this.diskStream && segment.length > 0) {
-                            // Stream directly to hard drive at maximum speed!
-                            await this.diskStream.write(segment);
-                        }
-
-                        if (isFinal && this.isRecording && this.diskStream) {
-                            console.log("✅ Reached EOF. Generating MFRA box...");
-
-                            if (this.onDownloadProgress) this.onDownloadProgress(100);
-                        }
-
-                        if (segment.length > 0 && this.sourceBuffer && !this.isRecording) {
-                            await this._appendToBuffer(segment);
-
-                            // 🛑 THE NEW, SAFE NUDGE BLOCK
-                            try {
-                                if (this.video && this.sourceBuffer.buffered.length > 0) {
-                                    // 1. Explicit Autostart (No more accidental seek-starts!)
-                                    if (this.video.currentTime === 0 && this.video.paused) {
-                                        this.video.play().catch(() => { });
-                                    }
-
-                                    // 2. Safe Gap Jump (Only jump true gaps, no artificial kicks!)
-                                    if (!this.video.paused && this.video.readyState <= 2) {
-                                        try {
-                                            for (let i = 0; i < this.sourceBuffer.buffered.length; i++) {
-                                                let start = this.sourceBuffer.buffered.start(i);
-                                                if (start > this.video.currentTime) {
-                                                    this.video.currentTime = start + 0.01;
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                        catch (e) { break; }
-                                    }
-                                }
-                            } catch (e) { }
-                        }
-                    }
-                    bytesProcessed += chunkData.length;
-
-                    if (this.isRecording && this.onDownloadProgress && this.sourceInput.size !== Infinity) {
-                        const currentBytes = this.currentOffset + bytesProcessed;
-                        const percent = Math.floor((currentBytes / this.sourceInput.size) * 100);
-                        this.onDownloadProgress(percent);
-                    }
+                } catch (e) {
+                    break; // Buffer was removed, kill the loop cleanly
                 }
 
-                this.currentOffset += bytesProcessed;
-            } catch (err) {
-                if (err?.name === 'AbortError') break;
-                else {
-                    console.error("Fetch error:", err);
-                    await new Promise(r => setTimeout(r, 3000)); // The Wifi backoff!
+                // THE NEW DYNAMIC RAM LIMITER
+                let limit = this.video ? (bufferedEnd - this.video.currentTime) : bufferedEnd;
+
+                const durationSeconds = Math.max(this.mkvHeader.duration, 1);
+                const bytesPerSecond = this.sourceInput.size / durationSeconds;
+
+                // 2. Convert the forward buffer time into Megabytes
+                let forwardBufferMB = (limit * bytesPerSecond) / (1024 * 1024);
+
+                // 3. Stop fetching if we have parked more than 50MB in the browser's RAM
+                if (forwardBufferMB > 50 && !this.isRecording) {
                     break;
                 }
-            } finally {
-                this.abortController = null;
+
+                this.abortController = new AbortController();
+                try {
+                    let bytesProcessed = 0;
+
+                    for await (const chunkData of this.sourceInput.stream(this.currentOffset, this.currentOffset + this.chunkSize, this.abortController.signal)) {
+                        if (myStreamId !== this.currentStreamId) break;
+
+                        const isFinal = (this.currentOffset + bytesProcessed + chunkData.length) >= this.sourceInput.size;
+                        const framesStaged = this.demuxer.parse_chunk(chunkData, isFinal);
+
+                        if (this.subtitleTracks && this.subtitleTracks.length > 0) {
+                            // Ask Rust if there are any subtitles waiting (Fast C++ call)
+                            const pendingCues = wasm._demuxer_get_subtitle_count(this.demuxer.ptr);
+
+                            if (pendingCues > 0) {
+                                // Pull the JSON string from Rust
+                                const subJsonPtr = wasm._demuxer_pull_subtitles_json(this.demuxer.ptr);
+                                const subJsonStr = wasm.UTF8ToString(subJsonPtr);
+                                wasm._free_string(subJsonPtr); // Free the memory!
+
+                                const cues = JSON.parse(subJsonStr);
+
+                                for (let cueData of cues) {
+                                    const trackObj = this.textTracks[cueData.track_id];
+                                    if (trackObj && cueData.duration_ms > 0) {
+                                        // Convert milliseconds to seconds for the browser
+                                        const startTime = cueData.start_ms / 1000;
+                                        const endTime = startTime + (cueData.duration_ms / 1000);
+                                        const cleanText = cleanSubtitleText(trackObj.codec, cueData.text);
+
+                                        try {
+                                            // Create the native subtitle cue and inject it!
+                                            const cue = new VTTCue(startTime, endTime, cleanText);
+                                            trackObj.htmlTrack.addCue(cue);
+                                        } catch (e) { } // Ignore overlapping cue errors
+                                    }
+                                }
+                            }
+                        }
+
+                        if (this.audioTrack && this.needsAudioTranscode && this.audioEncoder?.state === 'configured') {
+
+                            // 1. Read the negotiated limits (from our hardware handshake!)
+                            const numChannels = this.encoderChannels || 2;
+                            const sampleRate = this.audioTrack.sample_rate || 48000;
+                            const BYTES_PER_PLANE = 768000;
+
+                            while (true) {
+                                const samples = wasm._demuxer_decode_next_audio_frame(this.demuxer.ptr);
+                                if (samples <= 0) break;
+
+                                const pcmPtr = wasm._get_audio_ptr();
+                                const dtsBigInt = wasm._demuxer_get_last_audio_dts(this.demuxer.ptr);
+
+                                let planarData = [];
+
+                                // 2. Dynamically scoop the exact number of channels in the standard SMPTE order
+                                for (let ch = 0; ch < numChannels; ch++) {
+                                    const planeOffset = pcmPtr + (ch * BYTES_PER_PLANE);
+                                    const rawBytes = new Uint8Array(getWasmMemory(), planeOffset, samples * 4).slice();
+                                    planarData.push(new Float32Array(rawBytes.buffer));
+                                }
+
+                                // 3. Flatten the multi-dimensional planes into one contiguous array for WebCodecs
+                                const totalLength = planarData.reduce((acc, arr) => acc + arr.length, 0);
+                                const combinedFloats = new Float32Array(totalLength);
+                                let offset = 0;
+                                for (let plane of planarData) {
+                                    combinedFloats.set(plane, offset);
+                                    offset += plane.length;
+                                }
+
+                                // 4. Build the AudioData object dynamically
+                                const audioData = new AudioData({
+                                    format: 'f32-planar',
+                                    sampleRate: sampleRate,
+                                    numberOfChannels: numChannels,
+                                    numberOfFrames: samples,
+                                    timestamp: Number((BigInt(dtsBigInt) * 1000000n) / BigInt(sampleRate)),
+                                    data: combinedFloats
+                                });
+
+                                this.audioEncoder.encode(audioData);
+                                audioData.close();
+                                this.audioFramesIn++;
+                            }
+
+                            // Wait for the encoder queue to empty naturally
+                            while (this.audioEncoder && this.audioEncoder.encodeQueueSize > 0 && this.audioEncoder.state === 'configured') {
+                                await yieldThread();
+                            }
+                            await yieldThread();
+                        }
+
+                        if (framesStaged >= 30 || isFinal) {
+                            const segment = this.demuxer.get_mp4_segment();
+
+                            if (this.isRecording && this.diskStream && segment.length > 0) {
+                                // Stream directly to hard drive at maximum speed!
+                                await this.diskStream.write(segment);
+                            }
+
+                            if (isFinal && this.isRecording && this.diskStream) {
+                                console.log("✅ Reached EOF. Generating MFRA box...");
+
+                                if (this.onDownloadProgress) this.onDownloadProgress(100);
+                            }
+
+                            if (segment.length > 0 && this.sourceBuffer && !this.isRecording) {
+                                await this._appendToBuffer(segment);
+
+                                // 🛑 THE NEW, SAFE NUDGE BLOCK
+                                try {
+                                    if (this.video && this.sourceBuffer.buffered.length > 0) {
+                                        // 1. Explicit Autostart (No more accidental seek-starts!)
+                                        if (this.video.currentTime === 0 && this.video.paused) {
+                                            this.video.play().catch(() => { });
+                                        }
+
+                                        // 2. Safe Gap Jump (Only jump true gaps, no artificial kicks!)
+                                        if (!this.video.paused && this.video.readyState <= 2) {
+                                            try {
+                                                for (let i = 0; i < this.sourceBuffer.buffered.length; i++) {
+                                                    let start = this.sourceBuffer.buffered.start(i);
+                                                    if (start > this.video.currentTime) {
+                                                        this.video.currentTime = start + 0.01;
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                            catch (e) { break; }
+                                        }
+                                    }
+                                } catch (e) { }
+                            }
+                        }
+                        bytesProcessed += chunkData.length;
+
+                        if (this.isRecording && this.onDownloadProgress && this.sourceInput.size !== Infinity) {
+                            const currentBytes = this.currentOffset + bytesProcessed;
+                            const percent = Math.floor((currentBytes / this.sourceInput.size) * 100);
+                            this.onDownloadProgress(percent);
+                        }
+                    }
+
+                    this.currentOffset += bytesProcessed;
+                } catch (err) {
+                    if (err?.name === 'AbortError') break;
+                    else {
+                        console.error("Fetch error:", err);
+                        await new Promise(r => setTimeout(r, 3000)); // The Wifi backoff!
+                        break;
+                    }
+                } finally {
+                    this.abortController = null;
+                }
             }
+        } finally {                                          // NEW
+            this._activeLoops = Math.max(0, this._activeLoops - 1);
+            if (myStreamId === this.currentStreamId) this.isFetching = false;
         }
-        if (myStreamId === this.currentStreamId) this.isFetching = false;
     }
 
     _onTimeUpdate() {
@@ -801,9 +981,12 @@ class CoreEngine {
     }
 
     async _onSeeking() {
-        if (!this.video || !this.cueMap || this.cueMap.length === 0 || !this.mediaSource || this.mediaSource.readyState !== 'open') return;
+        if (!this.video || !this.cueMap || this.cueMap.length === 0 || !this.mediaSource || this.mediaSource.readyState !== 'open') {
+            console.warn("No seek table found. Seeking is disabled for this file.");
+            return;
+        }
 
-        // 🛑 THE DEADLOCK FIX: Stop the player from nuking itself on micro-nudges
+        // Stop the player from nuking itself on micro-nudges
         if (this.sourceBuffer) {
             let target = this.video.currentTime;
             let isBuffered = false;
@@ -871,14 +1054,13 @@ class CoreEngine {
         const targetTime = this.video.currentTime;
         this.video.pause();
 
-        // 🛑 IOS FIX 1: Temporarily unhook the seeking event so it doesn't double-wipe!
         this.video.onseeking = null;
 
-        // 1. Kill the current fetch loop immediately
+        // Stop the current fetch loop immediately
         if (this.abortController) { this.abortController.abort(); this.abortController = null; }
         this.currentStreamId++;
 
-        // 2. Safely wipe the old video buffer (No aborting allowed on iOS!)
+        // Safely wipe the old video buffer
         try {
             if (this.sourceBuffer) {
                 if (this.sourceBuffer.updating) {
@@ -913,22 +1095,22 @@ class CoreEngine {
         const newInitSegment = this.demuxer.init(this.initialHeaderData);
         await this._appendToBuffer(newInitSegment);
 
-        // 6. Find the exact file offset for the target time
-        let bestCue = this.cueMap[0];
+        // Clamp the variables to zero so the stream can reset to the beginning if no cues exist
+        let bestCue = (this.cueMap && this.cueMap.length > 0) ? this.cueMap[0] : { time: 0, offset: 0 };
         for (let i = 0; i < this.cueMap.length; i++) {
             if (this.cueMap[i].time <= targetTime) bestCue = this.cueMap[i];
             else break;
         }
 
-        const segmentPayloadStart = this.firstClusterOffset - Number(this.cueMap[0].offset);
+        const segmentPayloadStart = this.firstClusterOffset - Number(this.cueMap.length > 0 ? this.cueMap[0].offset : 0);
         this.currentOffset = segmentPayloadStart + Number(bestCue.offset);
 
-        // 7. Jump the video to the new time
+        // Jump the video to the new time
         if (bestCue && this.video.currentTime !== bestCue.time) {
             this.video.currentTime = bestCue.time;
         }
 
-        // 🛑 IOS FIX 1 (Cont.): Re-hook the seeking event AFTER the jump finishes
+        // Re-hook the seeking event after the jump finishes
         setTimeout(() => {
             this.video.onseeking = () => this._onSeeking();
         }, 100);
@@ -943,7 +1125,7 @@ class CoreEngine {
     // Inside CoreEngine
     switchSubtitleTrack(trackNumber) {
         if (!this.textTracks) return;
-        
+
         // Pass 0 to turn subtitles off completely!
         for (let id in this.textTracks) {
             if (Number(id) === Number(trackNumber)) {
@@ -1011,9 +1193,93 @@ class CoreEngine {
             }
         }
     }
+
+    // Completly reset engine
+    async destroy() {
+        this.log("💥 Commencing total engine teardown...");
+
+        // 1. Stop new work, cancel the fetch in flight
+        this.currentStreamId++;
+        if (this.abortController) {
+            this.abortController.abort();
+            this.abortController = null;
+        }
+
+        // 2. Remove the window-level listener — otherwise it leaks forever
+        if (this._onlineHandler) {
+            window.removeEventListener('online', this._onlineHandler);
+        }
+
+        // 3. Wait for any in-flight _streamLoop() to actually unwind before
+        //    nulling anything it might still touch mid-chunk. Bounded so a
+        //    stuck append can never hang teardown forever.
+        const waitStart = Date.now();
+        while ((this._activeLoops || 0) > 0 && Date.now() - waitStart < 2000) {
+            await new Promise(r => setTimeout(r, 20));
+        }
+        this.isFetching = false;
+
+        // 4. Erase Rust WASM allocations (drops all the demuxer's internal
+        //    Vec buffers on the Rust side too)
+        if (this.demuxer) {
+            this.demuxer.destroy();
+            this.demuxer = null;
+        }
+
+        // 5. Kill the hardware audio encoder
+        if (this.audioEncoder && this.audioEncoder.state !== 'closed') {
+            try { this.audioEncoder.close(); } catch (e) { }
+            this.audioEncoder = null;
+        }
+
+        // 6. Explicitly empty the SourceBuffer's media data — safe now,
+        //    since step 3 guarantees nothing is still mid-append
+        if (this.sourceBuffer && this.mediaSource) {
+            try {
+                if (this.sourceBuffer.updating) this.sourceBuffer.abort();
+                if (this.sourceBuffer.buffered.length > 0) {
+                    this.sourceBuffer.remove(0, this.mediaSource.duration || Infinity);
+                }
+            } catch (e) { }
+        }
+
+        // 7. Sever the video element and nuke browser RAM buffers
+        if (this.video) {
+            this.video.pause();
+            this.video.removeAttribute('src');
+            this.video.load();
+
+            if (this.textTracks) {
+                for (let trackId in this.textTracks) {
+                    const track = this.textTracks[trackId].htmlTrack;
+                    if (track && track.cues) {
+                        for (let i = track.cues.length - 1; i >= 0; i--) {
+                            track.removeCue(track.cues[i]);
+                        }
+                    }
+                    track.mode = "disabled";
+                }
+            }
+
+            this.video.onseeking = null;
+            this.video.ontimeupdate = null;
+            this.video.onwaiting = null;
+            this.video.onstalled = null;
+        }
+
+        // 8. Dereference MSE components
+        if (this.mediaSource && this.mediaSource.readyState === 'open') {
+            try { this.mediaSource.endOfStream(); } catch (e) { }
+        }
+        this.mediaSource = null;
+        this.sourceBuffer = null;
+        this.sourceInput = null;
+        this.video = null;
+        this.downloadBuffer = [];   // declared in the constructor but never read elsewhere — worth checking if it's dead code
+    }
 }
 
-// --- EXPORTED SDK FUNCTIONS ---
+//#region EXPORT OBJECT
 const streamDictionary = new Map();
 
 export async function feed(source) {
@@ -1082,6 +1348,36 @@ export class MKVPlayer {
 
     getSubtitleTracks() { return this.engine ? this.engine.subtitleTracks : []; }
     setSubtitleTrack(trackNumber) { if (this.engine) this.engine.switchSubtitleTrack(trackNumber); }
+
+
+    // Reset engine * MAKE SURE TO DESTROY THE VIDEO ELEMENT IN HTML *
+    async destroy() {
+        if (this.engine) {
+            // Flush any active direct-to-disk writes
+            if (this.engine.isRecording) {
+                await this._finishRecording(null);
+            }
+
+            // Wipe the engine from the global dictionary so a fresh one is built next time
+            for (let [key, val] of streamDictionary.entries()) {
+                if (val === this.engine) {
+                    streamDictionary.delete(key);
+                    break;
+                }
+            }
+
+            // Execute the total teardown
+            await this.engine.destroy();
+            this.engine = null;
+        }
+
+        // DOM Failsafe
+        if (this.video) {
+            this.video.pause();
+            this.video.removeAttribute('src');
+            this.video.load();
+        }
+    }
 
     async toggleRecording(onStateChange, onProgress, customName = "Media") {
         if (!this.engine) return;
@@ -1179,3 +1475,4 @@ export class MKVPlayer {
         if (onStateChange) onStateChange("stopped");
     }
 }
+//#endregion
