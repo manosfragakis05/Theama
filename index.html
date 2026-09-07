@@ -246,7 +246,7 @@
             </nav>
 
             <main id="app-main"
-                class="scrollbar-hide flex flex-col flex-1 min-w-0 relative overflow-y-auto overflow-x-hidden pb-24 md:pb-0">
+                class="scrollbar-hide flex flex-col flex-1 min-w-0 relative overflow-y-auto overflow-x-hidden">
 
                 <div id="player-wrapper"
                     class="hidden flex-none w-full bg-black pt-[env(safe-area-inset-top)] shadow-2xl transition-all duration-300 z-30 relative">
@@ -743,7 +743,7 @@
                     </section>
 
                     <section>
-                        <h2 class="text-xl font-bold text-white mb-4 pl-1 flex items-center gap-2">
+                        <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
                             <svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                     d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4">
@@ -786,7 +786,7 @@
                         </div>
                     </section>
                     <div
-                        class="w-full flex flex-col items-center justify-center pt-4 pb-2 opacity-60 hover:opacity-100 transition-opacity select-none">
+                        class="w-full flex flex-col items-center justify-center opacity-60 hover:opacity-100 transition-opacity select-none">
                         <span
                             class="text-[10px] font-bold tracking-widest uppercase text-slate-500 mb-0.5">Theama</span>
                         <span id="app-version-text" class="text-[10px] font-mono text-slate-600">v0.5.8</span>
@@ -799,7 +799,7 @@
 
         <!-- Mobile bottom nav bar -->
         <nav
-            class="md:hidden fixed bottom-0 left-0 w-full bg-slate-800/25 backdrop-blur border-t border-slate-800 z-[100] touch-none select-none pb-[max(0px,calc(env(safe-area-inset-bottom)-24px))]">
+            class="md:hidden fixed bottom-0 left-0 w-full bg-slate-800/25 backdrop-blur border-t border-slate-800 z-[100] touch-none select-none pb-[calc(env(safe-area-inset-bottom)-23px)]">
 
             <div class="flex items-center justify-around h-16">
 
@@ -1311,7 +1311,8 @@
 
             <div class="flex items-center justify-between p-4 border-b border-slate-700 bg-slate-800/50 shrink-0">
                 <h3 class="font-bold text-lg text-white truncate pr-4">Open in App...</h3>
-                <button id="close-external-player-btn" onclick="document.getElementById('external-player-modal').classList.add('hidden')"
+                <button id="close-external-player-btn"
+                    onclick="document.getElementById('external-player-modal').classList.add('hidden')"
                     class="text-slate-400 hover:text-white bg-slate-700/30 hover:bg-slate-700 p-2 rounded-full transition-colors shrink-0 outline-none">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
@@ -1387,6 +1388,15 @@
     </div>
 
     <script type="module" src="/main.js"></script>
+    <script>
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
+            window.navigator.standalone === true ||
+            document.referrer.includes('android-app://');
+
+        if (isStandalone) {
+            document.documentElement.classList.add('is-pwa');
+        }
+    </script>
 </body>
 
 </html>

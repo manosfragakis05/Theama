@@ -4,11 +4,15 @@
 
 html, body {
     width: 100%;
-    height: 100vh;
-    min-height: 100dvh;
+    height: 100svh;
     margin: 0;
     padding: 0;
-    overflow: hidden; 
+    overflow: hidden;
+    overscroll-behavior: none;
+}
+
+html.is-pwa, html.is-pwa body {
+    height: 100lvh; 
 }
 
 button,
@@ -49,7 +53,8 @@ textarea:focus-visible {
     /* Keep your existing padding for safe areas */
     padding-left: 1rem;
     padding-right: 1rem;
-    padding-top: max(1.5rem, env(safe-area-inset-top));
+    padding-top: calc(env(safe-area-inset-top) + 1.5rem);
+    padding-bottom: max(4.5rem, calc(env(safe-area-inset-bottom) + 2.5rem));
 }
 
 .poster-card {
