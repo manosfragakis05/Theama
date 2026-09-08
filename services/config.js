@@ -22,7 +22,6 @@ export const SUPABASEKEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 //#region Global State
 export const appState = {
-    currentStreamUrl: "",
     clickCooldown: false,
     allTorrents: [],
     currentTorrentId: null,

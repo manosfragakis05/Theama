@@ -8,14 +8,15 @@
 import { appState, showToast } from '../services/config.js';
 import { parseMediaData } from '../utils/parseMedia.js';
 import { requestLink } from './player.js';
-import { fetchAnimeMapping } from '../api.js'; 
+import { fetchAnimeMapping } from '../api.js';
+import { downloadFile } from '../pages/library.js';
 
 // Import the "Brain" functions we built in metadata.js
-import { 
-    getTmdbId, 
-    getAnilistIdFromText, 
-    getDirectSequel, 
-    processKitsuFallback 
+import {
+    getTmdbId,
+    getAnilistIdFromText,
+    getDirectSequel,
+    processKitsuFallback
 } from '../services/metadata.js';
 
 
@@ -178,7 +179,7 @@ export async function openPicker(torrent) {
             for (const season of uniqueSeasons) {
                 const targetFile = searchableFiles.find(f => f.season === season);
                 let searchString = group.title;
-                
+
                 if (season > 1 && targetFile.fileType === 'TV') {
                     searchString += ` Season ${season}`;
                 }
@@ -231,8 +232,8 @@ export async function openPicker(torrent) {
                                         matchedEp = epDict[epInt];
                                     } else {
                                         matchedEp = epArray.find(ep => ep.episodeNumber === epInt) ||
-                                                    epArray.find(ep => ep.absoluteEpisodeNumber === epInt) ||
-                                                    epArray.find(ep => ep.episode === epInt.toString());
+                                            epArray.find(ep => ep.absoluteEpisodeNumber === epInt) ||
+                                            epArray.find(ep => ep.episode === epInt.toString());
                                     }
 
                                     if (matchedEp && matchedEp.seasonNumber == file.season) {
@@ -402,11 +403,13 @@ function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cle
                     <img src="${cardImage}" class="w-full h-full object-cover opacity-60 group-hover:opacity-40 transition-opacity">
                     
                     <div class="absolute inset-0 flex items-center justify-center gap-4 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                        <button onclick="event.stopPropagation(); downloadToOPFS(${torrent.id}, ${originalFile.id}, '${showData.title.replace(/'/g, "\\'")}', '${fallbackImage}', '${cardImage}', this);" class="bg-slate-800/90 hover:bg-slate-700 text-white w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-md transition-colors shadow-xl border border-slate-600" title="Download to Device">
-                            ⬇️
+                        <button data-action="download" class="bg-slate-800/90 hover:bg-slate-700 text-white w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-md transition-colors shadow-xl border border-slate-600" title="Download to Device">
+                            <svg style="width:22px;height:22px;margin-top:2px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                         </button>
                         <div class="bg-blue-600/90 text-white w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-md shadow-xl border border-blue-500 pointer-events-none">
-                            ▶️
+                            <svg class="w-5 h-5 -rotate-90" fill="currentColor" stroke="currentColor" viewBox="0 0 24 24">
+                                <use href="#icon-arrow"></use>
+                            </svg>
                         </div>
                     </div>
 
@@ -419,7 +422,15 @@ function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cle
             `;
 
             card.onclick = (e) => {
-                if (e.target.closest('button')) return;
+                const btn = e.target.closest('button');
+
+                if (btn?.dataset.action === 'download') {
+                    e.stopPropagation();
+                    downloadFile(torrent.id, originalFile.id, torrent.name);
+                    return;
+                }
+
+                if (btn) return;
 
                 if (appState.clickCooldown) return;
                 appState.clickCooldown = true; setTimeout(() => appState.clickCooldown = false, 2000);
@@ -452,10 +463,10 @@ function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cle
             seasonContainer.innerHTML = `
                 <select id="library-season-select" class="bg-slate-800 text-sm font-bold text-slate-200 border border-slate-600 rounded-lg p-1.5 outline-none cursor-pointer shadow-lg max-w-[180px] md:max-w-xs truncate">
                     ${standardSeasons.map(s => {
-                        const customTitle = showData.seasonTitles?.[s];
-                        const displayLabel = customTitle ? customTitle : `Season ${s}`;
-                        return `<option value="${s}">${displayLabel}</option>`;
-                    }).join('')}
+                const customTitle = showData.seasonTitles?.[s];
+                const displayLabel = customTitle ? customTitle : `Season ${s}`;
+                return `<option value="${s}">${displayLabel}</option>`;
+            }).join('')}
                     ${hasOvas ? `<option value="ovas">⭐ Specials / OVAs</option>` : ''}
                     ${hasThemes ? `<option value="themes">🎵 Themes & Extras</option>` : ''}
                 </select>

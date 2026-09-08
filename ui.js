@@ -70,7 +70,7 @@ export function toggleProfile(event) {
     menu.classList.toggle('hidden');
 }
 
-function updateProfileDropdown() {
+export function updateProfileDropdown() {
     const loggedInContainer = document.getElementById('profile-logged-in');
     const loggedOutContainer = document.getElementById('profile-logged-out');
 
@@ -145,53 +145,6 @@ export function handleSearch(event) {
         const globalResults = document.getElementById('global-search-results');
         if (globalResults) globalResults.classList.add('hidden');
     }
-}
-
-// --- EXTERNAL PLAYERS ---
-export function openExternalPlayer(player) {
-    const videoUrl = appState.currentStreamUrl;
-
-    if (!videoUrl) {
-        showToast("No video stream selected yet.", "error");
-        return;
-    }
-
-    if (videoUrl.startsWith('blob:')) {
-        showToast("Local device files cannot be cast to external players. You try to open directly in the external player.", "error");
-        document.getElementById('external-player-modal').classList.add('hidden');
-        return;
-    }
-
-    const encodedUrl = encodeURIComponent(videoUrl);
-    let deepLink = '';
-
-    switch (player) {
-        case 'vlc':
-            deepLink = videoUrl.replace(/^https?:\/\//i, 'vlc://');
-            break;
-
-        case 'infuse':
-            deepLink = `infuse://x-callback-url/play?url=${encodedUrl}`;
-            break;
-
-        case 'outplayer':
-            deepLink = `outplayer://${videoUrl}`;
-            break;
-
-        case 'mxplayer':
-            deepLink = `intent:${videoUrl}#Intent;package=com.mxtech.videoplayer.ad;S.title=${encodeURIComponent("TorBox Stream")};end`;
-            break;
-
-        case 'iina':
-            deepLink = `iina://weblink?url=${url}`;
-            break;
-    }
-
-    // Hide the modal
-    document.getElementById('external-player-modal').classList.add('hidden');
-
-    // Trigger the OS app
-    window.location.href = deepLink;
 }
 
 export function toggleSidebar()

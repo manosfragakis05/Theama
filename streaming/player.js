@@ -1,8 +1,8 @@
 import { MKVPlayer } from '../engine/mkv_lib.js';
-import { smartFetch, appState, showToast } from '../services/config.js';
+import { smartFetch, showToast } from '../services/config.js';
+import { openExternalPlayer } from './external-players.js';
 
 export let art = null;
-export let currentStreamUrl = "";
 let abortPlayback = false;
 
 // --- THE ULTIMATE KILL SWITCH ---
@@ -91,13 +91,9 @@ export async function requestLink(tid, fid, torrentName, fileName) {
 }
 
 // --- PLAYER INITIALIZATION ---
-export function startPlayer(url, name) {
+export function startPlayer(url, name, localFileObject = null) {
     stopPlayback();
     abortPlayback = false;
-
-    // Attach the URL to the global window object for the External Player modal
-    appState.currentStreamUrl = url;
-    currentStreamUrl = url;
 
     const wrapper = document.getElementById('player-wrapper');
     if (wrapper) wrapper.classList.remove('hidden');
@@ -131,33 +127,11 @@ export function startPlayer(url, name) {
         controls: [
             {
                 position: 'right',
-                html: '<svg style="width:22px;height:22px;margin-top:2px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>',
-                tooltip: 'Download',
-                click: function () {
-                    art.notice.show = "Opening Downloader...";
-
-                    // The "Ugly" 1-Click Escape Hatch
-                    const a = document.createElement('a');
-                    a.href = url;
-
-                    // CRITICAL: We FORCE a new tab. In an iOS PWA, this forces the "mini-browser" overlay to open.
-                    a.target = '_blank';
-
-                    // We request a download. The TorBox API headers will do the rest of the heavy lifting.
-                    a.download = name || 'movie.mkv';
-
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                },
-            },
-            {
-                position: 'right',
                 html: '<svg style="width:22px;height:22px;margin-top:2px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>',
                 tooltip: 'Open in External Player',
                 click: function () {
                     if (art) art.pause();
-                    document.getElementById('external-player-modal').classList.remove('hidden');
+                    openExternalPlayer(url, name, localFileObject);
                 },
             }
         ],

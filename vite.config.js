@@ -9,10 +9,6 @@ export default defineConfig({
             workbox: {
                 globPatterns: ['**/*.{js,css,html,ico,png,svg}']
             },
-            devOptions: {
-                enabled: false,
-                type: 'module'
-            },
             manifest: {
                 "name": "Theama",
                 "short_name": "Theama",

@@ -11,7 +11,7 @@ import { authenticateTorboxUser, checkAuth, logoutTorBox, closeStreamPicker } fr
 import { appState } from './services/config.js';
 import { initializeSupabase, changeAuthState, toggleAuthMode, toggleUpdateMode, logOutUser, sendPasswordResetEmail } from './services/db.js';
 
-import { goHome, toggleProfile, switchTab, handleSearch, openExternalPlayer, toggleSidebar } from './ui.js';
+import { goHome, toggleProfile, switchTab, handleSearch, toggleSidebar } from './ui.js';
 import { deleteTorrent } from './pages/library.js';
 
 import { closePicker } from './streaming/picker.js';
@@ -37,11 +37,9 @@ import {
 } from './profile.js';
 
 import {
-    downloadToOPFS,
     triggerLocalFilePicker,
     processLocalFile,
     deleteLocalGhost,
-    scanLocalOPFSDirectory,
     renderLocalLibrary
 } from './services/offline.js';
 
@@ -77,17 +75,6 @@ function setupStaticEventListeners() {
         link.addEventListener('click', (e) => {
             const target = e.currentTarget.dataset.target;
             if (target) switchTab(target);
-        });
-    });
-
-    const extPlayers = document.querySelectorAll('.external-player-btn');
-    extPlayers.forEach(player => {
-        player.addEventListener('click', (e) => {
-            const target = e.currentTarget.dataset.player;
-
-            if (target) {
-                openExternalPlayer(target);
-            }
         });
     });
 
@@ -216,7 +203,6 @@ document.addEventListener('DOMContentLoaded', () => {
             await Promise.all([
                 handleProfileRouting(),
                 authenticateTorboxUser(),
-                scanLocalOPFSDirectory()
             ]);
 
             const friends = await fetchFriendsList();
