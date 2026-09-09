@@ -2,6 +2,7 @@ import { TMDB_KEY } from "../services/config";
 import {
     initGlobalDrag,
     renderRow,
+    renderCardsToRow,
     renderSelectedCatalog,
     populateTypeDropdown,
     populateCatalogDropdown,
@@ -107,7 +108,9 @@ export async function fetchTMDBEndpoint(endpoint, page = 1) {
     const response = await fetch(url.toString());
     if (!response.ok) throw new Error(`TMDB status: ${response.status}`);
 
-    return await response.json();
+    const data = await response.json();
+
+    return data;
 }
 
 // Global search
@@ -165,6 +168,7 @@ export function initCustomCatalogsState() {
     // Iterate every addon
     for (const addon of addons) {
         const baseUrl = addon.url.replace(/\/manifest\.json$/, '');
+        const addonKey = baseUrl.replace(/[^a-zA-Z0-9]/g, '-');
 
         // Iterate every catalog per addon
         for (const catalog of addon.catalogs) {
@@ -174,39 +178,51 @@ export function initCustomCatalogsState() {
             }
 
             // HTML needs a unique id per catalog
-            const catalogId = `${addon.id}-${catalog.type}-${catalog.id}`.replace(/[^a-zA-Z0-9-]/g, '-');
+            let catalogId = `${addonKey}-${catalog.type}-${catalog.id}`.replace(/[^a-zA-Z0-9-]/g, '-');
 
+            if (addonState[catalog.type][catalogId]) {
+                let i = 2;
+                while (addonState[catalog.type][`${catalogId}-${i}`]) i++;
+                catalogId = `${catalogId}-${i}`;
+            }
+
+            // Options, skip, custom attributes like showInHome
             const extra = catalog.extra || [];
-
-            // Check if it supports pages
-            const supportsPagination = extra.some(param => param.name === 'skip');
 
             // Check if it accepts parameters
             const supportsOption = extra.some(param => Array.isArray(param.options) && param.options.length > 0);
 
+            // Check if it supports pages
+            const supportsPagination = extra.some(param => param.name === 'skip');
+
             // Push the formatted catalog state in its type bucket
             addonState[catalog.type][catalogId] = {
+                addonName: addon.name,
                 containerId: catalogId,
+
+                // Basic attributes
                 title: catalog.name || catalog.id,
                 baseUrl: baseUrl,
                 urlId: catalog.id,
                 type: catalog.type,
-                extra: catalog.extra || [],  // Contains options
+
+
+                extra: extra,  // Contains options
                 skip: 0,
                 loading: false,
                 hasOptions: supportsOption,
-                hasMore: supportsPagination,
+                paginated: supportsPagination,  // static capability
+                hasMore: true,
 
-                addonName: addon.name,
-                idPrefixes: addon.idPrefixes || []
             };
+            console.log(catalog);
         }
     }
 }
 
-// THE NEW UNIVERSAL DATA FETCHER
-export async function fetchNextBatch(catalogId) {
-    const catalogObject = getActiveState(catalogId);
+// UNIVERSAL DATA FETCHER - THE CONTAINER CALLS FOR THE DATA
+export async function fetchNextBatch(containerId) {
+    const catalogObject = getActiveState(containerId);
 
     // Safety checks: Invalid ID, already loading, or permanently out of data
     if (!catalogObject || catalogObject.loading || catalogObject.hasMore === false) return [];
@@ -219,7 +235,7 @@ export async function fetchNextBatch(catalogId) {
     if (catalogObject.endpoint) {
         let fetchUrl = catalogObject.endpoint;
 
-        if (catalogId === 'global-search-grid' && catalogObject.query) {
+        if (containerId === 'global-search-grid' && catalogObject.query) {
             fetchUrl = `search/multi?query=${encodeURIComponent(catalogObject.query)}`;
         }
 
@@ -228,7 +244,7 @@ export async function fetchNextBatch(catalogId) {
         newItems = data.results || [];
 
         // Increment page for the next horizontal scroll, or disable pagination
-        if (newItems.length > 0) {
+        if (newItems.length > 0 && catalogObject.page < data.total_pages) {
             catalogObject.page = (catalogObject.page || 1) + 1;
         } else {
             catalogObject.hasMore = false;
@@ -237,10 +253,15 @@ export async function fetchNextBatch(catalogId) {
     // Route 2: Stremio Add-on Logic
     else {
         const metas = await fetchAddonCatalog(catalogObject);
-        newItems = metas || [];
+        if (metas === null) {
+            catalogObject.loading = false;
+            return [];
+        }
+
+        newItems = metas;
 
         // Increment skip by the exact amount of items returned
-        if (newItems.length > 0) {
+        if (newItems.length > 0 && catalogObject.paginated) {
             catalogObject.skip = (catalogObject.skip || 0) + newItems.length;
         } else {
             catalogObject.hasMore = false;
@@ -248,26 +269,60 @@ export async function fetchNextBatch(catalogId) {
     }
 
     if (newItems.length > 0) {
-        // Map over raw API data to keep only what the UI needs
-        const prunedItems = newItems.map(item => ({
-            id: item.id,
-            title: item.name || item.title || "Untitled",
-            type: item.type || item.media_type || "movie",
-            poster: item.poster || (item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : null),
-            backdrop: item.background || item.backdrop_path || ""
-        }));
+        const existingIds = new Set((catalogObject.items || []).map(i => i.id));
 
-        // Cache the lightweight array in the object[cite: 2]
-        catalogObject.items = catalogObject.items || [];
-        catalogObject.items.push(...prunedItems);
+        const prunedItems = newItems
+            .map(item => ({
+                full: item,
+                id: item.id,
+                title: item.name || item.title || "Untitled",
+                year: item.releaseInfo || item.year || parseInt(item.release_date) || parseInt(item.first_air_date) || "N/A",
+                type: item.type || item.media_type || catalogObject.type || "movie",
+                poster: resolveImageUrl(item.poster || item.poster_path, 'w500'),
+                backdrop: resolveImageUrl(item.backdrop_path || item.backdrop || item.background_path || item.background, 'original')
+            }))
+            .filter(item => item.id != null && !existingIds.has(item.id));
 
-        // Pass the pruned data to the renderer[cite: 2]
-        renderRow(prunedItems, catalogObject);
+        if (prunedItems.length > 0) {
+            catalogObject.items = catalogObject.items || [];
+            catalogObject.items.push(...prunedItems);
+            catalogObject.duplicateStreak = 0; // reset — the source is advancing fine
+            renderRow(prunedItems, catalogObject);
+        } else {
+            catalogObject.duplicateStreak = (catalogObject.duplicateStreak || 0) + 1;
+
+            if (catalogObject.duplicateStreak >= 2) {
+                // Two batches in a row with zero new items — the source genuinely
+                // isn't advancing (e.g. an addon ignoring `skip`). Stop for real.
+                catalogObject.hasMore = false;
+            } else {
+                // Probably transient (re-ranking, caching, off-by-one skip).
+                // Re-arm the sentinel so the next scroll can retry, without
+                // pretending we rendered anything.
+                renderCardsToRow([], containerId, catalogObject.hasMore);
+            }
+        }
+    } else if (!catalogObject.items || catalogObject.items.length === 0) {
+        showRowMessage(containerId, "Failed to fetch items");
     }
 
-    console.log(catalogObject.title, catalogObject.addonName, newItems)
+    //console.log(catalogObject.title, catalogObject.addonName, newItems)
     catalogObject.loading = false;
     return newItems;
+}
+
+// Helper for images
+function resolveImageUrl(path, size = 'w500') {
+    if (!path) return null;
+
+    // If the add-on already provided a full URL, return it immediately
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+        return path;
+    }
+
+    // Ensure TMDB relative paths have a leading slash before appending
+    const safePath = path.startsWith('/') ? path : `/${path}`;
+    return `https://image.tmdb.org/t/p/${size}${safePath}`;
 }
 
 // Fetch single catalog
@@ -279,7 +334,7 @@ export async function fetchAddonCatalog(catalogObject) {
     let extraParams = [];
 
     // 1. Extract the default option dynamically
-    if (catalogObject.hasOptions && Array.isArray(extra)) {
+    if (catalogObject.hasOptions) {
         // Find the specific extra property that contains an options array
         const optionDef = extra.find(param => Array.isArray(param.options) && param.options.length > 0);
 
@@ -292,7 +347,7 @@ export async function fetchAddonCatalog(catalogObject) {
         }
     }
 
-    // 2. Add pagination if skip > 0
+    // Add pagination if skip > 0
     if (skip > 0) {
         extraParams.push(`skip=${skip}`);
     }
@@ -307,12 +362,10 @@ export async function fetchAddonCatalog(catalogObject) {
         if (!response.ok) throw new Error(`Status: ${response.status}`);
         const data = await response.json();
 
-        console.log(`${catalogObject.title}, ${catalogObject.addonName}  Data:`, data);
-
         return data.metas || [];
     } catch (error) {
         console.error(`Failed fetching ${urlId}:`, error);
-        return [];
+        return null;
     }
 }
 //#endregion

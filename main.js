@@ -36,12 +36,7 @@ import {
     openWatchlists
 } from './profile.js';
 
-import {
-    triggerLocalFilePicker,
-    processLocalFile,
-    deleteLocalGhost,
-    renderLocalLibrary
-} from './services/offline.js';
+import { triggerLocalFilePicker, processLocalFile } from './services/offline.js';
 
 // NEW LOGIC: Setup Static Event Listeners
 function setupStaticEventListeners() {
@@ -208,7 +203,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const friends = await fetchFriendsList();
             renderFriendsSidebar(friends);
 
-            renderLocalLibrary();
             renderInstalledAddons();
 
             clearTimeout(failsafeTimer);

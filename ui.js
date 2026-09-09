@@ -1,7 +1,7 @@
 /**
  * ==========================================
  * ui.js
- * Handles Navigation, Search, and External Players
+ * Handles Navigation and Search 
  * ==========================================
  */
 

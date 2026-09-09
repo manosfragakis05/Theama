@@ -1,7 +1,7 @@
 /**
  * ==========================================
  * config.js
- * Global Constants, State, and Utilities
+ * Global Constants, State, Utilities
  * ==========================================
  */
 
@@ -11,8 +11,6 @@ if (!import.meta.env.VITE_TMDB_KEY) {
 }
 
 export const TMDB_KEY = import.meta.env.VITE_TMDB_KEY;
-
-export const TRAKT_CLIENT_ID = import.meta.env.VITE_TRAKT_CLIENT_ID;
 
 export const MY_PROXY = import.meta.env.VITE_MY_PROXY;
 

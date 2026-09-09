@@ -127,6 +127,13 @@ export function destroyObserver(containerId) {
         delete rowObservers[containerId];
     }
 }
+
+// Full teardown for a row that's about to be removed from the DOM.
+function teardownRow(containerId) {
+    const rowEl = document.getElementById(containerId);
+    if (rowEl) viewportObserver.unobserve(rowEl); // no-op if not currently observed
+    destroyObserver(containerId);
+}
 //#endregion
 
 //#region Renderers
@@ -137,6 +144,11 @@ export function renderSelectedCatalog() {
     const container = document.getElementById('dynamic-catalogs-container');
 
     if (!catalogSelect || !container || !typeSelect) return;
+
+    // Tear down observers for every row currently on screen before removing
+    container.querySelectorAll('.catalog-row, .search-row').forEach(rowEl => {
+        teardownRow(rowEl.id);
+    });
 
     // Clear the screen (Detached DOM nodes remain safe in our state objects)
     container.replaceChildren();
@@ -175,22 +187,11 @@ export function renderSelectedCatalog() {
 // Cache the template
 let cachedTemplate = null;
 // Create poster card
-export function createCardElement(item) {
+function createCardElement(item) {
     // Cach if not cached
-    if (!cachedTemplate) {
-        cachedTemplate = document.getElementById("poster-card-template");
-    }
+    if (!cachedTemplate) cachedTemplate = document.getElementById("poster-card-template");
 
     if (!cachedTemplate || !item) return null;
-
-    const posterUrl = item.poster || (item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : null);
-    if (!posterUrl || item.type === "person" || item.media_type === "person") return null;
-
-    const title = item.name || item.title || "Untitled";
-    const year = item.releaseInfo || item.year || parseInt(item.release_date) || parseInt(item.first_air_date) || "";
-
-    const type = item.type || item.media_type || "movie";
-    const backdrop = item.backdrop_path || item.backdrop;
 
     // Clone the cached template
     const clone = cachedTemplate.content.cloneNode(true);
@@ -202,21 +203,22 @@ export function createCardElement(item) {
 
     // Populate dataset
     card.dataset.id = item.id;
-    card.dataset.type = type;
-    card.dataset.title = title;
-    card.dataset.poster = posterUrl;
-    card.dataset.backdrop = backdrop;
+    card.dataset.type = item.type;
+    card.dataset.year = item.year;
+    card.dataset.title = item.title;
+    card.dataset.poster = item.poster;
+    card.dataset.backdrop = item.backdrop;
 
     // Populate text
-    titleEl.textContent = title;
-    if (year && year !== "N/A") {
-        yearEl.textContent = year;
+    titleEl.textContent = item.title;
+    if (item.year && item.year !== "N/A") {
+        yearEl.textContent = item.year;
         yearEl.classList.remove("hidden");
     }
 
-    img.alt = title;
+    img.alt = item.title;
     img.loading = "lazy"
-    img.src = posterUrl;
+    img.src = item.poster;
 
     return card;
 }
@@ -233,6 +235,7 @@ export function renderRow(newItems, catalogObject) {
 
     // Handle empty states
     if (!newItems || newItems.length === 0) {
+        console.error("Received empty catalog");
         showRowMessage(containerId, "No items found");
         return;
     }
@@ -300,6 +303,8 @@ export function initGlobalClickListener() {
         // Retrieve the state to get the add-on specific prefixes
         const catalogObject = getActiveState(rowEl.id);
         const prefixes = catalogObject ? catalogObject.idPrefixes : [];
+
+        console.log(card.dataset);
 
         // Route to details
         openMasterDetail(
