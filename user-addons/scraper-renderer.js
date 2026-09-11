@@ -1,4 +1,4 @@
-import { sendMagnetToTorbox } from "../services/torbox.js";
+import { addStreamtoTorbox } from "../services/torbox.js";
 import { parseFormated } from "../utils/parseMedia";
 import { showToast } from '../services/config.js';
 import { getScrapingProviders } from "./scrapers.js";
@@ -560,7 +560,7 @@ function createStreamCard(stream, isRecommended) {
 
     // Reusable submit function to prevent repeating logic
     const handleSubmit = () => {
-        sendMagnetToTorbox(finalLink);
+        addStreamtoTorbox(finalLink);
     };
 
     // Show Raw Data

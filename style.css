@@ -2,7 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body {
+html,
+body {
     width: 100%;
     height: 100svh;
     margin: 0;
@@ -11,8 +12,9 @@ html, body {
     overscroll-behavior: none;
 }
 
-html.is-pwa, html.is-pwa body {
-    height: 100lvh; 
+html.is-pwa,
+html.is-pwa body {
+    height: 100lvh;
 }
 
 button,
@@ -28,10 +30,77 @@ textarea {
 
 button:focus-visible,
 input:focus-visible,
-select:focus-visible,
 textarea:focus-visible {
     outline: 2px solid rgba(96, 165, 250, 0.9);
     outline-offset: 2px;
+}
+
+/* 1. Force override Tailwind's base reset */
+select, ::picker(select) {
+    appearance: base-select !important;
+}
+
+select::picker-icon {
+    display: none;
+}
+
+/* 2. Style the popup menu box */
+::picker(select) {
+    background-color: #0f172a; /* slate-900 */
+    border: 1px solid #334155; /* slate-700 */
+    border-radius: 1rem;       /* Rounded corners for the container */
+    padding: 0.5rem;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+}
+
+/* 3. Style the individual options entirely in CSS */
+option {
+    background-color: transparent;
+    color: white;
+    border-radius: 0.5rem;     /* Rounded corners for individual items */
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.25rem;
+    cursor: pointer;
+}
+
+/* Hover effects */
+option:hover {
+    background-color: #2563eb; /* blue-600 */
+}
+
+.poster-card{
+    content-visibility: auto;
+}
+
+.poster-img::after {
+    /* Pulls the text directly from your img.alt attribute */
+    content: attr(alt); 
+    
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    
+    /* Completely covers the native broken image icon */
+    background-color: #1e293b; 
+    
+    /* The color of your title text */
+    color: #e2e8f0; 
+    
+    /* Flexbox centers the text vertically and horizontally */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    
+    padding: 0.5rem;
+    box-sizing: border-box;
+    font-size: 0.875rem;
+    font-weight: 500;
+    
+    /* Ensures it sits strictly above any default browser error styling */
+    z-index: 2; 
 }
 
 .draggable-row {

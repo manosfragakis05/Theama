@@ -220,17 +220,6 @@
                                 <p class="following-name text-xs text-slate-500 font-medium">No one here yet.</p>
                             </div>
                         </div>
-
-                        <!-- Updated Following Template inside the sidebar -->
-                        <template id="following-user-template">
-                            <button
-                                class="following-btn w-full flex items-center gap-4 px-2 py-2.5 rounded-xl transition-all text-slate-400 hover:bg-slate-800 hover:text-white group outline-none">
-                                <div
-                                    class="following-avatar w-8 h-8 flex-shrink-0 rounded-full bg-blue-500/10 text-blue-500 flex items-center justify-center font-bold text-sm border border-blue-500/20">
-                                </div>
-                                <span class="following-name font-medium text-sm truncate"></span>
-                            </button>
-                        </template>
                     </div>
                 </div>
 
@@ -300,44 +289,57 @@
                         </form>
                     </div>
 
-                    <!-- Dropdown filters -->
-                    <div id="discover-filters"
-                        class="flex flex-col sm:flex-row gap-4 bg-slate-800/40 backdrop-blur-md border border-slate-700/50 p-4 rounded-2xl shadow-lg mb-2">
+                    <!-- Discover Header & Filter Row -->
+                    <div class="flex flex-col md:flex-row md:items-center gap-4 md:gap-6">
+                        <h1
+                            class="hidden md:block text-3xl md:text-4xl font-extrabold text-white tracking-tight shrink-0">
+                            Discover
+                        </h1>
 
-                        <!-- Content type dropdown -->
-                        <div class="relative flex-1">
-                            <label for="discover-type-select"
-                                class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 pl-1">
-                                Content Type
-                            </label>
-                            <div class="relative group">
+                        <!-- Independent Dropdowns Container -->
+                        <div id="discover-filters" class="flex flex-col sm:flex-row gap-3.5 w-full sm:w-auto">
+
+                            <!-- Content type dropdown -->
+                            <div
+                                class="relative w-full sm:w-auto min-w-[12rem] bg-slate-800/50 backdrop-blur-xl rounded-2xl border border-slate-700/60 hover:border-slate-500 transition-colors shadow-lg group">
+
+                                <label for="discover-type-select"
+                                    class="absolute left-4 top-2 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider pointer-events-none z-20">
+                                    Content
+                                </label>
+
+                                <!-- Removed [field-sizing:content] and sm:w-auto, forced w-full so the click area fills the parent -->
                                 <select id="discover-type-select"
-                                    class="appearance-none w-full bg-slate-900 border border-slate-700 py-3 pl-4 pr-10 rounded-xl text-sm font-bold text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all cursor-pointer shadow-inner hover:border-slate-600">
+                                    class="appearance-none w-full whitespace-nowrap bg-transparent pt-6 pb-2.5 pl-4 pr-11 text-base font-bold text-white outline-none cursor-pointer relative z-10">
                                 </select>
-                                <svg class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none group-hover:text-white transition-colors"
+
+                                <!-- pointer-events-none allows the click to pass directly through to the select beneath it -->
+                                <svg class="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none group-hover:text-white transition-colors shrink-0 z-20"
                                     fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <use href="#icon-arrow"></use>
                                 </svg>
-                            </div>
-                        </div>
 
-                        <!-- Catalog source dropdown -->
-                        <div class="relative flex-1">
-                            <label for="discover-catalog-select"
-                                class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 pl-1">
-                                Catalog Source
-                            </label>
-                            <div class="relative group">
-                                <select id="discover-catalog-select"
-                                    class="appearance-none w-full bg-slate-900 border border-slate-700 py-3 pl-4 pr-10 rounded-xl text-sm font-bold text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all cursor-pointer shadow-inner hover:border-slate-600">
-                                </select>
-                                <svg class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none group-hover:text-white transition-colors"
-                                    fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <use href="#icon-arrow"></use>
-                                </svg>
                             </div>
-                        </div>
 
+                            <!-- Catalog source dropdown -->
+                            <div
+                                class="relative w-full sm:w-auto min-w-[12rem] bg-slate-800/50 backdrop-blur-xl rounded-2xl border border-slate-700/60 hover:border-slate-500 transition-colors shadow-lg group">
+                                <label for="discover-catalog-select"
+                                    class="absolute left-4 top-2 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider pointer-events-none">
+                                    Source
+                                </label>
+                                <div class="relative">
+                                    <select id="discover-catalog-select"
+                                        class="appearance-none w-full whitespace-nowrap bg-transparent pt-6 pb-2.5 pl-4 pr-11 text-base font-bold text-white outline-none cursor-pointer relative z-10">
+                                    </select>
+                                    <svg class="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none group-hover:text-white transition-colors shrink-0 z-20"
+                                        fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <use href="#icon-arrow"></use>
+                                    </svg>
+                                </div>
+                            </div>
+
+                        </div>
                     </div>
 
                     <div id="global-search-results"
@@ -349,31 +351,15 @@
                             Search Results
                         </h2>
                         <div id="global-search-grid"
-                            class="search-row draggable-row flex overflow-x-auto gap-4 pb-4 scrollbar-hide">
+                            class="search-row draggable-row flex overflow-x-auto gap-4 p-4 scrollbar-hide">
                         </div>
                     </div>
 
-                    <div id="dynamic-catalogs-container" class="flex flex-col gap-10">
+                    <div id="dynamic-catalogs-container" class="flex flex-col gap-2">
                         <!-- Javascript will inject cloned rows here -->
                     </div>
 
                 </div>
-
-                <!-- Catalog rows -->
-                <template id="catalog-row-template">
-                    <div class="catalog-section">
-                        <h2 class="text-xl font-bold text-white mb-4 pl-1 flex items-center">
-                            <span class="catalog-title">Catalog Name</span>
-                            <span
-                                class="catalog-addon-badge ml-3 text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-400 px-2.5 py-1 rounded-md border border-slate-700/50 shadow-sm hidden md:inline-block">
-                                Addon Name
-                            </span>
-                        </h2>
-                        <div
-                            class="catalog-row draggable-row flex overflow-x-auto gap-4 pt-3 pl-3 -mt-1 scrollbar-hide items-start min-h-[220px]">
-                        </div>
-                    </div>
-                </template>
 
                 <div id="profile-page" class="page-view hidden flex flex-col gap-10 max-w-6xl mx-auto w-full pt-4">
 
@@ -778,7 +764,31 @@
                             class="text-[10px] font-bold tracking-widest uppercase text-slate-500 mb-0.5">Theama</span>
                         <span id="app-version-text" class="text-[10px] font-mono text-slate-600">v0.5.8</span>
                     </div>
+                </div>
 
+                <!-- Catalog Full Grid Page -->
+                <div id="catalog-grid-view" class="hidden page-view min-h-[50vh]">
+
+                    <div class="flex items-center gap-4 mb-6">
+                        <button id="close-grid-view-btn"
+                            class="text-slate-400 hover:text-white bg-slate-800/50 hover:bg-slate-700 p-2.5 rounded-full transition-colors border border-slate-700/50 outline-none group">
+                            <svg class="w-5 h-5 group-hover:-translate-x-1 transition-transform" fill="none"
+                                stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                            </svg>
+                        </button>
+                        <div>
+                            <h2 id="catalog-grid-title" class="text-xl md:text-2xl font-bold text-white">Catalog Name
+                            </h2>
+                            <p id="catalog-grid-subtitle" class="text-sm text-slate-400 mt-1 hidden">Addon Name</p>
+                        </div>
+                    </div>
+
+                    <div id="catalog-grid-content"
+                        class="grid grid-cols-3 md:grid-cols-6 gap-4 transform-gpu will-change-transform pb-24 md:pb-8">
+                        <!-- Items injected here -->
+                    </div>
                 </div>
 
             </main>
@@ -884,7 +894,7 @@
     </div>
 
     <div id="full-detail-view"
-        class="fixed inset-0 z-50 h-[100dvh] scrollbar-hide overflow-y-auto overscroll-contain bg-slate-900 transition-transform duration-300 ease-in-out translate-y-full">
+        class="fixed inset-0 z-50 h-[100dvh] pb-8 scrollbar-hide overflow-y-auto overscroll-none bg-slate-900 transition-transform duration-300 ease-in-out translate-y-full">
         <button id="close-full-detail-view-btn"
             class="fixed top-[max(1.5rem,env(safe-area-inset-top))] right-6 z-[70] bg-slate-900/40 backdrop-blur-xl p-3 rounded-full text-slate-200 hover:text-white hover:bg-blue-600 border border-white/10 shadow-lg group">
             <svg class="w-6 h-6" fill="none" stroke="currentColor">
@@ -1261,6 +1271,25 @@
         </div>
     </div>
 
+    <!-- Catalog rows -->
+    <template id="catalog-row-template">
+        <div class="catalog-section">
+            <h2 class="text-xl font-bold text-white mb-4 pl-1 flex items-center">
+                <span class="catalog-title">Catalog Name</span>
+                <button class="catalog-show-options ml-3 hover:underline flex items-center gap-1">
+                    <span class="btn-text"></span>
+                    <svg class="w-5 h-5 -rotate-90 translate-y-[2px]" fill="none" stroke="currentColor"
+                        viewBox="0 0 24 24">
+                        <use href="#icon-arrow"></use>
+                    </svg>
+                </button>
+            </h2>
+            <div
+                class="catalog-row draggable-row flex overflow-x-auto gap-4 pt-3 pl-3 -mt-1 scrollbar-hide items-start min-h-[220px]">
+            </div>
+        </div>
+    </template>
+
     <template id="poster-card-template">
         <div
             class="poster-card relative flex-none w-32 md:w-48 flex flex-col shrink-0 cursor-pointer group select-none transition-all duration-150 ease-out hover:scale-105 hover:-translate-y-1">
@@ -1289,6 +1318,17 @@
             </div>
 
         </div>
+    </template>
+
+    <!-- Updated Following Template inside the sidebar -->
+    <template id="following-user-template">
+        <button
+            class="following-btn w-full flex items-center gap-4 px-2 py-2.5 rounded-xl transition-all text-slate-400 hover:bg-slate-800 hover:text-white group outline-none">
+            <div
+                class="following-avatar w-8 h-8 flex-shrink-0 rounded-full bg-blue-500/10 text-blue-500 flex items-center justify-center font-bold text-sm border border-blue-500/20">
+            </div>
+            <span class="following-name font-medium text-sm truncate"></span>
+        </button>
     </template>
 
     <div id="external-player-modal"

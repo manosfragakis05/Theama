@@ -1,14 +1,23 @@
 import { openMasterDetail } from "../api";
 import { addonState, rowState, fetchNextBatch, getActiveState } from "./catalogs";
 
-//#region Row Controllers
 export let isDragging = false;
 let isDown = false;
 let activeSlider = null;
 let startX;
 let scrollLeft;
 let isTicking = false;
+let activeGridCatalogId = null;
 
+const ROW_DOM_CAP = 400;
+const ROW_PRUNE_CHUNK = 20;
+const GRID_DOM_CAP = 500;
+const GRID_PRUNE_CHUNK = 30; // a multiple of your column count reduces reflow jitter, not required
+
+const FETCH_COOLDOWN_MS = 350;
+const lastFetchTime = {};
+
+//#region Row Controllers
 
 let isDragInitialized = false;
 export function initGlobalDrag() {
@@ -35,7 +44,7 @@ export function initGlobalDrag() {
         e.preventDefault();
 
         const x = e.pageX - activeSlider.offsetLeft;
-        const walk = (x - startX) * 3;
+        const walk = (x - startX) * 2;
 
         if (Math.abs(walk) > 5) {
             isDragging = true;
@@ -56,15 +65,18 @@ export function initGlobalDrag() {
     const stopDrag = () => {
         if (!isDown || !activeSlider) return;
 
+        const finishedSlider = activeSlider;
         isDown = false;
 
-        activeSlider.classList.remove("cursor-grabbing", "pointer-events-none");
+        finishedSlider.classList.remove("cursor-grabbing", "pointer-events-none");
         document.body.classList.remove("select-none", "cursor-grabbing");
 
         setTimeout(() => {
             isDragging = false;
             activeSlider = null;
         }, 50);
+
+        pruneRow(finishedSlider, finishedSlider.id); // catch up on anything deferred during the drag
     };
 
     // Bind both events to the single helper function
@@ -74,6 +86,9 @@ export function initGlobalDrag() {
 
 // Row observers
 const rowObservers = {};
+const rowSentinels = {}; // containerId -> current sentinel element
+const rowMessages = {};  // containerId -> current message element, if one is shown
+
 function getObserverFor(containerId) {
     // Return cached observer if it already exists
     if (rowObservers[containerId]) return rowObservers[containerId];
@@ -89,7 +104,7 @@ function getObserverFor(containerId) {
                 observer.unobserve(entry.target);
 
                 // Fetch and render the next batch
-                fetchNextBatch(containerId);
+                triggerFetch(containerId);
             }
         });
     }, {
@@ -102,21 +117,17 @@ function getObserverFor(containerId) {
     return observer;
 }
 
-// Add this near your other observer logic
 const viewportObserver = new IntersectionObserver((entries, observer) => {
     entries.forEach(entry => {
         if (entry.isIntersecting) {
-            const containerId = entry.target.id;
-            // Stop observing the row itself once the initial fetch triggers
+            const containerId = entry.target.dataset.catalogId || entry.target.id;
             observer.unobserve(entry.target);
-
-            // Fetch the first batch of data
-            fetchNextBatch(containerId);
+            triggerFetch(containerId);
         }
     });
 }, {
-    root: null, // Observes the browser viewport vertically
-    rootMargin: "0px 0px 800px 0px", // Trigger 800px before the row scrolls into view
+    root: null,
+    rootMargin: "0px 0px 800px 0px",
     threshold: 0
 });
 
@@ -127,16 +138,135 @@ export function destroyObserver(containerId) {
         delete rowObservers[containerId];
     }
 }
-
-// Full teardown for a row that's about to be removed from the DOM.
-function teardownRow(containerId) {
-    const rowEl = document.getElementById(containerId);
-    if (rowEl) viewportObserver.unobserve(rowEl); // no-op if not currently observed
-    destroyObserver(containerId);
-}
 //#endregion
 
 //#region Renderers
+const fetchTimeouts = {};
+
+function triggerFetch(containerId) {
+    const now = Date.now();
+    const last = lastFetchTime[containerId] || 0;
+    const elapsed = now - last;
+
+    if (elapsed >= FETCH_COOLDOWN_MS) {
+        lastFetchTime[containerId] = now;
+        if (fetchTimeouts[containerId]) {
+            clearTimeout(fetchTimeouts[containerId]);
+            delete fetchTimeouts[containerId];
+        }
+        fetchNextBatch(containerId);
+    } else if (!fetchTimeouts[containerId]) {
+        fetchTimeouts[containerId] = setTimeout(() => {
+            delete fetchTimeouts[containerId];
+            triggerFetch(containerId);
+        }, FETCH_COOLDOWN_MS - elapsed);
+    }
+}
+
+const ROW_CARD_CLASSES = ["w-32", "md:w-48", "flex-none"];
+
+function setCardLayout(card, isGrid) {
+    if (isGrid) {
+        card.classList.remove(...ROW_CARD_CLASSES);
+    } else {
+        card.classList.add(...ROW_CARD_CLASSES);
+    }
+}
+
+function getOrCreateCard(item, catalogObject) {
+    if (!catalogObject.cardEls) catalogObject.cardEls = new Map();
+
+    const key = String(item.id);
+    let card = catalogObject.cardEls.get(key);
+
+    // Return cached card immediately, no need to observe
+    if (card) return card;
+
+    card = createCardElement(item);
+    if (card) {
+        catalogObject.cardEls.set(key, card);
+    }
+    return card;
+}
+
+function itemsForRehydration(catalogObject, cap) {
+    const items = catalogObject.items || [];
+    return items.length > cap ? items.slice(-cap) : items;
+}
+
+function pruneRow(row, containerId) {
+    if (isDown && activeSlider === row) return;
+    const cards = row.querySelectorAll('.poster-card');
+    if (cards.length <= ROW_DOM_CAP) return;
+
+    // Only cards fully scrolled past the row's own left edge (plus a
+    // buffer) are safe to remove. Prefetching can load several batches
+    // ahead of where the user has actually scrolled, so "oldest in the
+    // DOM" isn't the same thing as "safely out of view."
+    const rowRect = row.getBoundingClientRect();
+    const safeEdge = rowRect.left - rowRect.width;
+
+    const eligible = [];
+    for (const card of cards) {
+        if (card.getBoundingClientRect().right < safeEdge) {
+            eligible.push(card);
+        } else {
+            break; // cards are in scroll order — once one isn't eligible, nothing after it is either
+        }
+    }
+    if (eligible.length === 0) return; // nothing safely out of view yet — try again next batch
+
+    const removeCount = Math.min(eligible.length, Math.max(cards.length - ROW_DOM_CAP, ROW_PRUNE_CHUNK));
+    const toRemove = eligible.slice(0, removeCount);
+    const anchor = toRemove[toRemove.length - 1].nextElementSibling;
+    const beforeLeft = anchor ? anchor.getBoundingClientRect().left : null;
+
+    const catalogObject = getActiveState(containerId);
+    toRemove.forEach(card => {
+        catalogObject?.cardEls?.delete(card.dataset.id);
+        card.remove();
+    });
+
+    if (anchor && beforeLeft !== null) {
+        row.scrollLeft += anchor.getBoundingClientRect().left - beforeLeft;
+    }
+}
+
+function pruneGrid(gridContent, containerId) {
+    const cards = gridContent.querySelectorAll('.poster-card');
+    if (cards.length <= GRID_DOM_CAP) return;
+
+    const scrollContainer = document.getElementById("app-main");
+    if (!scrollContainer) return;
+
+    const containerRect = scrollContainer.getBoundingClientRect();
+    const safeEdge = containerRect.top - containerRect.height;
+
+    const eligible = [];
+    for (const card of cards) {
+        if (card.getBoundingClientRect().bottom < safeEdge) {
+            eligible.push(card);
+        } else {
+            break;
+        }
+    }
+    if (eligible.length === 0) return;
+
+    const removeCount = Math.min(eligible.length, Math.max(cards.length - GRID_DOM_CAP, GRID_PRUNE_CHUNK));
+    const toRemove = eligible.slice(0, removeCount);
+    const anchor = toRemove[toRemove.length - 1].nextElementSibling;
+    const beforeTop = anchor ? anchor.getBoundingClientRect().top : null;
+
+    const catalogObject = getActiveState(containerId);
+    toRemove.forEach(card => {
+        catalogObject?.cardEls?.delete(card.dataset.id);
+        card.remove();
+    });
+
+    if (anchor && beforeTop !== null) {
+        scrollContainer.scrollTop += anchor.getBoundingClientRect().top - beforeTop;
+    }
+}
 
 export function renderSelectedCatalog() {
     const typeSelect = document.getElementById('discover-type-select');
@@ -226,55 +356,109 @@ function createCardElement(item) {
 export function renderRow(newItems, catalogObject) {
     const containerId = catalogObject.containerId;
     const row = document.getElementById(containerId);
+    const paintingGrid = activeGridCatalogId === containerId;
 
-    if (!row) return; // Safety check in case the shell failed to inject
+    if (!row && !paintingGrid) return;
 
-    // Clear out any previous loading/error text
-    const messageEl = row.querySelector('.text-slate-500');
-    if (messageEl) messageEl.remove();
+    if (row && rowMessages[containerId]) {
+        rowMessages[containerId].remove();
+        delete rowMessages[containerId];
+    }
 
-    // Handle empty states
     if (!newItems || newItems.length === 0) {
         console.error("Received empty catalog");
-        showRowMessage(containerId, "No items found");
+        if (row) showRowMessage(containerId, "No items found");
         return;
     }
 
-    // Pass the data, string ID, and pagination boolean to the card builder
-    renderCardsToRow(newItems, containerId, catalogObject.hasMore);
+    if (paintingGrid) {
+        renderCardsToGrid(newItems, catalogObject.hasMore, containerId);
+    } else if (row) {
+        renderCardsToRow(newItems, containerId, catalogObject.hasMore);
+    }
 }
 
 export function renderCardsToRow(items, containerId, hasMore) {
     const row = document.getElementById(containerId);
     if (!row || !Array.isArray(items)) return;
 
-    // 1. Clean up the old observer sentinel to prevent duplicate fetch triggers
-    const oldSentinel = row.querySelector(".scroll-sentinel");
+    const catalogObject = getActiveState(containerId);
+    if (!catalogObject) return;
+
+    const oldSentinel = rowSentinels[containerId];
     if (oldSentinel) {
         const observer = getObserverFor(containerId);
         if (observer) observer.unobserve(oldSentinel);
         oldSentinel.remove();
+        delete rowSentinels[containerId];
     }
 
-    // 2. Build all new cards in memory first to prevent layout thrashing
     const fragment = document.createDocumentFragment();
     items.forEach(item => {
-        const cardNode = createCardElement(item);
-        if (cardNode) fragment.appendChild(cardNode);
+        const card = getOrCreateCard(item, catalogObject);
+        if (card) {
+            setCardLayout(card, false);
+            fragment.appendChild(card); // re-parents it if it was in the grid
+        }
     });
-
-    // 3. Paint the batch to the screen in a single operation
     row.appendChild(fragment);
 
-    // 4. Inject a new sentinel at the end of the row if pagination is supported
+    pruneRow(row, containerId);
+
     if (hasMore) {
         const sentinel = document.createElement("div");
         sentinel.className = "scroll-sentinel w-1 flex-none";
         row.appendChild(sentinel);
 
-        // Attach the observer to watch this specific sentinel for horizontal scrolling
         const observer = getObserverFor(containerId);
         if (observer) observer.observe(sentinel);
+        rowSentinels[containerId] = sentinel;
+    }
+}
+
+function teardownRow(containerId) {
+    const rowEl = document.getElementById(containerId);
+    if (rowEl) viewportObserver.unobserve(rowEl);
+    destroyObserver(containerId);
+    delete rowSentinels[containerId];
+    delete rowMessages[containerId];
+
+    const catalogObject = getActiveState(containerId);
+    if (catalogObject?.loading) catalogObject.abortController?.abort();
+}
+
+let gridTriggerEl = null; // the one card currently armed to fetch the next page
+function renderCardsToGrid(items, hasMore, containerId) {
+    const gridContent = document.getElementById("catalog-grid-content");
+    if (!gridContent || !Array.isArray(items)) return;
+
+    const catalogObject = getActiveState(containerId);
+    if (!catalogObject) return;
+
+    if (gridTriggerEl) {
+        viewportObserver.unobserve(gridTriggerEl);
+        gridTriggerEl.classList.remove("load-trigger");
+        gridTriggerEl = null;
+    }
+
+    const fragment = document.createDocumentFragment();
+    items.forEach(item => {
+        const card = getOrCreateCard(item, catalogObject);
+        if (card) {
+            setCardLayout(card, true);
+            fragment.appendChild(card); // re-parents it if it was in the row
+        }
+    });
+    gridContent.appendChild(fragment);
+
+    pruneGrid(gridContent, containerId);
+
+    const triggerCard = gridContent.lastElementChild;
+    if (hasMore && triggerCard) {
+        triggerCard.classList.add("load-trigger");
+        triggerCard.dataset.catalogId = containerId;
+        viewportObserver.observe(triggerCard);
+        gridTriggerEl = triggerCard;
     }
 }
 
@@ -283,7 +467,7 @@ let isClickListenerAttached = false;
 export function initGlobalClickListener() {
     if (isClickListenerAttached) return;
 
-    const container = document.getElementById("discover-page");
+    const container = document.getElementById("app-main");
     if (!container) return;
 
     container.addEventListener("click", (e) => {
@@ -293,40 +477,49 @@ export function initGlobalClickListener() {
             return;
         }
 
+        // Poster Clicks
         const card = e.target.closest(".poster-card");
-        if (!card) return;
+        if (card) {
+            openMasterDetail(
+                card.dataset.id,
+                card.dataset.title,
+                card.dataset.type,
+                card.dataset.poster,
+                card.dataset.backdrop
+            );
+            return;
+        }
 
-        // Find the parent row to get the correct catalog ID
-        const rowEl = card.closest(".catalog-row, .search-row");
-        if (!rowEl) return;
+        // Grid catalog view
+        const optionsBtn = e.target.closest(".catalog-show-options");
+        if (optionsBtn) {
+            const section = optionsBtn.closest(".catalog-section");
+            if (!section) return;
 
-        // Retrieve the state to get the add-on specific prefixes
-        const catalogObject = getActiveState(rowEl.id);
-        const prefixes = catalogObject ? catalogObject.idPrefixes : [];
+            const rowEl = section.querySelector(".catalog-row");
+            if (!rowEl) return;
 
-        console.log(card.dataset);
+            const catalogObject = getActiveState(rowEl.id);
 
-        // Route to details
-        openMasterDetail(
-            card.dataset.id,
-            card.dataset.title,
-            card.dataset.type,
-            card.dataset.poster,
-            card.dataset.backdrop
-        );
+            if (catalogObject) {
+                console.log("User wants to see more of:", catalogObject.title);
+
+                // Trigger your grid view function
+                catalogGridView(catalogObject);
+            }
+            return;
+        }
     });
 
     isClickListenerAttached = true;
 }
 //#endregion
 
-// Inject the empty rows for the observer
+// Inject the empty rows for the observer (catalogObject is addonState)
 let cachedRowTemplate = null;
 export function injectCatalogShell(catalogObject, targetContainer) {
     const container = targetContainer || document.getElementById("dynamic-catalogs-container");
     if (!container) return;
-
-    // (Remove the old domNode check here)
 
     if (!cachedRowTemplate) {
         cachedRowTemplate = document.getElementById("catalog-row-template");
@@ -338,10 +531,15 @@ export function injectCatalogShell(catalogObject, targetContainer) {
     const titleEl = shellNode.querySelector(".catalog-title");
     if (titleEl) titleEl.textContent = catalogObject.title;
 
-    const badgeEl = shellNode.querySelector(".catalog-addon-badge");
-    if (badgeEl) {
-        badgeEl.textContent = catalogObject.addonName;
-        badgeEl.classList.remove("hidden");
+    const optionsBtn = shellNode.querySelector(".catalog-show-options");
+    if (optionsBtn) {
+        const text = optionsBtn.querySelector(".btn-text");
+
+        if (catalogObject.hasOptions) {
+            text.textContent = "Explore Options";
+        } else {
+            text.textContent = "Browse";
+        }
     }
 
     const rowEl = shellNode.querySelector(".catalog-row");
@@ -350,12 +548,9 @@ export function injectCatalogShell(catalogObject, targetContainer) {
     container.appendChild(shellNode);
 
     setTimeout(() => {
-        // REHYDRATION LOGIC: Check if we already fetched data for this row
         if (catalogObject.items && catalogObject.items.length > 0) {
-            // Instantly restore the exact same cards without network requests
-            renderCardsToRow(catalogObject.items, catalogObject.containerId, catalogObject.hasMore);
+            renderCardsToRow(itemsForRehydration(catalogObject, ROW_DOM_CAP), catalogObject.containerId, catalogObject.hasMore);
         } else if (rowEl) {
-            // Only observe for fetching if the row is truly empty
             viewportObserver.observe(rowEl);
         }
     }, 0);
@@ -399,8 +594,74 @@ export function populateCatalogDropdown(catalogsList) {
     });
 }
 
+export function rearmObservers(containerId, hasMore) {
+    renderCardsToRow([], containerId, hasMore);
+
+    if (activeGridCatalogId === containerId) {
+        renderCardsToGrid([], hasMore, containerId);
+    }
+}
+
+// Full grid view
+let activePage = null;
+export function catalogGridView(catalogObject) {
+    const gridView = document.getElementById("catalog-grid-view");
+    const gridContent = document.getElementById("catalog-grid-content");
+    if (!gridView || !gridContent || !catalogObject) return;
+
+    document.getElementById("app-main").scrollTo(0, 0);
+
+    activePage = document.querySelector(".page-view:not(.hidden)");
+    if (activePage) activePage.classList.add("hidden");
+
+    document.getElementById("catalog-grid-title").textContent = catalogObject.title;
+
+    const subtitle = document.getElementById("catalog-grid-subtitle");
+    if (catalogObject.addonName) {
+        subtitle.textContent = catalogObject.addonName;
+        subtitle.classList.remove("hidden");
+    } else {
+        subtitle.classList.add("hidden");
+    }
+
+    gridView.classList.remove("hidden");
+
+    if (gridTriggerEl) { viewportObserver.unobserve(gridTriggerEl); gridTriggerEl = null; }
+    activeGridCatalogId = catalogObject.containerId;
+
+    if (catalogObject.items && catalogObject.items.length > 0) {
+        renderCardsToGrid(itemsForRehydration(catalogObject, GRID_DOM_CAP), catalogObject.hasMore, catalogObject.containerId);
+    } else if (catalogObject.hasMore) {
+        fetchNextBatch(catalogObject.containerId);
+    }
+}
+
+export function closeGridView() {
+    const gridView = document.getElementById("catalog-grid-view");
+    if (gridView) gridView.classList.add("hidden");
+
+    if (gridTriggerEl) { viewportObserver.unobserve(gridTriggerEl); gridTriggerEl = null; }
+
+    const containerId = activeGridCatalogId;
+    const catalogObject = containerId ? getActiveState(containerId) : null;
+    activeGridCatalogId = null;
+
+    if (activePage) {
+        activePage.classList.remove("hidden");
+        activePage = null;
+    }
+
+    if (catalogObject) {
+        renderCardsToRow(itemsForRehydration(catalogObject, ROW_DOM_CAP), containerId, catalogObject.hasMore);
+    }
+}
+
 // Row message
 export function showRowMessage(containerId, message = "No results found.") {
     const row = document.getElementById(containerId);
-    if (row) row.innerHTML = `<p class="text-slate-500 pl-2 text-sm mt-4">${message}</p>`;
+    if (!row) return;
+
+    row.innerHTML = `<p class="text-slate-500 pl-2 text-sm mt-4">${message}</p>`;
+    rowMessages[containerId] = row.firstElementChild;
+    delete rowSentinels[containerId]; // the old one just got wiped by innerHTML
 }

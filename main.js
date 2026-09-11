@@ -7,7 +7,7 @@
 
 import { registerSW } from 'virtual:pwa-register';
 
-import { authenticateTorboxUser, checkAuth, logoutTorBox, closeStreamPicker } from './services/torbox.js';
+import { authenticateTorboxUser, logoutTorBox, closeStreamPicker } from './services/torbox.js';
 import { appState } from './services/config.js';
 import { initializeSupabase, changeAuthState, toggleAuthMode, toggleUpdateMode, logOutUser, sendPasswordResetEmail } from './services/db.js';
 
@@ -22,7 +22,7 @@ import { initFriendProfile, fetchFriendsList, handleFollowToggle } from './netwo
 import { submitNewAddon } from './user-addons/scrapers.js';
 import { renderInstalledAddons } from './user-addons/scraper-renderer.js';
 
-import { initGlobalDrag } from './user-addons/catalog-renderer.js';
+import { initGlobalDrag, closeGridView } from './user-addons/catalog-renderer.js';
 
 import { closeMovieDetail } from './api.js';
 
@@ -141,6 +141,16 @@ function setupStaticEventListeners() {
     //Api.js
     document.getElementById('close-full-detail-view-btn')?.addEventListener('click', closeMovieDetail);
 
+    //Catalog-renderer.js
+    document.getElementById('close-grid-view-btn')?.addEventListener('click', closeGridView);
+
+    // Fix IOS dropdowns
+    document.addEventListener('touchstart', (e) => {
+        const activeEl = document.activeElement;
+        if (activeEl && activeEl.tagName === 'SELECT' && e.target !== activeEl) {
+            activeEl.blur();
+        }
+    }, { passive: true });
 }
 
 
@@ -226,28 +236,19 @@ const scrollCache = new Map();
 // Track the currently active tab (assuming library-page is your default)
 let currentTabId = 'library-page';
 
-// 3. Attach click listeners to your existing nav buttons
 document.querySelectorAll('.nav-link').forEach(btn => {
     btn.addEventListener('click', (e) => {
-        // Find which tab we are trying to open based on your HTML
         const targetId = e.currentTarget.getAttribute('data-target');
 
-        // Prevent unnecessary re-renders if clicking the active tab
         if (targetId === currentTabId) return;
-
-        // Step A: Save the exact scroll position of the CURRENT tab before it hides
+        
         scrollCache.set(currentTabId, mainContainer.scrollTop);
 
-        // Step B: Toggle visibility (hiding the old, showing the new)
         document.getElementById(currentTabId).classList.add('hidden');
         document.getElementById(targetId).classList.remove('hidden');
 
-        // Step C: Restore the saved scroll position for the NEW tab, or default to 0 (top)
         mainContainer.scrollTop = scrollCache.get(targetId) || 0;
 
-        // Step D: Update the active tracker
         currentTabId = targetId;
-
-        // Optional: Update your active button UI states here (e.g., adding/removing text-blue-400)
     });
 });

@@ -8,21 +8,22 @@
 
 import { getTbKey, smartFetch, showToast } from './config.js';
 import { fetchLibrary } from '../pages/library.js';
+import { mediaStore } from '../api.js';
 
 export async function authenticateTorboxUser() {
     const input = document.getElementById('api-input');
     const button = document.getElementById('login-btn');
 
     let key = "";
-    
+
     if (input.value) {
         key = input.value.trim();
         if (!key) return;
-        
+
         button.innerText = "Verifying...";
         button.disabled = true;
         input.disabled = true;
-        
+
     } else {
         checkAuth();
 
@@ -30,7 +31,7 @@ export async function authenticateTorboxUser() {
         if (!key) return;
 
         await fetchLibrary();
-        
+
         return;
     }
 
@@ -40,12 +41,12 @@ export async function authenticateTorboxUser() {
         const res = await smartFetch(targetUrl, {
             headers: { 'Authorization': `Bearer ${key}` }
         });
-        
+
         const data = await res.json();
 
         if (data.success && data.data) {
             localStorage.setItem('tb_api_key', key);
-            
+
             button.innerText = "Connected!";
             button.classList.replace('bg-blue-600', 'bg-green-600');
 
@@ -54,7 +55,7 @@ export async function authenticateTorboxUser() {
         } else {
             throw new Error(data.detail || "Invalid API Key");
         }
-        
+
     } catch (e) {
         showToast("Authentication Failed: " + e.message, 'error');
         button.innerText = "Log In";
@@ -65,7 +66,7 @@ export async function authenticateTorboxUser() {
     checkAuth();
 }
 
-export function checkAuth() {
+function checkAuth() {
     const key = getTbKey();
 
     const connectedBadge = document.getElementById('tb-status-connected');
@@ -100,13 +101,15 @@ export function logoutTorBox() {
 }
 
 //#region Add to Library
-async function addStreamtoTorbox(finalLink) {
+export async function addStreamtoTorbox(finalLink) {
     if (finalLink.startsWith("magnet")) {
         const torrentId = await sendMagnetToTorbox(finalLink);
         if (torrentId) {
             await editTorrentInfo(torrentId);
             console.log("Edited magnet");
             return;
+        } else {
+            console.log
         }
     }
 }
@@ -141,35 +144,49 @@ async function pingAddonLink(url) {
 }
 
 // Add a link to users library  
-export async function sendMagnetToTorbox(magnetLink) {
+async function sendMagnetToTorbox(magnetLink) {
     const tbKey = getTbKey();
     if (!tbKey) return;
 
-    try {
-        const createUrl = 'https://api.torbox.app/v1/api/torrents/createtorrent';
-        const formData = new FormData();
-        formData.append('magnet', magnetLink);
+    const currentMedia = mediaStore.get();
+    const releaseYear = currentMedia?.releaseYear || '';
+    const customName = `${currentMedia?.title} (${releaseYear})`.trim();
 
-        console.log("Magnet send");
+    try {
+        const createUrl =
+            'https://api.torbox.app/v1/api/torrents/createtorrent';
+
+        const formData = new FormData();
+
+        formData.append('magnet', magnetLink);
+        formData.append('name', customName);
 
         const createRes = await smartFetch(createUrl, {
             method: 'POST',
-            headers: { 'Authorization': `Bearer ${tbKey}` },
+            headers: {
+                'Authorization': `Bearer ${tbKey}`
+            },
             body: formData
         });
 
         const createData = await createRes.json();
-        const torrentId = createData.data?.torrent_id;
 
-        if (!createData.success) throw new Error(createData.detail || "TorBox rejected the magnet.");
+        console.log('TorBox createtorrent response:', createData);
+
+        if (!createData.success) {
+            throw new Error(
+                createData.detail || 'TorBox rejected the magnet.'
+            );
+            return;
+        }
 
         closeStreamPicker();
-        showToast("Successfully added to library", "success");
+        showToast('Successfully added to library', 'success');
 
-        return true;
+        return createData.data?.torrent_id;
 
     } catch (e) {
-        console.error(e);
+        console.error('TorBox create failed:', e);
         showToast(`Failed to add: ${e.message}`, 'error');
     }
 }
@@ -182,7 +199,7 @@ async function editTorrentInfo(torrentId) {
     const releaseYear = mediaData.releaseYear;
     const customName = `${mediaData.title} (${releaseYear})`;
 
-    if (!torrentId) {
+     /*if (!torrentId) {
         try {
             const listUrl = 'https://api.torbox.app/v1/api/torrents/mylist';
             const listRes = await smartFetch(listUrl, {
@@ -217,7 +234,7 @@ async function editTorrentInfo(torrentId) {
             return;
         }
         console.log("Http edit");
-    }
+    }*/
 
 
     // Magnet Edit
@@ -233,7 +250,6 @@ async function editTorrentInfo(torrentId) {
             },
             body: JSON.stringify(editBody)
         });
-        console.log("Magnet edit");
     }
 }
 
