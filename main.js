@@ -230,10 +230,8 @@ document.addEventListener('DOMContentLoaded', () => {
 // 1. Target your main scrolling container
 const mainContainer = document.getElementById('app-main');
 
-// 2. Create a Map to store the scroll positions in memory
-const scrollCache = new Map();
 
-// Track the currently active tab (assuming library-page is your default)
+const scrollCache = new Map();
 let currentTabId = 'library-page';
 
 document.querySelectorAll('.nav-link').forEach(btn => {

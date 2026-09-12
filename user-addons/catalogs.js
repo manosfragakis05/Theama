@@ -11,6 +11,14 @@ import {
 } from "./catalog-renderer";
 
 // APP BOOTER
+function handleTypeChange(e) {
+    populateCatalogDropdown(getCatalogsByType(e.target.value));
+    renderSelectedCatalog();
+}
+function handleCatalogChange() {
+    renderSelectedCatalog();
+}
+
 export async function loadDiscover() {
     initGlobalDrag();
     initCustomCatalogsState();
@@ -19,22 +27,15 @@ export async function loadDiscover() {
     const typeSelect = document.getElementById('discover-type-select');
     const catalogSelect = document.getElementById('discover-catalog-select');
 
-    // 1. Populate the UI with combined TMDB and Add-on options
     populateTypeDropdown(getAvailableTypes());
-
     if (typeSelect && typeSelect.value) {
         populateCatalogDropdown(getCatalogsByType(typeSelect.value));
     }
 
-    // 2. Attach Event Listeners to trigger UI updates
-    typeSelect?.addEventListener('change', (e) => {
-        populateCatalogDropdown(getCatalogsByType(e.target.value));
-        renderSelectedCatalog(); // Update screen when type changes
-    });
-
-    catalogSelect?.addEventListener('change', () => {
-        renderSelectedCatalog(); // Update screen when catalog changes
-    });
+    typeSelect?.removeEventListener('change', handleTypeChange);
+    typeSelect?.addEventListener('change', handleTypeChange);
+    catalogSelect?.removeEventListener('change', handleCatalogChange);
+    catalogSelect?.addEventListener('change', handleCatalogChange);
 
     if (catalogSelect && catalogSelect.value) {
         renderSelectedCatalog();
@@ -126,6 +127,7 @@ export async function searchTMDB(query) {
     state.loading = true;
     state.items = [];
     state.idSet = new Set();
+    state.cardEls?.clear();
 
     try {
         const endpoint = `search/multi?query=${encodeURIComponent(query)}&include_adult=false`;

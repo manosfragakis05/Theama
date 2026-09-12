@@ -235,7 +235,7 @@
             </nav>
 
             <main id="app-main"
-                class="scrollbar-hide flex flex-col flex-1 min-w-0 relative overflow-y-auto overflow-x-hidden">
+                class="flex flex-col flex-1 min-w-0 relative overflow-y-auto overflow-x-hidden custom-scrollbar">
 
                 <div id="player-wrapper"
                     class="hidden flex-none w-full bg-black pt-[env(safe-area-inset-top)] shadow-2xl transition-all duration-300 z-30 relative">
@@ -355,7 +355,7 @@
                         </div>
                     </div>
 
-                    <div id="dynamic-catalogs-container" class="flex flex-col gap-2">
+                    <div id="dynamic-catalogs-container" class="flex flex-col gap-2 custom-scrollbar ">
                         <!-- Javascript will inject cloned rows here -->
                     </div>
 
@@ -782,6 +782,25 @@
                             <h2 id="catalog-grid-title" class="text-xl md:text-2xl font-bold text-white">Catalog Name
                             </h2>
                             <p id="catalog-grid-subtitle" class="text-sm text-slate-400 mt-1 hidden">Addon Name</p>
+                        </div>
+
+                        <div id="grip-options-dropdown"
+                            class="relative w-full sm:w-auto min-w-[12rem] bg-slate-800/50 backdrop-blur-xl rounded-2xl border border-slate-700/60 hover:border-slate-500 transition-colors shadow-lg group">
+
+                            <label for="grid-options-select"
+                                class="absolute left-4 top-2 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider pointer-events-none z-20">
+                                Options
+                            </label>
+
+                            <select id="grid-options-select"
+                                class="appearance-none w-full whitespace-nowrap custom-scrollbar bg-transparent pt-6 pb-2.5 pl-4 pr-11 text-base font-bold text-white outline-none cursor-pointer relative z-10">
+                            </select>
+
+                            <svg class="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none group-hover:text-white transition-colors shrink-0 z-20"
+                                fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <use href="#icon-arrow"></use>
+                            </svg>
+
                         </div>
                     </div>
 

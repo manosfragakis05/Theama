@@ -8,11 +8,10 @@ let startX;
 let scrollLeft;
 let isTicking = false;
 let activeGridCatalogId = null;
+let previousScrollTop = 0; // Add this line
 
-const ROW_DOM_CAP = 400;
-const ROW_PRUNE_CHUNK = 20;
+const ROW_DOM_CAP = 100;
 const GRID_DOM_CAP = 500;
-const GRID_PRUNE_CHUNK = 30; // a multiple of your column count reduces reflow jitter, not required
 
 const FETCH_COOLDOWN_MS = 350;
 const lastFetchTime = {};
@@ -75,8 +74,6 @@ export function initGlobalDrag() {
             isDragging = false;
             activeSlider = null;
         }, 50);
-
-        pruneRow(finishedSlider, finishedSlider.id); // catch up on anything deferred during the drag
     };
 
     // Bind both events to the single helper function
@@ -89,38 +86,67 @@ const rowObservers = {};
 const rowSentinels = {}; // containerId -> current sentinel element
 const rowMessages = {};  // containerId -> current message element, if one is shown
 
-function getObserverFor(containerId) {
-    // Return cached observer if it already exists
-    if (rowObservers[containerId]) return rowObservers[containerId];
-
-    const rowElement = document.getElementById(containerId);
-    if (!rowElement) return null;
-
-    // Create the observer
-    const observer = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                // Unobserve the triggered sentinel
-                observer.unobserve(entry.target);
-
-                // Fetch and render the next batch
-                triggerFetch(containerId);
-            }
-        });
-    }, {
-        root: rowElement,
-        rootMargin: "0px 1000px 0px 0px",
-        threshold: 0
-    });
-
-    rowObservers[containerId] = observer;
-    return observer;
-}
-
-const viewportObserver = new IntersectionObserver((entries, observer) => {
+// Remove rowObservers object and replace getObserverFor with this global observer
+const sentinelObserver = new IntersectionObserver((entries, observer) => {
     entries.forEach(entry => {
         if (entry.isIntersecting) {
-            const containerId = entry.target.dataset.catalogId || entry.target.id;
+            const containerId = entry.target.dataset.containerId;
+            observer.unobserve(entry.target);
+            triggerFetch(containerId);
+        }
+    });
+}, {
+    root: null,
+    rootMargin: "0px 1000px 0px 0px",
+    threshold: 0
+});
+
+function getObserverFor(containerId) {
+    return sentinelObserver;
+}
+
+const rowScrollPositions = {}; // Tracks horizontal scroll states
+
+const viewportObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+        const row = entry.target;
+        const containerId = row.dataset.catalogId || row.id;
+        const catalogObject = getActiveState(containerId);
+
+        if (!catalogObject) return;
+
+        if (entry.isIntersecting) {
+            // ROW IS ON SCREEN
+            if (!catalogObject.items || catalogObject.items.length === 0) {
+                // First time seeing this row, trigger data fetch
+                triggerFetch(containerId);
+            } else if (row.childElementCount === 0) {
+                // Row was unloaded to save RAM -> Rehydrate it instantly
+                renderCardsToRow(itemsForRehydration(catalogObject, ROW_DOM_CAP), containerId, catalogObject.hasMore);
+                row.scrollLeft = rowScrollPositions[containerId] || 0; // Restore exact horizontal position
+            }
+        } else {
+            // ROW IS OFF SCREEN
+            if (row.childElementCount > 0) {
+                // 1. Lock the height so the vertical scrollbar doesn't glitch
+                row.style.minHeight = `${row.offsetHeight}px`;
+                // 2. Save where the user was swiping
+                rowScrollPositions[containerId] = row.scrollLeft;
+                // 3. Nuke the cards from the DOM to free up CPU/RAM
+                row.replaceChildren();
+            }
+        }
+    });
+}, {
+    root: null,
+    rootMargin: "800px 0px 800px 0px", // Keeps rows alive slightly above/below the screen
+    threshold: 0
+});
+
+const gridTriggerObserver = new IntersectionObserver((entries, observer) => {
+    entries.forEach(entry => {
+        if (entry.isIntersecting) {
+            const containerId = entry.target.dataset.containerId;
             observer.unobserve(entry.target);
             triggerFetch(containerId);
         }
@@ -192,80 +218,6 @@ function getOrCreateCard(item, catalogObject) {
 function itemsForRehydration(catalogObject, cap) {
     const items = catalogObject.items || [];
     return items.length > cap ? items.slice(-cap) : items;
-}
-
-function pruneRow(row, containerId) {
-    if (isDown && activeSlider === row) return;
-    const cards = row.querySelectorAll('.poster-card');
-    if (cards.length <= ROW_DOM_CAP) return;
-
-    // Only cards fully scrolled past the row's own left edge (plus a
-    // buffer) are safe to remove. Prefetching can load several batches
-    // ahead of where the user has actually scrolled, so "oldest in the
-    // DOM" isn't the same thing as "safely out of view."
-    const rowRect = row.getBoundingClientRect();
-    const safeEdge = rowRect.left - rowRect.width;
-
-    const eligible = [];
-    for (const card of cards) {
-        if (card.getBoundingClientRect().right < safeEdge) {
-            eligible.push(card);
-        } else {
-            break; // cards are in scroll order — once one isn't eligible, nothing after it is either
-        }
-    }
-    if (eligible.length === 0) return; // nothing safely out of view yet — try again next batch
-
-    const removeCount = Math.min(eligible.length, Math.max(cards.length - ROW_DOM_CAP, ROW_PRUNE_CHUNK));
-    const toRemove = eligible.slice(0, removeCount);
-    const anchor = toRemove[toRemove.length - 1].nextElementSibling;
-    const beforeLeft = anchor ? anchor.getBoundingClientRect().left : null;
-
-    const catalogObject = getActiveState(containerId);
-    toRemove.forEach(card => {
-        catalogObject?.cardEls?.delete(card.dataset.id);
-        card.remove();
-    });
-
-    if (anchor && beforeLeft !== null) {
-        row.scrollLeft += anchor.getBoundingClientRect().left - beforeLeft;
-    }
-}
-
-function pruneGrid(gridContent, containerId) {
-    const cards = gridContent.querySelectorAll('.poster-card');
-    if (cards.length <= GRID_DOM_CAP) return;
-
-    const scrollContainer = document.getElementById("app-main");
-    if (!scrollContainer) return;
-
-    const containerRect = scrollContainer.getBoundingClientRect();
-    const safeEdge = containerRect.top - containerRect.height;
-
-    const eligible = [];
-    for (const card of cards) {
-        if (card.getBoundingClientRect().bottom < safeEdge) {
-            eligible.push(card);
-        } else {
-            break;
-        }
-    }
-    if (eligible.length === 0) return;
-
-    const removeCount = Math.min(eligible.length, Math.max(cards.length - GRID_DOM_CAP, GRID_PRUNE_CHUNK));
-    const toRemove = eligible.slice(0, removeCount);
-    const anchor = toRemove[toRemove.length - 1].nextElementSibling;
-    const beforeTop = anchor ? anchor.getBoundingClientRect().top : null;
-
-    const catalogObject = getActiveState(containerId);
-    toRemove.forEach(card => {
-        catalogObject?.cardEls?.delete(card.dataset.id);
-        card.remove();
-    });
-
-    if (anchor && beforeTop !== null) {
-        scrollContainer.scrollTop += anchor.getBoundingClientRect().top - beforeTop;
-    }
 }
 
 export function renderSelectedCatalog() {
@@ -348,6 +300,7 @@ function createCardElement(item) {
 
     img.alt = item.title;
     img.loading = "lazy"
+    img.decoding = "async"
     img.src = item.poster;
 
     return card;
@@ -403,11 +356,10 @@ export function renderCardsToRow(items, containerId, hasMore) {
     });
     row.appendChild(fragment);
 
-    pruneRow(row, containerId);
-
     if (hasMore) {
         const sentinel = document.createElement("div");
         sentinel.className = "scroll-sentinel w-1 flex-none";
+        sentinel.dataset.containerId = containerId; // Add this line
         row.appendChild(sentinel);
 
         const observer = getObserverFor(containerId);
@@ -423,8 +375,18 @@ function teardownRow(containerId) {
     delete rowSentinels[containerId];
     delete rowMessages[containerId];
 
+    // 1. Clear pending timeouts to stop ghost fetches
+    if (fetchTimeouts[containerId]) {
+        clearTimeout(fetchTimeouts[containerId]);
+        delete fetchTimeouts[containerId];
+    }
+
     const catalogObject = getActiveState(containerId);
-    if (catalogObject?.loading) catalogObject.abortController?.abort();
+    if (catalogObject) {
+        if (catalogObject.loading) catalogObject.abortController?.abort();
+        // 2. Free detached DOM nodes from memory
+        catalogObject.cardEls?.clear();
+    }
 }
 
 let gridTriggerEl = null; // the one card currently armed to fetch the next page
@@ -436,7 +398,7 @@ function renderCardsToGrid(items, hasMore, containerId) {
     if (!catalogObject) return;
 
     if (gridTriggerEl) {
-        viewportObserver.unobserve(gridTriggerEl);
+        gridTriggerObserver.unobserve(gridTriggerEl);
         gridTriggerEl.classList.remove("load-trigger");
         gridTriggerEl = null;
     }
@@ -451,13 +413,11 @@ function renderCardsToGrid(items, hasMore, containerId) {
     });
     gridContent.appendChild(fragment);
 
-    pruneGrid(gridContent, containerId);
-
     const triggerCard = gridContent.lastElementChild;
     if (hasMore && triggerCard) {
         triggerCard.classList.add("load-trigger");
-        triggerCard.dataset.catalogId = containerId;
-        viewportObserver.observe(triggerCard);
+        triggerCard.dataset.containerId = containerId;
+        gridTriggerObserver.observe(triggerCard);
         gridTriggerEl = triggerCard;
     }
 }
@@ -548,11 +508,7 @@ export function injectCatalogShell(catalogObject, targetContainer) {
     container.appendChild(shellNode);
 
     setTimeout(() => {
-        if (catalogObject.items && catalogObject.items.length > 0) {
-            renderCardsToRow(itemsForRehydration(catalogObject, ROW_DOM_CAP), catalogObject.containerId, catalogObject.hasMore);
-        } else if (rowEl) {
-            viewportObserver.observe(rowEl);
-        }
+        if (rowEl) viewportObserver.observe(rowEl);
     }, 0);
 }
 
@@ -607,7 +563,13 @@ let activePage = null;
 export function catalogGridView(catalogObject) {
     const gridView = document.getElementById("catalog-grid-view");
     const gridContent = document.getElementById("catalog-grid-content");
-    if (!gridView || !gridContent || !catalogObject) return;
+    const scrollContainer = document.getElementById("app-main");
+
+    if (!gridView || !gridContent || !catalogObject || !scrollContainer) return;
+
+    // Save position before scrolling to top
+    previousScrollTop = scrollContainer.scrollTop;
+    scrollContainer.scrollTo(0, 0);
 
     document.getElementById("app-main").scrollTo(0, 0);
 
@@ -626,8 +588,29 @@ export function catalogGridView(catalogObject) {
 
     gridView.classList.remove("hidden");
 
-    if (gridTriggerEl) { viewportObserver.unobserve(gridTriggerEl); gridTriggerEl = null; }
+    if (gridTriggerEl) {
+        gridTriggerObserver.unobserve(gridTriggerEl);
+        gridTriggerEl.classList.remove("load-trigger"); // Added cleanup
+        gridTriggerEl = null;
+    }
     activeGridCatalogId = catalogObject.containerId;
+
+    // Load options
+    const dropDown = document.getElementById("grip-options-dropdown");
+    console.log(catalogObject)
+
+    if (catalogObject.hasOptions) {
+        const optionDef = catalogObject.extra.find(param => Array.isArray(param.options) && param.options.length > 0);
+
+        if (optionDef.options.length > 1) {
+            dropDown.classList.remove("hidden");
+            populateOptionsDropdown(catalogObject);
+        } else {
+            dropDown.classList.add("hidden");
+        }
+    } else {
+        dropDown.classList.add("hidden");
+    }
 
     if (catalogObject.items && catalogObject.items.length > 0) {
         renderCardsToGrid(itemsForRehydration(catalogObject, GRID_DOM_CAP), catalogObject.hasMore, catalogObject.containerId);
@@ -636,11 +619,36 @@ export function catalogGridView(catalogObject) {
     }
 }
 
+function populateOptionsDropdown(catalogObject) {
+    const dropDown = document.getElementById("grid-options-select");
+
+    if (!dropDown) return;
+
+    dropDown.replaceChildren();
+
+    const optionDef = catalogObject.extra.find(param => Array.isArray(param.options) && param.options.length > 0);
+
+    if (optionDef) {
+        const defaultOption = optionDef.options[0];
+
+        optionDef.options.forEach(opt => {
+            const optionEl = document.createElement("option");
+            optionEl.value = opt;
+            optionEl.textContent = opt;
+            dropDown.appendChild(optionEl);
+        });
+    }
+}
+
 export function closeGridView() {
     const gridView = document.getElementById("catalog-grid-view");
     if (gridView) gridView.classList.add("hidden");
 
-    if (gridTriggerEl) { viewportObserver.unobserve(gridTriggerEl); gridTriggerEl = null; }
+    if (gridTriggerEl) {
+        gridTriggerObserver.unobserve(gridTriggerEl);
+        gridTriggerEl.classList.remove("load-trigger"); // Removes the lingering margin
+        gridTriggerEl = null;
+    }
 
     const containerId = activeGridCatalogId;
     const catalogObject = containerId ? getActiveState(containerId) : null;
@@ -653,6 +661,20 @@ export function closeGridView() {
 
     if (catalogObject) {
         renderCardsToRow(itemsForRehydration(catalogObject, ROW_DOM_CAP), containerId, catalogObject.hasMore);
+
+        const gridContent = document.getElementById("catalog-grid-content");
+        if (gridContent) {
+            gridContent.querySelectorAll('.poster-card').forEach(card => {
+                catalogObject.cardEls?.delete(card.dataset.id);
+            });
+            gridContent.replaceChildren();
+        }
+    }
+
+    // Restore previous scroll position upon closing
+    const scrollContainer = document.getElementById("app-main");
+    if (scrollContainer) {
+        scrollContainer.scrollTo(0, previousScrollTop);
     }
 }
 
@@ -661,6 +683,7 @@ export function showRowMessage(containerId, message = "No results found.") {
     const row = document.getElementById(containerId);
     if (!row) return;
 
+    getActiveState(containerId)?.cardEls?.clear();
     row.innerHTML = `<p class="text-slate-500 pl-2 text-sm mt-4">${message}</p>`;
     rowMessages[containerId] = row.firstElementChild;
     delete rowSentinels[containerId]; // the old one just got wiped by innerHTML

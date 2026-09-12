@@ -68,10 +68,6 @@ option:hover {
     background-color: #2563eb; /* blue-600 */
 }
 
-.poster-card{
-    content-visibility: auto;
-}
-
 .poster-img::after {
     /* Pulls the text directly from your img.alt attribute */
     content: attr(alt); 
@@ -126,10 +122,6 @@ option:hover {
     padding-bottom: max(4.5rem, calc(env(safe-area-inset-bottom) + 2.5rem));
 }
 
-.poster-card {
-    content-visibility: auto;
-    contain-intrinsic-size: 130px 190px;
-}
 
 #stream-picker-list {
     overscroll-behavior: contain;
