@@ -365,25 +365,18 @@ function resolveImageUrl(path, size = 'w500') {
 
 // Fetch single catalog
 export async function fetchAddonCatalog(catalogObject, signal) {
-    // Destructure the object for cleaner variables
+    // Destructure the object
     const { baseUrl, type, urlId, extra, skip } = catalogObject;
 
-    // We will build an array of Stremio key=value parameter strings
     let extraParams = [];
 
-    // 1. Extract the default option dynamically
     if (catalogObject.hasOptions) {
-        // Find the specific extra property that contains an options array
         const optionDef = extra.find(param => Array.isArray(param.options) && param.options.length > 0);
 
         if (optionDef) {
-            const defaultOption = optionDef.options[0];
+            const activeOption = catalogObject.selectedOption || optionDef.options[0];
 
-            extraParams.push(`${optionDef.name}=${encodeURIComponent(defaultOption)}`);
-
-            if (optionDef.options.length > 0) {
-                //console.log(optionDef.options);
-            }
+            extraParams.push(`${optionDef.name}=${encodeURIComponent(activeOption)}`);
         }
     }
 
@@ -392,8 +385,6 @@ export async function fetchAddonCatalog(catalogObject, signal) {
         extraParams.push(`skip=${skip}`);
     }
 
-    // 3. Construct the final Stremio URL
-    // Joins the params with "&" and adds the leading slash if params exist
     const extraPath = extraParams.length > 0 ? `/${extraParams.join('&')}` : '';
     const url = `${baseUrl}/catalog/${type}/${urlId}${extraPath}.json`;
 

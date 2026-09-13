@@ -621,7 +621,6 @@ export function catalogGridView(catalogObject) {
 
 function populateOptionsDropdown(catalogObject) {
     const dropDown = document.getElementById("grid-options-select");
-
     if (!dropDown) return;
 
     dropDown.replaceChildren();
@@ -629,15 +628,47 @@ function populateOptionsDropdown(catalogObject) {
     const optionDef = catalogObject.extra.find(param => Array.isArray(param.options) && param.options.length > 0);
 
     if (optionDef) {
-        const defaultOption = optionDef.options[0];
-
         optionDef.options.forEach(opt => {
             const optionEl = document.createElement("option");
             optionEl.value = opt;
             optionEl.textContent = opt;
             dropDown.appendChild(optionEl);
         });
+        
+        // Ensure the dropdown shows the currently active option if it exists
+        if (catalogObject.selectedOption) {
+            dropDown.value = catalogObject.selectedOption;
+        }
+
+        // Attach listener safely
+        dropDown.removeEventListener("change", handleOptionChange);
+        dropDown.addEventListener("change", handleOptionChange);
     }
+}
+
+function handleOptionChange(e) {
+    if (!activeGridCatalogId) return;
+    
+    const catalogObject = getActiveState(activeGridCatalogId);
+    if (!catalogObject) return;
+
+    // 1. Save the newly selected option
+    catalogObject.selectedOption = e.target.value;
+
+    // 2. Wipe existing data and reset pagination
+    catalogObject.items = [];
+    catalogObject.idSet = new Set();
+    catalogObject.skip = 0;
+    catalogObject.page = 1;
+    catalogObject.hasMore = true;
+    catalogObject.cardEls?.clear();
+
+    // 3. Clear the grid UI
+    const gridContent = document.getElementById("catalog-grid-content");
+    if (gridContent) gridContent.replaceChildren();
+
+    // 4. Fetch the fresh batch
+    fetchNextBatch(catalogObject.containerId);
 }
 
 export function closeGridView() {
