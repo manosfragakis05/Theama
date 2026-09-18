@@ -321,7 +321,7 @@ export async function loadAndRenderProfile() {
         };
 
         const handleCardClick = (media) => {
-            openMasterDetail(media.tmdb_id, media.title, media.media_type, media.poster_path, media.poster_path);
+            openMasterDetail(media);
         };
 
         renderMediaCards(mediaData, trackId, handleRemove, handleCardClick);
@@ -499,7 +499,7 @@ export async function createNewList() {
 
 // Helper for the popup
 export async function addToWatchlist(list) {
-    const mediaData = mediaStore.exportForLibrary();
+    const mediaData = mediaStore.get();
 
     if (!mediaData || !mediaData.id) {
         showToast("No media loaded to save.", "error");

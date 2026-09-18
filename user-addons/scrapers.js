@@ -164,9 +164,10 @@ export async function loadAllAddonsParallel(type, streamId, season = null, episo
 
     // Format the ID once for everyone
     let pathId = streamId;
-    if (type === 'anime' && !String(pathId).startsWith('kitsu:')) pathId = `kitsu:${pathId}`;
-    if (type === 'series') pathId = `${pathId}:${season}:${episode}`;
-    else if (type === 'anime') pathId = `${pathId}:${episode}`;
+    if (type === 'series' || type === 'tv') {
+        type = "series";
+        pathId = `${pathId}:${season}:${episode}`;
+    }
 
     // Fire all addons in parallel
     userAddons.forEach(addon => {
@@ -200,6 +201,7 @@ async function fetchSingleAddon(addon, type, pathId) {
 
     try {
         const streamUrl = addon.url.replace('/manifest.json', `/stream/${type}/${pathId}.json`);
+        console.log(streamUrl);
         const res = await fetch(streamUrl);
 
         if (!res.ok) throw new Error(`HTTP ${res.status}`);

@@ -183,7 +183,7 @@ function renderFriendWatchlists(watchlistsData) {
         const trackId = `watchlist-track-${safeId}`;
 
         const handleCardClick = (media) => {
-            openMasterDetail(media.tmdb_id, media.title, media.media_type, media.poster_path, media.poster_path);
+            openMasterDetail(media);
         };
 
         // Render the books (Step 2 function)

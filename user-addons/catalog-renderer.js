@@ -1,4 +1,4 @@
-import { openMasterDetail } from "../api";
+import { openMasterDetail, openCollectionGrid } from "../api";
 import { addonState, rowState, fetchNextBatch, getActiveState } from "./catalogs";
 
 export let isDragging = false;
@@ -86,25 +86,30 @@ const rowObservers = {};
 const rowSentinels = {}; // containerId -> current sentinel element
 const rowMessages = {};  // containerId -> current message element, if one is shown
 
-// Remove rowObservers object and replace getObserverFor with this global observer
-const sentinelObserver = new IntersectionObserver((entries, observer) => {
-    entries.forEach(entry => {
-        if (entry.isIntersecting) {
-            const containerId = entry.target.dataset.containerId;
-            observer.unobserve(entry.target);
-            triggerFetch(containerId);
-        }
-    });
-}, {
-    root: null,
-    rootMargin: "0px 1000px 0px 0px",
-    threshold: 0
-});
-
 function getObserverFor(containerId) {
-    return sentinelObserver;
-}
+    // Return cached observer if it already exists
+    if (rowObservers[containerId]) return rowObservers[containerId];
 
+    const rowElement = document.getElementById(containerId);
+    if (!rowElement) return null;
+
+    // Create the observer with the row as the absolute root
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                observer.unobserve(entry.target);
+                triggerFetch(containerId);
+            }
+        });
+    }, {
+        root: rowElement, // This is the critical line that fixes the lazy loading
+        rootMargin: "0px 1000px 0px 0px",
+        threshold: 0
+    });
+
+    rowObservers[containerId] = observer;
+    return observer;
+}
 const rowScrollPositions = {}; // Tracks horizontal scroll states
 
 const viewportObserver = new IntersectionObserver((entries) => {
@@ -205,10 +210,11 @@ function getOrCreateCard(item, catalogObject) {
     const key = String(item.id);
     let card = catalogObject.cardEls.get(key);
 
-    // Return cached card immediately, no need to observe
     if (card) return card;
 
-    card = createCardElement(item);
+    // PASS catalogObject HERE
+    card = createCardElement(item, catalogObject);
+
     if (card) {
         catalogObject.cardEls.set(key, card);
     }
@@ -268,28 +274,27 @@ export function renderSelectedCatalog() {
 
 // Cache the template
 let cachedTemplate = null;
-// Create poster card
-function createCardElement(item) {
-    // Cach if not cached
+// Create poster cards
+function createCardElement(item, catalogObject) {
     if (!cachedTemplate) cachedTemplate = document.getElementById("poster-card-template");
-
     if (!cachedTemplate || !item) return null;
 
-    // Clone the cached template
     const clone = cachedTemplate.content.cloneNode(true);
-
     const card = clone.querySelector(".poster-card");
     const img = clone.querySelector(".poster-img");
     const titleEl = clone.querySelector(".poster-title");
     const yearEl = clone.querySelector(".poster-year");
 
-    // Populate dataset
+    // 1. Core Media Data (from the item)
     card.dataset.id = item.id;
     card.dataset.type = item.type;
-    card.dataset.year = item.year;
     card.dataset.title = item.title;
-    card.dataset.poster = item.poster;
-    card.dataset.backdrop = item.backdrop;
+    card.dataset.year = item.year;
+
+    // 2. Routing Data (from the catalogObject!)
+    if (catalogObject && catalogObject.containerId) {
+        card.dataset.containerId = catalogObject.containerId;
+    }
 
     // Populate text
     titleEl.textContent = item.title;
@@ -299,8 +304,8 @@ function createCardElement(item) {
     }
 
     img.alt = item.title;
-    img.loading = "lazy"
-    img.decoding = "async"
+    img.loading = "lazy";
+    img.decoding = "async";
     img.src = item.poster;
 
     return card;
@@ -437,16 +442,28 @@ export function initGlobalClickListener() {
             return;
         }
 
+        
         // Poster Clicks
         const card = e.target.closest(".poster-card");
         if (card) {
-            openMasterDetail(
-                card.dataset.id,
-                card.dataset.title,
-                card.dataset.type,
-                card.dataset.poster,
-                card.dataset.backdrop
-            );
+            const { id, type, containerId } = card.dataset; // type is preserved per-item
+            const catalog = getActiveState(containerId);
+            const fullItem = catalog?.items?.find(item => String(item.id) === String(id)) || {};
+            
+            const isCollection = String(id).includes('tvdbc:');
+            const mediaPayload = {
+                ...card.dataset,
+                ...fullItem,
+                baseUrl: catalog?.baseUrl,
+                addonName: catalog?.addonName,
+            };
+
+            if (isCollection) {
+                openCollectionGrid(mediaPayload);
+            } else {
+                // Normal behavior
+                openMasterDetail(mediaPayload);
+            }
             return;
         }
 
@@ -634,7 +651,7 @@ function populateOptionsDropdown(catalogObject) {
             optionEl.textContent = opt;
             dropDown.appendChild(optionEl);
         });
-        
+
         // Ensure the dropdown shows the currently active option if it exists
         if (catalogObject.selectedOption) {
             dropDown.value = catalogObject.selectedOption;
@@ -648,7 +665,7 @@ function populateOptionsDropdown(catalogObject) {
 
 function handleOptionChange(e) {
     if (!activeGridCatalogId) return;
-    
+
     const catalogObject = getActiveState(activeGridCatalogId);
     if (!catalogObject) return;
 

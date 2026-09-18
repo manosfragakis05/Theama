@@ -77,7 +77,6 @@ export function renderMediaCards(mediaData, trackId, onRemoveClick = null, onCar
         const img = clone.querySelector('.poster-img');
         const title = clone.querySelector('.poster-title');
         const yearEl = clone.querySelector('.poster-year');
-        const skeleton = clone.getElementById('.poster-skeleton');
         const removeBtn = clone.querySelector('.remove-btn');
 
         title.textContent = media.title;
@@ -101,11 +100,8 @@ export function renderMediaCards(mediaData, trackId, onRemoveClick = null, onCar
                 : `https://image.tmdb.org/t/p/w300${media.poster_path}`;
             img.src = imgUrl;
             img.onload = () => {
-                skeleton.classList.add('hidden');
                 img.classList.remove('opacity-0');
             };
-        } else {
-            skeleton.classList.add('hidden');
         }
 
         if (onCardClick) {

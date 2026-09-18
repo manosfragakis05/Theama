@@ -913,7 +913,7 @@
     </div>
 
     <div id="full-detail-view"
-        class="fixed inset-0 z-50 h-[100dvh] pb-8 scrollbar-hide overflow-y-auto overscroll-none bg-slate-900 transition-transform duration-300 ease-in-out translate-y-full">
+        class="hidden fixed inset-0 z-50 h-[100dvh] pb-8 scrollbar-hide overflow-y-auto overscroll-none bg-slate-900 transition-transform duration-300 ease-in-out translate-y-full">
         <button id="close-full-detail-view-btn"
             class="fixed top-[max(1.5rem,env(safe-area-inset-top))] right-6 z-[70] bg-slate-900/40 backdrop-blur-xl p-3 rounded-full text-slate-200 hover:text-white hover:bg-blue-600 border border-white/10 shadow-lg group">
             <svg class="w-6 h-6" fill="none" stroke="currentColor">
@@ -933,7 +933,6 @@
                 <div id="media-poster"
                     class="shrink-0 w-[60vw] sm:w-[220px] md:w-[260px] lg:w-[320px] aspect-[2/3] relative rounded-2xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] border border-slate-700/50 bg-slate-800">
 
-                    <div id="poster-skeleton" class="absolute inset-0 bg-slate-800"></div>
                     <img id="detail-poster" src="" class="absolute inset-0 w-full h-full object-cover" alt="Poster">
                 </div>
 
@@ -948,10 +947,14 @@
                         <span id="detail-genre"
                             class="bg-slate-800/80 backdrop-blur-sm px-3 py-1 rounded-md text-sm border border-slate-700/50 shadow-sm text-white">Genre</span>
                         <span id="detail-runtime"
-                            class="text-sm bg-slate-800/50 px-3 py-1 rounded-md border border-slate-700/30">Year</span>
+                            class="text-sm bg-slate-800/50 px-3 py-1 rounded-md border border-slate-700/30"></span>
                         <span id="detail-rating"
                             class="bg-yellow-500/10 text-yellow-500 px-3 py-1 rounded-md border border-yellow-500/20 flex items-center gap-1.5 text-sm font-bold">
                             Rating
+                        </span>
+                        <span id="detail-year"
+                            class="bg-slate-500/10 text-white-500 px-3 py-1 rounded-md border border-yellow-500/20 flex items-center gap-1.5 text-sm font-bold">
+                            Year
                         </span>
                     </div>
 
@@ -969,23 +972,35 @@
                         </p>
                     </div>
 
-                    <div id="media-seasons" class="w-full max-w-4xl mt-2 text-left">
-                        <div id="dynamic-seasons-container"></div>
-                    </div>
+                    <div id="media-seasons" class="hidden w-full max-w-4xl mt-2 text-left">
+                        <div class="tv-controls-container flex flex-col w-full">
 
-                    <div id="season-loading-indicator"
-                        class="hidden items-center gap-3 mb-3 px-4 py-2.5 bg-blue-900/20 border border-blue-500/30 rounded-xl w-fit shadow-[0_0_15px_rgba(59,130,246,0.1)] transition-all">
-                        <svg class="animate-spin h-4 w-4 text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none"
-                            viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4">
-                            </circle>
-                            <path class="opacity-75" fill="currentColor"
-                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
-                            </path>
-                        </svg>
-                        <span
-                            class="text-[12px] font-bold text-blue-400 tracking-widest uppercase animate-pulse">Fetching
-                            Anime Seasons</span>
+                            <!-- Season Dropdown -->
+                            <div class="tmdb-season-wrapper relative w-fit max-w-full mb-3 z-40">
+                                <button id="season-dropdown-btn"
+                                    class="w-full bg-slate-800/80 backdrop-blur text-white px-3 py-2 rounded-lg border border-slate-700 outline-none hover:border-blue-500 shadow shadow-black/20 font-semibold flex justify-between items-center gap-4 text-left group transition-colors">
+                                    <span id="season-dropdown-text" class="text-sm break-words">Season 1</span>
+                                    <svg id="season-dropdown-chevron"
+                                        class="w-6 h-6 text-slate-400 group-hover:text-white flex-shrink-0 transition-transform duration-200"
+                                        fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M19 9l-7 7-7-7"></path>
+                                    </svg>
+                                </button>
+
+                                <div id="season-dropdown-menu"
+                                    class="hidden custom-scrollbar absolute top-full left-0 min-w-full mt-1.5 bg-slate-800/95 backdrop-blur-xl border border-slate-700 rounded-lg shadow-xl overflow-x-hidden max-h-60 overflow-y-auto z-50 break-words whitespace-normal">
+                                    <!-- Season buttons will be injected here -->
+                                </div>
+                            </div>
+
+                            <!-- Episode List -->
+                            <div id="episode-list-container"
+                                class="draggable-row custom-scrollbar flex gap-3 overflow-x-auto pb-4 w-full relative z-0">
+                                <!-- Episode cards will be injected here -->
+                            </div>
+
+                        </div>
                     </div>
 
                     <div id="media-action"
@@ -1010,38 +1025,12 @@
             </div>
         </div>
 
-        <template id="tv-controls-template">
-            <div class="tv-controls-container flex flex-col w-full">
-                <div class="tmdb-season-wrapper relative w-fit max-w-full mb-3 z-40">
-                    <button
-                        class="tmdb-season-trigger w-full bg-slate-800/80 backdrop-blur text-white px-3 py-2 rounded-lg border border-slate-700 outline-none hover:border-blue-500 focus:border-blue-500 shadow shadow-black/20 font-semibold flex justify-between items-center gap-4 text-left group transition-colors">
-
-                        <span class="tmdb-season-text text-sm break-words">Season 1</span>
-
-                        <svg class="tmdb-season-chevron w-6 h-6 text-slate-400 group-hover:text-white flex-shrink-0 transition-transform duration-200"
-                            fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7">
-                            </path>
-                        </svg>
-                    </button>
-                    <div
-                        class="tmdb-season-menu hidden absolute top-full left-0 min-w-full w-max max-w-[85vw] sm:max-w-md mt-1.5 bg-slate-800/95 backdrop-blur-xl border border-slate-700 rounded-lg shadow-xl overflow-x-hidden max-h-60 overflow-y-auto z-50 break-words whitespace-normal">
-                    </div>
-                </div>
-
-                <div
-                    class="tmdb-episode-list draggable-row custom-scrollbar flex gap-3 overflow-x-auto pb-4 w-full overscroll-contain relative z-0">
-                </div>
-            </div>
-        </template>
-
         <template id="episode-card-template">
             <div
                 class="episode-card relative flex-none w-48 md:w-64 rounded-xl border-2 border-slate-700/50 overflow-hidden flex flex-col bg-slate-800/40 shrink-0 cursor-pointer hover:border-blue-400 hover:shadow-[0_0_15px_rgba(59,130,246,0.3)] group select-none">
 
                 <div class="relative aspect-video w-full bg-slate-900 flex-shrink-0">
-                    <div class="ep-skeleton absolute inset-0 bg-slate-700"></div>
-                    <img class="ep-thumbnail absolute inset-0 w-full h-full object-cover" draggable="false">
+                    <img class="ep-thumbnail absolute inset-0 w-full h-full object-cover" draggable="false" loading="lazy">
 
                     <span
                         class="ep-duration hidden absolute bottom-1.5 right-1.5 bg-black/80 backdrop-blur-md text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-md z-10"></span>
@@ -1049,11 +1038,6 @@
 
                 <div class="p-3 h-14 flex flex-col justify-start">
                     <p class="ep-title text-xs text-slate-300 line-clamp-2 font-medium leading-tight"></p>
-
-                    <div class="ep-text-skeleton space-y-1.5 mt-0.5">
-                        <div class="h-2 bg-slate-700 rounded w-3/4"></div>
-                        <div class="h-2 bg-slate-700 rounded w-1/2"></div>
-                    </div>
                 </div>
             </div>
         </template>

@@ -79,19 +79,19 @@ export function getCatalogsByType(type) {
 //#region TMDB Data
 export const rowState = {
     movie: {
-        'trending-movies-row': { containerId: 'trending-movies-row', title: 'Trending Movies', addonName: 'TMDB', type: 'movie', page: 1, endpoint: 'trending/movie/week', loading: false, hasOptions: false, hasMore: true },
-        'top-row': { containerId: 'top-row', title: 'Top Rated Movies', addonName: 'TMDB', type: 'movie', page: 1, endpoint: 'movie/top_rated', loading: false, hasOptions: false, hasMore: true },
-        'action-row': { containerId: 'action-row', title: 'Action Blockbusters', addonName: 'TMDB', type: 'movie', page: 1, endpoint: 'discover/movie?with_genres=28&sort_by=vote_count.desc&vote_average.gte=7&vote_count.gte=3000', loading: false, hasOptions: false, hasMore: true },
-        'comedy-row': { containerId: 'comedy-row', title: 'Comedies', addonName: 'TMDB', type: 'movie', page: 1, endpoint: 'discover/movie?with_genres=35&sort_by=vote_count.desc&vote_average.gte=6.5&vote_count.gte=2000', loading: false, hasOptions: false, hasMore: true },
-        'thriller-row': { containerId: 'thriller-row', title: 'Thrillers', addonName: 'TMDB', type: 'movie', page: 1, endpoint: 'discover/movie?with_genres=53&without_genres=27,28&sort_by=vote_count.desc&vote_average.gte=7.5&vote_count.gte=1500', loading: false, hasOptions: false, hasMore: true }
+        'trending-movies-row': { containerId: 'trending-movies-row', title: 'Trending Movies', addonName: 'customTMDB', type: 'movie', page: 1, endpoint: 'trending/movie/week', loading: false, hasOptions: false, hasMore: true },
+        'top-row': { containerId: 'top-row', title: 'Top Rated Movies', addonName: 'customTMDB', type: 'movie', page: 1, endpoint: 'movie/top_rated', loading: false, hasOptions: false, hasMore: true },
+        'action-row': { containerId: 'action-row', title: 'Action Blockbusters', addonName: 'customTMDB', type: 'movie', page: 1, endpoint: 'discover/movie?with_genres=28&sort_by=vote_count.desc&vote_average.gte=7&vote_count.gte=3000', loading: false, hasOptions: false, hasMore: true },
+        'comedy-row': { containerId: 'comedy-row', title: 'Comedies', addonName: 'customTMDB', type: 'movie', page: 1, endpoint: 'discover/movie?with_genres=35&sort_by=vote_count.desc&vote_average.gte=6.5&vote_count.gte=2000', loading: false, hasOptions: false, hasMore: true },
+        'thriller-row': { containerId: 'thriller-row', title: 'Thrillers', addonName: 'customTMDB', type: 'movie', page: 1, endpoint: 'discover/movie?with_genres=53&without_genres=27,28&sort_by=vote_count.desc&vote_average.gte=7.5&vote_count.gte=1500', loading: false, hasOptions: false, hasMore: true }
     },
     series: {
-        'trending-shows-row': { containerId: 'trending-shows-row', title: 'Trending Series', addonName: 'TMDB', type: 'series', page: 1, endpoint: 'trending/tv/week', loading: false, hasOptions: false, hasMore: true },
-        'anime-row': { containerId: 'anime-row', title: 'Top Anime', addonName: 'TMDB', type: 'series', page: 1, endpoint: 'discover/tv?with_genres=16&with_original_language=ja&sort_by=vote_count.desc&vote_count.gte=500', loading: false, hasOptions: false, hasMore: true }
+        'trending-shows-row': { containerId: 'trending-shows-row', title: 'Trending Series', addonName: 'customTMDB', type: 'tv', page: 1, endpoint: 'trending/tv/week', loading: false, hasOptions: false, hasMore: true },
+        'anime-row': { containerId: 'anime-row', title: 'Top Anime', addonName: 'customTMDB', type: 'tv', page: 1, endpoint: 'discover/tv?with_genres=16&with_original_language=ja&sort_by=vote_count.desc&vote_count.gte=500', loading: false, hasOptions: false, hasMore: true }
     },
     other: {
         // Kept separate so the global search doesn't render as a standard row
-        'global-search-grid': { containerId: 'global-search-grid', title: 'Search', addonName: 'TMDB', type: 'other', page: 1, endpoint: 'search/multi', query: '', loading: false, hasOptions: false, hasMore: true }
+        'global-search-grid': { containerId: 'global-search-grid', title: 'Search', addonName: 'customTMDB', type: 'other', page: 1, endpoint: 'search/multi', query: '', loading: false, hasOptions: false, hasMore: true }
     }
 };
 
@@ -149,7 +149,7 @@ export async function searchTMDB(query) {
                     id: item.id,
                     title: item.name || item.title || "Untitled",
                     year: item.releaseInfo || item.year || parseInt(item.release_date) || parseInt(item.first_air_date) || "N/A",
-                    type: rawType === 'tv' ? 'series' : rawType,
+                    type: rawType,
                     poster: resolveImageUrl(item.poster || item.poster_path, 'w500'),
                     backdrop: resolveImageUrl(item.backdrop_path || item.backdrop || item.background_path || item.background, 'original')
                 };
@@ -285,7 +285,6 @@ export async function fetchNextBatch(containerId) {
                 catalogObject.loading = false;
                 return [];
             }
-
             newItems = metas;
 
             // Increment skip by the exact amount of items returned
@@ -297,25 +296,39 @@ export async function fetchNextBatch(containerId) {
         }
 
         if (newItems.length > 0) {
-            // Build the dedup set once, then maintain it incrementally instead of
-            // rebuilding it from the full items array on every fetch
             if (!catalogObject.idSet) {
                 catalogObject.idSet = new Set((catalogObject.items || []).map(i => i.id));
             }
+            console.log(newItems);
 
+            // FINISHED BASIC CARD DETAILS
             const prunedItems = newItems
                 .map(item => {
                     const rawType = item.type || item.media_type || catalogObject.type || "movie";
+
+                    const rawCast = item.app_extras?.cast || item.cast;
+                    const formattedCast = Array.isArray(rawCast)
+                        ? rawCast.slice(0, 5).map(c => c.name || c).join(', ')
+                        : '';
+
                     return {
                         id: item.id,
                         title: item.name || item.title || "Untitled",
                         year: item.releaseInfo || item.year || parseInt(item.release_date) || parseInt(item.first_air_date) || "N/A",
-                        type: rawType === 'tv' ? 'series' : rawType, // TMDB's media_type uses "tv"; the rest of the app expects "series"
+                        type: rawType,
+
                         poster: resolveImageUrl(item.poster || item.poster_path, 'w500'),
-                        backdrop: resolveImageUrl(item.backdrop_path || item.backdrop || item.background_path || item.background, 'original')
+                        backdrop: resolveImageUrl(item.backdrop_path || item.backdrop || item.background_path || item.background, 'original'),
+
+                        overview: item.description || item.overview || '',
+                        runtime: item.runtime || '',
+                        rating: (item.vote_average || item.imdbRating) ? parseFloat(item.vote_average || item.imdbRating).toFixed(1) : '',
+                        genre: item.genre || (item.genres?.length > 0 ? item.genres[0] : ''),
+                        cast: formattedCast
                     };
                 })
                 .filter(item => item.id != null && item.type !== 'person' && !catalogObject.idSet.has(item.id));
+            console.log(prunedItems);
 
             if (prunedItems.length > 0) {
                 prunedItems.forEach(item => catalogObject.idSet.add(item.id));
@@ -323,6 +336,7 @@ export async function fetchNextBatch(containerId) {
                 catalogObject.items = catalogObject.items || [];
                 catalogObject.items.push(...prunedItems);
                 catalogObject.duplicateStreak = 0;
+
                 renderRow(prunedItems, catalogObject);
             } else {
                 catalogObject.duplicateStreak = (catalogObject.duplicateStreak || 0) + 1;
@@ -392,6 +406,8 @@ export async function fetchAddonCatalog(catalogObject, signal) {
         const response = await fetch(url, { signal });
         if (!response.ok) throw new Error(`Status: ${response.status}`);
         const data = await response.json();
+
+
         return data.metas || [];
     } catch (error) {
         if (error.name !== 'AbortError') console.error(`Failed fetching ${urlId}:`, error);
