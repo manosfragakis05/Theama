@@ -79,19 +79,19 @@ export function getCatalogsByType(type) {
 //#region TMDB Data
 export const rowState = {
     movie: {
-        'trending-movies-row': { containerId: 'trending-movies-row', title: 'Trending Movies', addonName: 'customTMDB', type: 'movie', page: 1, endpoint: 'trending/movie/week', loading: false, hasOptions: false, hasMore: true },
-        'top-row': { containerId: 'top-row', title: 'Top Rated Movies', addonName: 'customTMDB', type: 'movie', page: 1, endpoint: 'movie/top_rated', loading: false, hasOptions: false, hasMore: true },
-        'action-row': { containerId: 'action-row', title: 'Action Blockbusters', addonName: 'customTMDB', type: 'movie', page: 1, endpoint: 'discover/movie?with_genres=28&sort_by=vote_count.desc&vote_average.gte=7&vote_count.gte=3000', loading: false, hasOptions: false, hasMore: true },
-        'comedy-row': { containerId: 'comedy-row', title: 'Comedies', addonName: 'customTMDB', type: 'movie', page: 1, endpoint: 'discover/movie?with_genres=35&sort_by=vote_count.desc&vote_average.gte=6.5&vote_count.gte=2000', loading: false, hasOptions: false, hasMore: true },
-        'thriller-row': { containerId: 'thriller-row', title: 'Thrillers', addonName: 'customTMDB', type: 'movie', page: 1, endpoint: 'discover/movie?with_genres=53&without_genres=27,28&sort_by=vote_count.desc&vote_average.gte=7.5&vote_count.gte=1500', loading: false, hasOptions: false, hasMore: true }
+        'trending-movies-row': { containerId: 'trending-movies-row', title: 'Trending Movies', addonName: 'TMDB', type: 'movie', page: 1, endpoint: 'trending/movie/week', loading: false, hasOptions: false, hasMore: true },
+        'top-row': { containerId: 'top-row', title: 'Top Rated Movies', addonName: 'TMDB', type: 'movie', page: 1, endpoint: 'movie/top_rated', loading: false, hasOptions: false, hasMore: true },
+        'action-row': { containerId: 'action-row', title: 'Action Blockbusters', addonName: 'TMDB', type: 'movie', page: 1, endpoint: 'discover/movie?with_genres=28&sort_by=vote_count.desc&vote_average.gte=7&vote_count.gte=3000', loading: false, hasOptions: false, hasMore: true },
+        'comedy-row': { containerId: 'comedy-row', title: 'Comedies', addonName: 'TMDB', type: 'movie', page: 1, endpoint: 'discover/movie?with_genres=35&sort_by=vote_count.desc&vote_average.gte=6.5&vote_count.gte=2000', loading: false, hasOptions: false, hasMore: true },
+        'thriller-row': { containerId: 'thriller-row', title: 'Thrillers', addonName: 'TMDB', type: 'movie', page: 1, endpoint: 'discover/movie?with_genres=53&without_genres=27,28&sort_by=vote_count.desc&vote_average.gte=7.5&vote_count.gte=1500', loading: false, hasOptions: false, hasMore: true }
     },
     series: {
-        'trending-shows-row': { containerId: 'trending-shows-row', title: 'Trending Series', addonName: 'customTMDB', type: 'tv', page: 1, endpoint: 'trending/tv/week', loading: false, hasOptions: false, hasMore: true },
-        'anime-row': { containerId: 'anime-row', title: 'Top Anime', addonName: 'customTMDB', type: 'tv', page: 1, endpoint: 'discover/tv?with_genres=16&with_original_language=ja&sort_by=vote_count.desc&vote_count.gte=500', loading: false, hasOptions: false, hasMore: true }
+        'trending-shows-row': { containerId: 'trending-shows-row', title: 'Trending Series', addonName: 'TMDB', type: 'tv', page: 1, endpoint: 'trending/tv/week', loading: false, hasOptions: false, hasMore: true },
+        'anime-row': { containerId: 'anime-row', title: 'Top Anime', addonName: 'TMDB', type: 'tv', page: 1, endpoint: 'discover/tv?with_genres=16&with_original_language=ja&sort_by=vote_count.desc&vote_count.gte=500', loading: false, hasOptions: false, hasMore: true }
     },
     other: {
         // Kept separate so the global search doesn't render as a standard row
-        'global-search-grid': { containerId: 'global-search-grid', title: 'Search', addonName: 'customTMDB', type: 'other', page: 1, endpoint: 'search/multi', query: '', loading: false, hasOptions: false, hasMore: true }
+        'global-search-grid': { containerId: 'global-search-grid', title: 'Search', addonName: 'TMDB', type: 'other', page: 1, endpoint: 'search/multi', query: '', loading: false, hasOptions: false, hasMore: true }
     }
 };
 
@@ -239,7 +239,6 @@ export function initCustomCatalogsState() {
                 hasMore: true,
 
             };
-            //console.log(catalog);
         }
     }
 }
@@ -299,7 +298,6 @@ export async function fetchNextBatch(containerId) {
             if (!catalogObject.idSet) {
                 catalogObject.idSet = new Set((catalogObject.items || []).map(i => i.id));
             }
-            console.log(newItems);
 
             // FINISHED BASIC CARD DETAILS
             const prunedItems = newItems
@@ -328,7 +326,6 @@ export async function fetchNextBatch(containerId) {
                     };
                 })
                 .filter(item => item.id != null && item.type !== 'person' && !catalogObject.idSet.has(item.id));
-            console.log(prunedItems);
 
             if (prunedItems.length > 0) {
                 prunedItems.forEach(item => catalogObject.idSet.add(item.id));

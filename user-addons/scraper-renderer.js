@@ -84,7 +84,6 @@ export function renderInstalledAddons() {
             }
         }
 
-        // 4. Render Supported Types (Movies, Series, Anime, etc.)
         if (typesContainer && addon.types && addon.types.length > 0) {
             typesContainer.innerHTML = '';
             // Only show the first 4 types
@@ -373,7 +372,7 @@ export function renderAddonData(packedData) {
     }
 
     if (bucketOther.length > 0) {
-        contentContainer.appendChild(createHeader('Others / 720p', 'text-slate-400', 'border-slate-500/20', 'bg-slate-500/10'));
+        contentContainer.appendChild(createHeader('720p / Others', 'text-slate-400', 'border-slate-500/20', 'bg-slate-500/10'));
 
         const containerOther = document.createElement('div');
         containerOther.className = 'flex flex-col gap-2.5 mb-4';

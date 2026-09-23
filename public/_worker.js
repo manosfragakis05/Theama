@@ -34,7 +34,6 @@ export default {
       return modifiedResponse;
     }
 
-
     if (url.pathname === '/map') {
       const tmdbIdParam = url.searchParams.get("tmdb_id");
 
@@ -63,21 +62,20 @@ export default {
 
         const mappings = await mappingRes.json();
 
-        const match = mappings.find(item => {
-          const tmdbField = item.themoviedb_id || item.tmdb_id;
-          if (!tmdbField) return false;
-          if (typeof tmdbField !== "object") {
-            return String(tmdbField) === tmdbIdParam;
-          }
-          return String(tmdbField.tv) === tmdbIdParam || String(tmdbField.movie) === tmdbIdParam;
+        // 1. Filter to grab all seasons/parts (Raw Fribb Objects)
+        const matches = mappings.filter(item => {
+          const tmdb = item.themoviedb_id;
+          if (!tmdb) return false;
+          const movieIds = [].concat(tmdb.movie ?? []).map(String);
+          return String(tmdb.tv) === tmdbIdParam || movieIds.includes(tmdbIdParam);
         });
 
-        if (match) {
+        // 2. Return the raw array directly
+        if (matches.length > 0) {
           return new Response(JSON.stringify({
             tmdb_id: parseInt(tmdbIdParam, 10),
-            anilist_id: match.anilist_id || null,
-            kitsu_id: match.kitsu_id || null,
-            type: match.type || "UNKNOWN"
+            total_matches: matches.length,
+            matches: matches
           }), {
             status: 200,
             headers: {
@@ -165,3 +163,20 @@ export default {
     }
   }
 };
+
+async function cachedFetch(targetUrl, ttlSeconds, ctx) {
+  const cache = caches.default;
+  const cacheKey = new Request(targetUrl);
+
+  let res = await cache.match(cacheKey);
+  if (res) return res;
+
+  res = await fetch(targetUrl);
+  if (!res.ok) throw new Error(`Fetch failed: ${targetUrl} (${res.status})`);
+
+  const toCache = new Response(res.clone().body, res);
+  toCache.headers.set("Cache-Control", `s-maxage=${ttlSeconds}`);
+  ctx.waitUntil(cache.put(cacheKey, toCache));
+
+  return res;
+}

@@ -163,11 +163,27 @@ export async function loadAllAddonsParallel(type, streamId, season = null, episo
     const userAddons = getScrapingProviders();
 
     // Format the ID once for everyone
-    let pathId = streamId;
-    if (type === 'series' || type === 'tv') {
-        type = "series";
-        pathId = `${pathId}:${season}:${episode}`;
+    let pathId = "";
+
+    console.log(streamId);
+    if (type === "series" || type === "tv" || type === "anime") {
+
+        if (streamId.startsWith("tt")) {
+            if (!streamId.includes(":")) {
+                pathId = `${streamId}:${season}:${episode}`;
+            }
+        }
+        else if (streamId.startsWith("kitsu")) {
+            if (streamId.split(':').length === 2) {
+                pathId = `${streamId}:${episode}`;
+            }
+        }
+
+    } else {
+        pathId = streamId;
     }
+
+    console.log(pathId);
 
     // Fire all addons in parallel
     userAddons.forEach(addon => {
@@ -197,11 +213,10 @@ export async function loadAllAddonsParallel(type, streamId, season = null, episo
 }
 
 async function fetchSingleAddon(addon, type, pathId) {
-    console.log(`🕵️‍♂️ Fetching ${addon.name}...`);
+    console.log(`🕵️‍♂️ Fetching ${addon.name}...`, pathId);
 
     try {
         const streamUrl = addon.url.replace('/manifest.json', `/stream/${type}/${pathId}.json`);
-        console.log(streamUrl);
         const res = await fetch(streamUrl);
 
         if (!res.ok) throw new Error(`HTTP ${res.status}`);

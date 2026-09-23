@@ -14,15 +14,7 @@ export const mediaStore = (() => {
 
 export async function openMasterDetail(mediaObject) {
 
-    // 1. Save the main routing data
-    mediaStore.clear();
-    mediaStore.set({
-        id: mediaObject.id,
-        title: mediaObject.title,
-        type: mediaObject.type
-    });
-
-    // 2. INSTANT UI HYDRATION - Do this BEFORE fetching to guarantee 0ms load!
+    // Render UI
     renderMasterDetailView(mediaObject);
 
     const seasonsContainer = document.getElementById('media-seasons');
@@ -110,13 +102,30 @@ async function checkFullData(mediaObject) {
                 }));
 
                 // Set defaults as integers
-                mediaObject.activeSeason = mediaObject.seasons[0]?.seasonNumber || 1;
-                mediaObject.activeEpisode = mediaObject.seasons[0]?.episodes[0]?.episodeNumber || 1;
+                const defaultSeason = mediaObject.seasons.find(s => s.seasonNumber > 0) || mediaObject.seasons[0];
+
+                mediaObject.activeSeason = defaultSeason?.seasonNumber ?? 1;
+                mediaObject.activeEpisode = defaultSeason?.episodes[0]?.episodeNumber ?? 1;
+
+                // Set for scrapper after fetching
+                mediaObject.type = "series";
 
                 renderSeason(mediaObject);
             }
 
-            // Silent text update!
+            const animeId = await fetchAnimeMapping(mediaObject.id);
+            if (animeId) {
+                const rawMatches = animeId.data ? animeId.data.matches : animeId.matches;
+                const formatted = formatAnimeMappings(rawMatches);
+
+                mediaObject.animeMappings = formatted;
+                if (mediaObject.activeSeason) {
+                    updateActiveKitsuMapping(mediaObject);
+                }
+                console.log("Formatted array:", formatted);
+            }
+
+            // Render all data
             renderMasterDetailView(mediaObject);
             return;
 
@@ -126,7 +135,7 @@ async function checkFullData(mediaObject) {
             // If it fails, replace the spinner with an error message
             const listContainer = document.getElementById('episode-list-container');
             const dropdownText = document.getElementById('season-dropdown-text');
-            if (mediaObject.type === 'series' && listContainer) {
+            if ((mediaObject.type === 'series' || mediaObject.type === "tv") && listContainer) {
                 dropdownText.textContent = "Error";
                 listContainer.innerHTML = `
                     <div class="py-10 text-center col-span-full">
@@ -146,7 +155,7 @@ async function checkFullData(mediaObject) {
             const data = await res.json();
             const meta = data.meta;
 
-            console.log(meta);
+            console.log(meta, meta.id);
             if (!meta) return;
 
             const rawCast = meta.app_extras?.cast || meta.cast;
@@ -170,7 +179,7 @@ async function checkFullData(mediaObject) {
 
                 // Group Stremio's flat video array into seasons
                 meta.videos.forEach(vid => {
-                    const sNum = vid.season || 1;
+                    const sNum = vid.season ?? 1;
 
                     if (!seasonsMap[sNum]) {
                         seasonsMap[sNum] = {
@@ -182,11 +191,11 @@ async function checkFullData(mediaObject) {
 
                     seasonsMap[sNum].episodes.push({
                         id: vid.id, // Keep the raw Stremio ID (e.g., tt12345:1:1) for stream scrapers!
-                        episodeNumber: vid.episode || 1,
+                        episodeNumber: vid.episode ?? 1,
                         title: vid.title || vid.name || `Episode ${vid.episode}`,
                         thumbnail: vid.thumbnail,
                         overview: vid.overview || vid.description,
-                        duration: null
+                        duration: vid.runtime
                     });
                 });
 
@@ -195,14 +204,19 @@ async function checkFullData(mediaObject) {
                 sortedSeasons.forEach(s => s.episodes.sort((a, b) => a.episodeNumber - b.episodeNumber));
 
                 mediaObject.seasons = sortedSeasons;
-                mediaObject.activeSeason = sortedSeasons[0]?.seasonNumber || 1;
-                mediaObject.activeEpisode = sortedSeasons[0]?.episodes[0]?.episodeNumber || 1;
+
+                const defaultSeason = sortedSeasons.find(s => s.seasonNumber > 0) || sortedSeasons[0];
+                mediaObject.activeSeason = defaultSeason?.seasonNumber ?? 1;
+                mediaObject.activeEpisode = defaultSeason?.episodes[0]?.episodeNumber ?? 1;
+
+                mediaObject.activeEpisodeId = defaultSeason?.episodes[0]?.id;
 
                 renderSeason(mediaObject);
             }
 
             // 3. Silently update the UI with the enriched data
             renderMasterDetailView(mediaObject);
+            console.log(mediaObject);
 
         } catch (e) {
             console.error("Detail Fetch Error:", e);
@@ -297,33 +311,28 @@ export async function openCollectionGrid(collectionItem) {
     }
 }
 
-// Anime detector and mappings
-export async function fetchAnimeMapping(tmdbId) {
-    const workerBaseUrl = MY_PROXY.replace('/?url=', '');
-    try {
-        const mapUrl = `${workerBaseUrl}/map?tmdb_id=${tmdbId}`;
-        const res = await fetch(mapUrl);
-        if (res.ok) {
-            const data = await res.json();
-            if (data.kitsu_id || data.anilist_id) {
-                return { kitsuId: data.kitsu_id, anilistId: data.anilist_id };
-            }
-        }
-    } catch (e) {
-        console.warn("Fribb Network failed.", e);
-    }
-    return null;
-}
-
 export function handlePlayAction(mediaObject) {
     if (!mediaObject || !mediaObject.id || !mediaObject.type) return;
 
-    const id = mediaObject.imdb_id || mediaObject.id; // Use IMDB if available!
-    const type = mediaObject.type;
+    let id = "";
+    let type = "";
+    let season = "";
+    let episode = "";
 
-    // We can pull season/ep right out of the object!
-    const season = mediaObject.activeSeason || null;
-    const episode = mediaObject.activeEpisode || null;
+    if (mediaObject.addonName == "customTMDB" || !mediaObject.baseUrl) {
+        id = mediaObject.currentKitsuId || mediaObject.imdb_id || mediaObject.id;
+        type = mediaObject.type;
+
+        season = mediaObject.activeSeason || null;
+        episode = mediaObject.kitsuEpisode || mediaObject.activeEpisode || null;
+    } else if (mediaObject.baseUrl) {
+        id = mediaObject.activeEpisodeId || mediaObject.id;
+        type = mediaObject.type;
+
+        season = mediaObject.activeSeason || null;
+        episode = mediaObject.activeEpisode || null;
+    }
+
     console.log(id, type, season, episode);
 
     const playBtn = document.getElementById('add-library-btn');
@@ -348,6 +357,55 @@ export function handlePlayAction(mediaObject) {
     }
 }
 
+//#region Anime Mapping
+// Anime detector and mappings for TMBD ONLY
+export async function fetchAnimeMapping(tmdbId) {
+    const workerBaseUrl = MY_PROXY.replace('/?url=', '');
+    try {
+        const mapUrl = `${workerBaseUrl}/map?tmdb_id=${tmdbId}`;
+        const res = await fetch(mapUrl);
+        if (res.ok) {
+            const data = await res.json();
+            if (data) {
+                return { data };
+            }
+        }
+    } catch (e) {
+        console.warn("Fribb Network failed.", e);
+    }
+    return null;
+}
+
+function formatAnimeMappings(rawMatches) {
+    if (!Array.isArray(rawMatches)) return [];
+
+    return rawMatches.map(match => ({
+        kitsuId: match.kitsu_id || null,
+        type: match.type || "UNKNOWN",
+        season: match.season?.tmdb ?? 1,
+        episodeOffset: match.episode_offset?.tmdb ?? 0
+    }));
+}
+
+export function updateActiveKitsuMapping(mediaObject) {
+    if (!mediaObject.animeMappings) return;
+
+    const seasonMappings = mediaObject.animeMappings.filter(m => m.season === mediaObject.activeSeason);
+    if (seasonMappings.length === 0) return;
+
+    seasonMappings.sort((a, b) => b.episodeOffset - a.episodeOffset);
+
+    const matchedMapping = seasonMappings.find(m => mediaObject.activeEpisode > m.episodeOffset)
+        || seasonMappings[seasonMappings.length - 1]; // Fallback
+
+    // 4. Set the exact Kitsu ID and calculate the corrected Kitsu Episode
+    mediaObject.currentKitsuId = `kitsu:${matchedMapping.kitsuId}`;
+    mediaObject.kitsuEpisode = mediaObject.activeEpisode - matchedMapping.episodeOffset;
+
+    console.log(`Matched! Kitsu ID: ${mediaObject.currentKitsuId} | Kitsu Ep: ${mediaObject.kitsuEpisode}`);
+}
+//#endregion
+
 //#region Render Details
 function renderMasterDetailView(mediaObject) {
     const viewContainer = document.getElementById('full-detail-view');
@@ -363,7 +421,6 @@ function renderMasterDetailView(mediaObject) {
         };
     }
 
-    console.log(mediaObject);
     const ui = {
         title: document.getElementById('media-title'),
         backdrop: document.getElementById('detail-backdrop'),
@@ -410,6 +467,7 @@ export function renderSeason(mediaObject) {
     if (!mediaObject || !mediaObject.seasons || mediaObject.seasons.length === 0) return;
 
     const activeSeasonData = mediaObject.seasons.find(s => s.seasonNumber === mediaObject.activeSeason) || mediaObject.seasons[0];
+    console.log(activeSeasonData);
 
     const dropdownBtn = document.getElementById('season-dropdown-btn');
     const dropdownText = document.getElementById('season-dropdown-text');
@@ -423,10 +481,10 @@ export function renderSeason(mediaObject) {
 
     if (mediaObject.isCollection) {
         dropdownBtn.disabled = true;
-        if (chevron) chevron.classList.add('hidden'); // Hide the arrow
+        if (chevron) chevron.classList.add('hidden');
     } else {
         dropdownBtn.disabled = false;
-        if (chevron) chevron.classList.remove('hidden'); // Show the arrow
+        if (chevron) chevron.classList.remove('hidden');
     }
 
     dropdownBtn.onclick = (e) => {
@@ -456,6 +514,11 @@ export function renderSeason(mediaObject) {
                 mediaObject.activeSeason = clickedSeasonNum;
                 const newSeason = mediaObject.seasons.find(s => s.seasonNumber === clickedSeasonNum);
                 mediaObject.activeEpisode = newSeason?.episodes[0]?.episodeNumber || 1;
+
+                mediaObject.activeEpisodeId = newSeason?.episodes[0]?.id;
+
+                if (mediaObject.animeMappings) updateActiveKitsuMapping(mediaObject);
+
                 renderSeason(mediaObject);
             }
         };
@@ -493,7 +556,13 @@ export function renderSeason(mediaObject) {
         }
 
         if (ep.duration) {
-            durationEl.textContent = `${ep.duration}m`;
+            const durationStr = String(ep.duration).toLowerCase();
+            if (durationStr.includes('m') || durationStr.includes('h')) {
+                durationEl.textContent = ep.duration;
+            } else {
+                durationEl.textContent = `${ep.duration}m`;
+            }
+
             durationEl.classList.remove('hidden');
         }
 
@@ -513,6 +582,12 @@ export function renderSeason(mediaObject) {
             card.classList.add('border-blue-500', 'bg-blue-500/10', 'shadow-[0_0_15px_rgba(59,130,246,0.3)]');
             card.classList.remove('border-slate-700/50', 'bg-slate-800/40');
 
+            // TMDB ONLY
+            if (mediaObject.animeMappings) updateActiveKitsuMapping(mediaObject);
+
+            // Custom only
+            if (ep.id) mediaObject.activeEpisodeId = ep.id;
+
             // --- COLLECTION ---
             if (mediaObject.isCollection) {
                 // 1. Update the master object with basic data
@@ -525,6 +600,7 @@ export function renderSeason(mediaObject) {
                 mediaObject.cast = '';
                 mediaObject.runtime = '';
                 mediaObject.rating = '';
+                mediaObject.year = '';
                 mediaObject.genre = '';
                 mediaObject.backdrop = '';
 
