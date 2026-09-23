@@ -197,11 +197,23 @@ export function initCustomCatalogsState() {
 
         // Iterate every catalog per addon
         for (const catalog of addon.catalogs) {
+
+            // Options, skip, custom attributes like showInHome
+            const extra = catalog.extra || [];
+
+            const isSearchRequired = extra.some(param => param.name === 'search' && param.isRequired === true);
+
+            // 2. Check the legacy Stremio spec for required search params
+            const legacySearchRequired = catalog.extraRequired && catalog.extraRequired.includes('search');
+
+            // 3. Skip this catalog if it is strictly meant for searching
+            if (isSearchRequired || legacySearchRequired) continue;
+            
             // Check if the type bucket already exists
             if (!addonState[catalog.type]) {
                 addonState[catalog.type] = {};
             }
-
+            console.log(catalog);
             // HTML needs a unique id per catalog
             let catalogId = `${addonKey}-${catalog.type}-${catalog.id}`.replace(/[^a-zA-Z0-9-]/g, '-');
 
@@ -210,9 +222,6 @@ export function initCustomCatalogsState() {
                 while (addonState[catalog.type][`${catalogId}-${i}`]) i++;
                 catalogId = `${catalogId}-${i}`;
             }
-
-            // Options, skip, custom attributes like showInHome
-            const extra = catalog.extra || [];
 
             // Check if it accepts parameters
             const supportsOption = extra.some(param => Array.isArray(param.options) && param.options.length > 0);

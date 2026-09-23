@@ -133,12 +133,11 @@ const viewportObserver = new IntersectionObserver((entries) => {
         } else {
             // ROW IS OFF SCREEN
             if (row.childElementCount > 0) {
-                // 1. Lock the height so the vertical scrollbar doesn't glitch
                 row.style.minHeight = `${row.offsetHeight}px`;
-                // 2. Save where the user was swiping
                 rowScrollPositions[containerId] = row.scrollLeft;
-                // 3. Nuke the cards from the DOM to free up CPU/RAM
                 row.replaceChildren();
+
+                catalogObject.cardEls?.clear();
             }
         }
     });
@@ -222,8 +221,8 @@ function getOrCreateCard(item, catalogObject) {
 }
 
 function itemsForRehydration(catalogObject, cap) {
-    const items = catalogObject.items || [];
-    return items.length > cap ? items.slice(-cap) : items;
+    // Return the full array so the row width is perfectly preserved
+    return catalogObject.items || [];
 }
 
 export function renderSelectedCatalog() {
@@ -442,14 +441,14 @@ export function initGlobalClickListener() {
             return;
         }
 
-        
+
         // Poster Clicks
         const card = e.target.closest(".poster-card");
         if (card) {
             const { id, type, containerId } = card.dataset; // type is preserved per-item
             const catalog = getActiveState(containerId);
             const fullItem = catalog?.items?.find(item => String(item.id) === String(id)) || {};
-            
+
             const isCollection = String(id).includes('tvdbc:');
             const mediaPayload = {
                 ...card.dataset,

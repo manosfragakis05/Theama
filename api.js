@@ -59,6 +59,7 @@ async function checkFullData(mediaObject) {
             if (!res.ok) throw new Error("TMDB item fetch failed");
 
             const detailedData = await res.json();
+            console.log(detailedData);
 
             // Format Data Safely
             const tmdbGenre = detailedData.genres?.[0]?.name || '';
@@ -524,7 +525,7 @@ export function renderSeason(mediaObject) {
         };
     });
 
-    listContainer.innerHTML = '';
+    listContainer.replaceChildren();
 
     activeSeasonData.episodes.forEach(ep => {
         const clone = template.content.cloneNode(true);

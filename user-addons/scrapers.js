@@ -163,27 +163,40 @@ export async function loadAllAddonsParallel(type, streamId, season = null, episo
     const userAddons = getScrapingProviders();
 
     // Format the ID once for everyone
-    let pathId = "";
+    const safeId = String(streamId);
+    let pathId = safeId;
 
-    console.log(streamId);
+    console.log("Raw ID:", safeId);
+
+    // 2. Only format if it's episodic content
     if (type === "series" || type === "tv" || type === "anime") {
 
-        if (streamId.startsWith("tt")) {
-            if (!streamId.includes(":")) {
-                pathId = `${streamId}:${season}:${episode}`;
+        if (safeId.startsWith("tt")) {
+            if (!safeId.includes(":")) {
+                pathId = `${safeId}:${season}:${episode}`;
             }
         }
-        else if (streamId.startsWith("kitsu")) {
-            if (streamId.split(':').length === 2) {
-                pathId = `${streamId}:${episode}`;
+        else if (safeId.startsWith("kitsu")) {
+            if (safeId.split(':').length === 2) {
+                pathId = `${safeId}:${episode}`;
             }
         }
-
-    } else {
-        pathId = streamId;
+        else {
+            if (!safeId.includes(":")) {
+                const baseTmdb = safeId.startsWith("tmdb:") ? safeId : `tmdb:${safeId}`;
+                pathId = `${baseTmdb}:${season}:${episode}`;
+            }
+        }
+    }
+    else if (type === "movie") {
+        if (!safeId.startsWith("tt") && !safeId.startsWith("kitsu") && !safeId.startsWith("tmdb:")) {
+            pathId = `tmdb:${safeId}`;
+        } else {
+            pathId = safeId;
+        }
     }
 
-    console.log(pathId);
+    console.log("Formatted ID:", pathId);
 
     // Fire all addons in parallel
     userAddons.forEach(addon => {
