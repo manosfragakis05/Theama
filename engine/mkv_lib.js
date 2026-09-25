@@ -161,6 +161,11 @@ class MKVFetcher {
         if (this.type === 'file') {
             return new Uint8Array(await this.source.slice(start, end).arrayBuffer());
         } else {
+            // NOTE: this used to just forward `signal` straight to fetch(). Some callers
+            // (e.g. the Cues/seek-table lookup in preload()) pass signal=null, which meant
+            // those requests could never time out or be cancelled — a stalled response on
+            // that particular byte range would hang forever. FetchWatchdog always applies
+            // its own timeout on top of whatever signal (or lack of one) was passed in.
             const watchdog = new FetchWatchdog(RANGE_FETCH_TIMEOUT_MS, signal);
             try {
                 const res = await fetch(this.source, {
@@ -470,7 +475,13 @@ class CoreEngine {
         this.textTracks = {};
         if (this.subtitleTracks && this.subtitleTracks.length > 0) {
             this.subtitleTracks.forEach((track, index) => {
-                const t = this.video.addTextTrack("subtitles", track.language, track.language);
+
+                // Format as "(Name) eng" if a name exists, otherwise just "eng"
+                const trackLabel = track.name
+                    ? `[${track.name}] ${track.language}`
+                    : track.language;
+
+                const t = this.video.addTextTrack("subtitles", trackLabel, track.language);
                 t.mode = (index === 0) ? "showing" : "hidden";
 
                 this.textTracks[track.track_number] = {
@@ -1085,6 +1096,13 @@ class CoreEngine {
             this.videoTrack.width, this.videoTrack.height,
             this.mkvHeader.duration * 1000, this.videoTrack.codec_id
         );
+
+        if (this.subtitleTracks && this.subtitleTracks.length > 0) {
+            wasm._demuxer_clear_subtitle_tracks(this.demuxer.ptr);
+            this.subtitleTracks.forEach(track => {
+                wasm._demuxer_add_subtitle_track(this.demuxer.ptr, BigInt(track.track_number));
+            });
+        }
 
         // 4. Configure transcoding for the new track
         if (newAudioTrack) {
