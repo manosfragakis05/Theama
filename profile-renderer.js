@@ -105,7 +105,10 @@ export function renderMediaCards(mediaData, trackId, onRemoveClick = null, onCar
         }
 
         if (onCardClick) {
-            card.onclick = () => onCardClick(media);
+            card.onclick = (e) => {
+                e.stopPropagation();
+                onCardClick(media);
+            }
         }
 
         trackEl.appendChild(clone);

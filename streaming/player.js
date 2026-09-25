@@ -207,8 +207,65 @@ export function startPlayer(url, name, localFileObject = null) {
                     if (gearBtn) gearBtn.style.display = ''; // Unhide gear
 
                     const langMap = {
-                        'eng': 'English', 'gr': 'Greek', 'jpn': 'Japanese', 'spa': 'Spanish',
-                        'fre': 'French', 'ger': 'German', 'ita': 'Italian', 'und': 'Unknown'
+                        'und': 'Unknown',
+
+                        // Common ISO 639-1 (2-letter) fallbacks
+                        'en': 'English', 'es': 'Spanish', 'fr': 'French', 'de': 'German',
+                        'it': 'Italian', 'ja': 'Japanese', 'ko': 'Korean', 'zh': 'Chinese',
+                        'ru': 'Russian', 'pt': 'Portuguese', 'ar': 'Arabic', 'hi': 'Hindi',
+
+                        // Complete ISO 639-2 (3-letter) MKV Standard
+                        'aar': 'Afar', 'abk': 'Abkhazian', 'afr': 'Afrikaans', 'aka': 'Akan',
+                        'alb': 'Albanian', 'sqi': 'Albanian', 'amh': 'Amharic', 'ara': 'Arabic',
+                        'arg': 'Aragonese', 'arm': 'Armenian', 'hye': 'Armenian', 'asm': 'Assamese',
+                        'ava': 'Avaric', 'ave': 'Avestan', 'aym': 'Aymara', 'aze': 'Azerbaijani',
+                        'bak': 'Bashkir', 'bam': 'Bambara', 'baq': 'Basque', 'eus': 'Basque',
+                        'bel': 'Belarusian', 'ben': 'Bengali', 'bih': 'Bihari', 'bis': 'Bislama',
+                        'bos': 'Bosnian', 'bre': 'Breton', 'bul': 'Bulgarian', 'bur': 'Burmese',
+                        'mya': 'Burmese', 'cat': 'Catalan', 'cha': 'Chamorro', 'che': 'Chechen',
+                        'nya': 'Chichewa', 'chi': 'Chinese', 'zho': 'Chinese', 'chv': 'Chuvash',
+                        'cor': 'Cornish', 'cos': 'Corsican', 'cre': 'Cree', 'hrv': 'Croatian',
+                        'cze': 'Czech', 'ces': 'Czech', 'dan': 'Danish', 'div': 'Divehi',
+                        'dut': 'Dutch', 'nld': 'Dutch', 'dzo': 'Dzongkha', 'eng': 'English',
+                        'epo': 'Esperanto', 'est': 'Estonian', 'ewe': 'Ewe', 'fao': 'Faroese',
+                        'fij': 'Fijian', 'fin': 'Finnish', 'fre': 'French', 'fra': 'French',
+                        'ful': 'Fulah', 'gla': 'Gaelic', 'glg': 'Galician', 'lug': 'Ganda',
+                        'geo': 'Georgian', 'kat': 'Georgian', 'ger': 'German', 'deu': 'German',
+                        'gre': 'Greek', 'ell': 'Greek', 'grn': 'Guarani', 'guj': 'Gujarati',
+                        'hat': 'Haitian', 'hau': 'Hausa', 'heb': 'Hebrew', 'her': 'Herero',
+                        'hin': 'Hindi', 'hmo': 'Hiri Motu', 'hun': 'Hungarian', 'ice': 'Icelandic',
+                        'isl': 'Icelandic', 'ido': 'Ido', 'ibo': 'Igbo', 'ind': 'Indonesian',
+                        'ina': 'Interlingua', 'ile': 'Interlingue', 'iku': 'Inuktitut',
+                        'ipk': 'Inupiaq', 'gle': 'Irish', 'ita': 'Italian', 'jpn': 'Japanese',
+                        'jav': 'Javanese', 'kal': 'Kalaallisut', 'kan': 'Kannada', 'kau': 'Kanuri',
+                        'kas': 'Kashmiri', 'kaz': 'Kazakh', 'khm': 'Khmer', 'kik': 'Kikuyu',
+                        'kin': 'Kinyarwanda', 'kir': 'Kyrgyz', 'kom': 'Komi', 'kon': 'Kongo',
+                        'kor': 'Korean', 'kua': 'Kuanyama', 'kur': 'Kurdish', 'lao': 'Lao',
+                        'lat': 'Latin', 'lav': 'Latvian', 'lim': 'Limburgan', 'lin': 'Lingala',
+                        'lit': 'Lithuanian', 'lub': 'Luba-Katanga', 'ltz': 'Luxembourgish',
+                        'mac': 'Macedonian', 'mkd': 'Macedonian', 'mlg': 'Malagasy', 'may': 'Malay',
+                        'msa': 'Malay', 'mal': 'Malayalam', 'mlt': 'Maltese', 'glv': 'Manx',
+                        'mao': 'Maori', 'mri': 'Maori', 'mar': 'Marathi', 'mah': 'Marshallese',
+                        'mon': 'Mongolian', 'nau': 'Nauru', 'nav': 'Navajo', 'nde': 'North Ndebele',
+                        'nbl': 'South Ndebele', 'ndo': 'Ndonga', 'nep': 'Nepali', 'sme': 'Northern Sami',
+                        'nor': 'Norwegian', 'nob': 'Norwegian Bokmål', 'nno': 'Norwegian Nynorsk',
+                        'oci': 'Occitan', 'oji': 'Ojibwa', 'ori': 'Odia', 'orm': 'Oromo',
+                        'oss': 'Ossetian', 'pli': 'Pali', 'per': 'Persian', 'fas': 'Persian',
+                        'pol': 'Polish', 'por': 'Portuguese', 'pan': 'Punjabi', 'que': 'Quechua',
+                        'rum': 'Romanian', 'ron': 'Romanian', 'roh': 'Romansh', 'run': 'Rundi',
+                        'rus': 'Russian', 'sag': 'Sango', 'san': 'Sanskrit', 'srd': 'Sardinian',
+                        'srp': 'Serbian', 'sna': 'Shona', 'iii': 'Sichuan Yi', 'snd': 'Sindhi',
+                        'sin': 'Sinhala', 'slo': 'Slovak', 'slk': 'Slovak', 'slv': 'Slovenian',
+                        'som': 'Somali', 'sot': 'Southern Sotho', 'spa': 'Spanish', 'sun': 'Sundanese',
+                        'swa': 'Swahili', 'ssw': 'Swati', 'swe': 'Swedish', 'tgl': 'Tagalog',
+                        'tah': 'Tahitian', 'tgk': 'Tajik', 'tam': 'Tamil', 'tat': 'Tatar',
+                        'tel': 'Telugu', 'tha': 'Thai', 'tib': 'Tibetan', 'bod': 'Tibetan',
+                        'tir': 'Tigrinya', 'ton': 'Tonga', 'tsn': 'Tswana', 'tso': 'Tsonga',
+                        'tuk': 'Turkmen', 'tur': 'Turkish', 'twi': 'Twi', 'uig': 'Uighur',
+                        'ukr': 'Ukrainian', 'urd': 'Urdu', 'uzb': 'Uzbek', 'ven': 'Venda',
+                        'vie': 'Vietnamese', 'vol': 'Volapük', 'wln': 'Walloon', 'wel': 'Welsh',
+                        'cym': 'Welsh', 'fry': 'Western Frisian', 'wol': 'Wolof', 'xho': 'Xhosa',
+                        'yid': 'Yiddish', 'yor': 'Yoruba', 'zha': 'Zhuang', 'zul': 'Zulu'
                     };
 
                     // --- AUDIO TRACKS ---
@@ -216,7 +273,7 @@ export function startPlayer(url, name, localFileObject = null) {
                         const trackOptions = audioTracks.map((t, index) => {
 
                             let langName = langMap[t.language] || (index === 0 ? 'Primary' : `Track ${t.track_number}`);
-                            const codecName = t.codec_string ? ` (${t.codec_string})` : '';
+                            const codecName = t.codec_id ? ` (${t.codec_id})` : '';
                             return { html: `${langName}${codecName}`, trackNumber: t.track_number, default: index === 0 };
                         });
 
@@ -248,22 +305,27 @@ export function startPlayer(url, name, localFileObject = null) {
                     // --- SUBTITLE TRACKS ---
                     if (hasSubMenu) {
                         const subOptions = subtitleTracks.map((t, index) => {
+                            // If you added the MKV Name extraction earlier, use it here!
+                            const customName = t.name ? `(${t.name}) ` : '';
                             let langName = langMap[t.language] || `Subtitle ${t.track_number}`;
-                            const codecName = t.codec_string ? ` (${t.codec_string})` : '';
-                            return { html: `${langName}`, trackNumber: t.track_number, default: false };
+
+                            // Match the engine: Set the first track (index 0) as the UI default
+                            return { html: `${customName}${langName}`, trackNumber: t.track_number, default: index === 0 };
                         });
 
-                        // Add an option to disable subtitles
-                        subOptions.unshift({ html: 'Off', trackNumber: -1, default: true });
+                        // Add "Off", but set default to FALSE
+                        subOptions.unshift({ html: 'Off', trackNumber: -1, default: false });
+
+                        // Find whichever option we flagged as default to set the initial tooltip text
+                        const defaultSub = subOptions.find(opt => opt.default);
 
                         art.setting.add({
                             html: 'Subtitles',
-                            tooltip: 'Off',
+                            tooltip: defaultSub.html, // Dynamically display the default track name
                             selector: subOptions,
                             onSelect: function (item) {
                                 art.notice.show = `Subtitles: ${item.html}`;
 
-                                // Assuming your engine handles subtitle rendering internally
                                 player.setSubtitleTrack(item.trackNumber);
 
                                 return item.html;

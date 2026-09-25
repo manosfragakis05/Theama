@@ -65,7 +65,6 @@ async function checkFullData(mediaObject) {
             if (!res.ok) throw new Error("TMDB item fetch failed");
 
             const detailedData = await res.json();
-            console.log(detailedData);
 
             // Format Data Safely
             const tmdbGenre = detailedData.genres?.[0]?.name || '';
@@ -134,7 +133,6 @@ async function checkFullData(mediaObject) {
                 }
             }
 
-            console.log(mediaObject);
             mediaStore.set({
                 id: mediaObject.id,
                 title: mediaObject.title,
@@ -143,7 +141,6 @@ async function checkFullData(mediaObject) {
                 poster: mediaObject.poster,
                 baseUrl: null
             });
-            console.log(mediaStore.get());
 
             // Render all data
             renderMasterDetailView(mediaObject);
@@ -241,9 +238,8 @@ async function checkFullData(mediaObject) {
                 poster: mediaObject.poster,
                 baseUrl: mediaObject.baseUrl
             });
-            console.log(mediaStore.get());
 
-            // 3. Silently update the UI with the enriched data
+            // update the UI with the enriched data
             renderMasterDetailView(mediaObject);
         } catch (e) {
             console.error("Detail Fetch Error:", e);
@@ -334,9 +330,8 @@ export async function openCollectionGrid(collectionItem) {
             poster: collectionItem.poster,
             baseUrl: collectionItem.baseUrl
         });
-        console.log(mediaStore.get());
 
-        // 4. Render the top banner and the movie list
+        // Render the top banner and the movie list
         renderMasterDetailView(collectionData);
         renderSeason(collectionData);
 
