@@ -88,7 +88,7 @@ export function renderMediaCards(mediaData, trackId, onRemoveClick = null, onCar
             removeBtn.classList.remove('hidden');
             removeBtn.onclick = (e) => {
                 e.stopPropagation();
-                onRemoveClick(media.tmdb_id);
+                onRemoveClick(media.media_id);
             };
         } else {
             if (removeBtn) removeBtn.remove();

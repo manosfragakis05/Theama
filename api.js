@@ -3,16 +3,19 @@ import { loadAllAddonsParallel } from './user-addons/scrapers.js';
 import { showStreamPicker } from './user-addons/scraper-renderer.js';
 
 //#region State and Data
+
+// Export a lightwight object for saving in lists and quick rendering
 export const mediaStore = (() => {
-    let state = { id: null, title: null, type: null };
+    let state = { id: null, title: null, type: null, year: null, poster: null, baseUrl: null };
     return {
         get: () => ({ ...state }),
         set: (newData) => { state = { ...state, ...newData }; },
-        clear: () => { state = { id: null, title: null, type: null }; }
+        clear: () => { state = { id: null, title: null, year: null, type: null, poster: null, baseUrl: null }; }
     };
 })();
 
 export async function openMasterDetail(mediaObject) {
+    mediaStore.clear();
 
     // Render UI
     renderMasterDetailView(mediaObject);
@@ -54,6 +57,9 @@ async function checkFullData(mediaObject) {
 
     if (mediaObject.addonName == "customTMDB" || !mediaObject.baseUrl) {
         try {
+            // Mediastore saves tv as series
+            if (mediaObject.type === "series") mediaObject.type = "tv";
+            
             const url = `https://api.themoviedb.org/3/${mediaObject.type}/${mediaObject.id}?api_key=${TMDB_KEY}&language=en-US&append_to_response=credits,external_ids`;
             const res = await fetch(url);
             if (!res.ok) throw new Error("TMDB item fetch failed");
@@ -67,17 +73,20 @@ async function checkFullData(mediaObject) {
             const tmdbCast = (detailedData.credits?.cast || []).slice(0, 5).map(a => a.name).join(', ');
             const tmdbTagline = detailedData.tagline;
             const tmdbRating = detailedData.vote_average ? detailedData.vote_average.toFixed(1) : '';
+            const tmdbBackdrop = detailedData.backdrop_path || detailedData.backdrop;
 
             if (detailedData.external_ids?.imdb_id) {
                 mediaObject.imdb_id = detailedData.external_ids.imdb_id;
             }
 
             mediaObject.overview ||= detailedData.overview || '';
+            mediaObject.year ||= detailedData.year || parseInt(detailedData.release_date);
             mediaObject.genre ||= tmdbGenre;
             mediaObject.cast ||= tmdbCast;
             mediaObject.runtime ||= tmdbRuntime;
             mediaObject.tagline ||= tmdbTagline;
             mediaObject.rating ||= tmdbRating;
+            mediaObject.backdrop ||= tmdbBackdrop.startsWith('http') ? tmdbBackdrop : `https://image.tmdb.org/t/p/original${tmdbBackdrop}`;
 
             if ((mediaObject.type === "tv" || mediaObject.type === "series") && detailedData.seasons) {
                 const validSeasons = detailedData.seasons.filter(s => s.season_number > 0);
@@ -123,8 +132,18 @@ async function checkFullData(mediaObject) {
                 if (mediaObject.activeSeason) {
                     updateActiveKitsuMapping(mediaObject);
                 }
-                console.log("Formatted array:", formatted);
             }
+
+            console.log(mediaObject);
+            mediaStore.set({
+                id: mediaObject.id,
+                title: mediaObject.title,
+                type: mediaObject.type,
+                year: mediaObject.year,
+                poster: mediaObject.poster,
+                baseUrl: null
+            });
+            console.log(mediaStore.get());
 
             // Render all data
             renderMasterDetailView(mediaObject);
@@ -156,7 +175,6 @@ async function checkFullData(mediaObject) {
             const data = await res.json();
             const meta = data.meta;
 
-            console.log(meta, meta.id);
             if (!meta) return;
 
             const rawCast = meta.app_extras?.cast || meta.cast;
@@ -215,10 +233,18 @@ async function checkFullData(mediaObject) {
                 renderSeason(mediaObject);
             }
 
+            mediaStore.set({
+                id: mediaObject.id,
+                title: mediaObject.title,
+                type: mediaObject.type,
+                year: mediaObject.year,
+                poster: mediaObject.poster,
+                baseUrl: mediaObject.baseUrl
+            });
+            console.log(mediaStore.get());
+
             // 3. Silently update the UI with the enriched data
             renderMasterDetailView(mediaObject);
-            console.log(mediaObject);
-
         } catch (e) {
             console.error("Detail Fetch Error:", e);
 
@@ -241,8 +267,8 @@ async function checkFullData(mediaObject) {
 export async function openCollectionGrid(collectionItem) {
     if (!collectionItem) return;
 
-    // 1. Instantly open the modal and show loading states
     mediaStore.clear();
+
     const seasonsContainer = document.getElementById('media-seasons');
     seasonsContainer.classList.remove("hidden");
 
@@ -267,7 +293,6 @@ export async function openCollectionGrid(collectionItem) {
         if (!res.ok) throw new Error("Failed to fetch collection");
         const data = await res.json();
         const meta = data.meta;
-        console.log(meta);
 
         if (!meta || !meta.videos) throw new Error("Collection is empty");
 
@@ -302,6 +327,15 @@ export async function openCollectionGrid(collectionItem) {
             }]
         };
 
+        mediaStore.set({
+            id: collectionItem.id,
+            title: collectionItem.title,
+            type: "movie",
+            poster: collectionItem.poster,
+            baseUrl: collectionItem.baseUrl
+        });
+        console.log(mediaStore.get());
+
         // 4. Render the top banner and the movie list
         renderMasterDetailView(collectionData);
         renderSeason(collectionData);
@@ -333,8 +367,6 @@ export function handlePlayAction(mediaObject) {
         season = mediaObject.activeSeason || null;
         episode = mediaObject.activeEpisode || null;
     }
-
-    console.log(id, type, season, episode);
 
     const playBtn = document.getElementById('add-library-btn');
     const originalContent = playBtn.innerHTML;
@@ -402,8 +434,6 @@ export function updateActiveKitsuMapping(mediaObject) {
     // 4. Set the exact Kitsu ID and calculate the corrected Kitsu Episode
     mediaObject.currentKitsuId = `kitsu:${matchedMapping.kitsuId}`;
     mediaObject.kitsuEpisode = mediaObject.activeEpisode - matchedMapping.episodeOffset;
-
-    console.log(`Matched! Kitsu ID: ${mediaObject.currentKitsuId} | Kitsu Ep: ${mediaObject.kitsuEpisode}`);
 }
 //#endregion
 
@@ -468,7 +498,6 @@ export function renderSeason(mediaObject) {
     if (!mediaObject || !mediaObject.seasons || mediaObject.seasons.length === 0) return;
 
     const activeSeasonData = mediaObject.seasons.find(s => s.seasonNumber === mediaObject.activeSeason) || mediaObject.seasons[0];
-    console.log(activeSeasonData);
 
     const dropdownBtn = document.getElementById('season-dropdown-btn');
     const dropdownText = document.getElementById('season-dropdown-text');

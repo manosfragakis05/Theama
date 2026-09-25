@@ -199,42 +199,42 @@ async function editTorrentInfo(torrentId) {
     const releaseYear = mediaData.releaseYear;
     const customName = `${mediaData.title} (${releaseYear})`;
 
-     /*if (!torrentId) {
-        try {
-            const listUrl = 'https://api.torbox.app/v1/api/torrents/mylist';
-            const listRes = await smartFetch(listUrl, {
-                headers: { 'Authorization': `Bearer ${tbKey}` }
-            });
-            const listData = await listRes.json();
+    /*if (!torrentId) {
+       try {
+           const listUrl = 'https://api.torbox.app/v1/api/torrents/mylist';
+           const listRes = await smartFetch(listUrl, {
+               headers: { 'Authorization': `Bearer ${tbKey}` }
+           });
+           const listData = await listRes.json();
 
-            if (listData.success && listData.data && listData.data.length > 0) {
-                const latestTorrent = listData.data[0];
-                const latestTorrentId = latestTorrent.id || latestTorrent.torrent_id;
+           if (listData.success && listData.data && listData.data.length > 0) {
+               const latestTorrent = listData.data[0];
+               const latestTorrentId = latestTorrent.id || latestTorrent.torrent_id;
 
-                const editUrl = 'https://api.torbox.app/v1/api/torrents/edittorrent';
-                await smartFetch(editUrl, {
-                    method: 'PUT',
-                    headers: {
-                        'Authorization': `Bearer ${tbKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        torrent_id: latestTorrentId,
-                        name: customName
-                    })
-                });
-            }
+               const editUrl = 'https://api.torbox.app/v1/api/torrents/edittorrent';
+               await smartFetch(editUrl, {
+                   method: 'PUT',
+                   headers: {
+                       'Authorization': `Bearer ${tbKey}`,
+                       'Content-Type': 'application/json'
+                   },
+                   body: JSON.stringify({
+                       torrent_id: latestTorrentId,
+                       name: customName
+                   })
+               });
+           }
 
-            closeStreamPicker();
-            showToast("Successfully added and renamed in TorBox!", "success");
-            return;
-        } catch (e) {
-            console.error("Smart link ping failed:", e);
-            showToast("Failed to trigger smart link.", "error");
-            return;
-        }
-        console.log("Http edit");
-    }*/
+           closeStreamPicker();
+           showToast("Successfully added and renamed in TorBox!", "success");
+           return;
+       } catch (e) {
+           console.error("Smart link ping failed:", e);
+           showToast("Failed to trigger smart link.", "error");
+           return;
+       }
+       console.log("Http edit");
+   }*/
 
 
     // Magnet Edit

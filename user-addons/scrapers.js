@@ -28,8 +28,6 @@ export async function submitNewAddon() {
 
         const idPrefix = getStreamIdPrefixes(manifest);
 
-        console.log(result);
-
         // 1. Build the complete add-on object
         const addonData = {
             id: manifest.id,
@@ -166,9 +164,6 @@ export async function loadAllAddonsParallel(type, streamId, season = null, episo
     const safeId = String(streamId);
     let pathId = safeId;
 
-    console.log("Raw ID:", safeId);
-
-    // 2. Only format if it's episodic content
     if (type === "series" || type === "tv" || type === "anime") {
 
         if (safeId.startsWith("tt")) {
@@ -195,8 +190,6 @@ export async function loadAllAddonsParallel(type, streamId, season = null, episo
             pathId = safeId;
         }
     }
-
-    console.log("Formatted ID:", pathId);
 
     // Fire all addons in parallel
     userAddons.forEach(addon => {
@@ -226,7 +219,7 @@ export async function loadAllAddonsParallel(type, streamId, season = null, episo
 }
 
 async function fetchSingleAddon(addon, type, pathId) {
-    console.log(`🕵️‍♂️ Fetching ${addon.name}...`, pathId);
+    console.log(`Fetching ${addon.name}...`, pathId);
 
     try {
         const streamUrl = addon.url.replace('/manifest.json', `/stream/${type}/${pathId}.json`);

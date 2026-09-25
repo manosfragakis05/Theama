@@ -6,8 +6,8 @@ import { renderAllWatchlists, renderMediaCards } from './profile-renderer.js';
 
 //#region Data
 
-// Get watchlists
-export async function getAvailableCustomLists() {
+// Get watchlists without media
+async function getAvailableCustomLists() {
     if (!appState.currentUser) return [];
 
     const { data, error } = await supabase
@@ -24,7 +24,7 @@ export async function getAvailableCustomLists() {
     return (data || []).filter(list => list.name.toLowerCase() !== 'favourites');
 }
 
-export async function getFavouritesList() {
+async function getFavouritesList() {
     // 1. Standardized Guest Object
     if (!appState.currentUser) {
         return { id: 'local-fav', name: 'Favourites', is_private: true };
@@ -63,8 +63,8 @@ async function getListMedia(list) {
         if (!list || !list.id) return []; // Safety check
 
         const { data, error } = await supabase
-            .from('movies')
-            .select('id, list_id, tmdb_id, title, media_type, poster_path')
+            .from('media')
+            .select('id, list_id, media_id, title, media_type, poster_path, base_url')
             .eq('user_id', appState.currentUser.id)
             .eq('list_id', list.id)
             .order('created_at', { ascending: false });
@@ -85,10 +85,11 @@ async function getListMedia(list) {
 // Save media to a list
 async function saveMediaToList(mediaData, list) {
     const payload = {
-        tmdb_id: mediaData.id,
+        media_id: mediaData.id,
         media_type: mediaData.type,
         title: mediaData.title,
-        poster_path: mediaData.poster
+        poster_path: mediaData.poster,
+        base_url: mediaData.baseUrl
     };
 
     if (appState.currentUser) {
@@ -96,7 +97,7 @@ async function saveMediaToList(mediaData, list) {
         payload.user_id = appState.currentUser.id;
         payload.list_id = list.id;
 
-        const { error } = await supabase.from('movies').insert(payload);
+        const { error } = await supabase.from('media').insert(payload);
 
         // Prevents duplicate movies in the same list
         if (error && error.code === '23505') return { status: 'duplicate' };
@@ -109,7 +110,7 @@ async function saveMediaToList(mediaData, list) {
         const existingData = await getListMedia(list);
 
         // Prevents duplicate movies in the same local list
-        if (existingData.some(item => item.tmdb_id === payload.tmdb_id)) {
+        if (existingData.some(item => item.media_id === payload.media_id)) {
             return { status: 'duplicate' };
         }
 
@@ -122,13 +123,13 @@ async function saveMediaToList(mediaData, list) {
 }
 
 // Delete media
-async function removeMediaFromList(tmdbId, list) {
+async function removeMediaFromList(mediaId, list) {
     if (appState.currentUser) {
         const { error } = await supabase
-            .from('movies')
+            .from('media')
             .delete()
             .eq('user_id', appState.currentUser.id)
-            .eq('tmdb_id', tmdbId)
+            .eq('media_id', mediaId)
             .eq('list_id', list.id);
 
         if (error) throw error;
@@ -136,7 +137,7 @@ async function removeMediaFromList(tmdbId, list) {
         // Guest routing
         const normalizedList = list.name.toLowerCase();
         const existingData = await getListMedia(list);
-        const filteredData = existingData.filter(item => item.tmdb_id !== tmdbId);
+        const filteredData = existingData.filter(item => item.media_id !== mediaId);
 
         localStorage.setItem(`guest_watchlist_${normalizedList}`, JSON.stringify(filteredData));
     }
@@ -161,10 +162,11 @@ async function syncLocalFavouritesToCloud() {
 
         for (const media of localFavs) {
             await saveMediaToList({
-                id: media.tmdb_id,
+                id: media.media_id,
                 type: media.media_type,
                 title: media.title,
-                poster: media.poster_path
+                poster: media.poster_path,
+                base_url: media.base_url
             }, favList);
         }
 
@@ -176,7 +178,7 @@ async function syncLocalFavouritesToCloud() {
     }
 }
 
-export async function fetchFollowingSidebarList() {
+async function fetchFollowingSidebarList() {
     if (!appState.currentUser) return [];
 
     // Step 1: Get the IDs of everyone we follow
@@ -287,7 +289,7 @@ export async function shareMyProfile() {
 
 
 //#region Renderers
-export async function loadAndRenderProfile() {
+async function loadAndRenderProfile() {
     // 1. Fetch the Shelves
     const customLists = await getAvailableCustomLists();
     const favList = await getFavouritesList();
@@ -299,8 +301,8 @@ export async function loadAndRenderProfile() {
     let allUserMovies = [];
     if (appState.currentUser) {
         const { data } = await supabase
-            .from('movies')
-            .select('id, list_id, tmdb_id, title, media_type, poster_path')
+            .from('media')
+            .select('id, list_id, media_id, title, media_type, poster_path, base_url')
             .eq('user_id', appState.currentUser.id)
             .order('created_at', { ascending: false });
         allUserMovies = data || [];
@@ -310,20 +312,29 @@ export async function loadAndRenderProfile() {
         let mediaData = [];
 
         if (appState.currentUser) {
-            mediaData = allUserMovies.filter(movie => movie.list_id === listObj.id);
+            mediaData = allUserMovies.filter(media => media.list_id === listObj.id);
         } else {
             mediaData = await getListMedia(listObj); // Keep guest local storage logic
         }
 
-        const handleRemove = async (tmdbId) => {
-            await handleRemoveMedia(tmdbId, listObj);
+        const handleRemove = async (mediaId) => {
+            await handleRemoveMedia(mediaId, listObj);
             await loadAndRenderProfile(); // Re-run the optimized render
         };
 
-        const handleCardClick = (media) => {
-            openMasterDetail(media);
-        };
+        const handleCardClick = (dbMedia) => {
+            // Re-map the database columns to match what openMasterDetail expects
+            const formattedMedia = {
+                id: dbMedia.media_id,
+                type: dbMedia.media_type,
+                title: dbMedia.title,
+                poster: dbMedia.poster_path,
+                baseUrl: dbMedia.base_url || null
+            };
 
+            openMasterDetail(formattedMedia);
+        };
+        
         renderMediaCards(mediaData, trackId, handleRemove, handleCardClick);
     }
 
@@ -524,9 +535,9 @@ export async function addToWatchlist(list) {
 }
 
 // Delete media from a list
-async function handleRemoveMedia(tmdbId, list) {
+async function handleRemoveMedia(mediaId, list) {
     try {
-        await removeMediaFromList(tmdbId, list);
+        await removeMediaFromList(mediaId, list);
         showToast("Removed from list.", "info");
     } catch (err) {
         console.error("Error removing media:", err);
@@ -635,18 +646,11 @@ export function openEditListModal(list) {
 
 let lastRenderedUserId = null;
 window.addEventListener('auth-state-changed', async () => {
-    // 1. Figure out who is currently logged in (or if they are a guest)
     const currentUserId = appState.currentUser ? appState.currentUser.id : 'guest';
-
-    // 2. THE OPTIMIZATION: If the user hasn't changed, this is just a background token refresh. Abort!
     if (lastRenderedUserId === currentUserId) {
-        //console.log("Session verified in background. Skipping redundant database refetch.");
         return;
     }
 
-    console.log("Genuine Auth state change detected. Updating UI...");
-
-    // 3. Update the tracker so we don't fetch again next time
     lastRenderedUserId = currentUserId;
 
     const urlParams = new URLSearchParams(window.location.search);

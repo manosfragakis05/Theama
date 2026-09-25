@@ -478,9 +478,6 @@ export function initGlobalClickListener() {
             const catalogObject = getActiveState(rowEl.id);
 
             if (catalogObject) {
-                console.log("User wants to see more of:", catalogObject.title);
-
-                // Trigger your grid view function
                 catalogGridView(catalogObject);
             }
             return;
@@ -613,7 +610,6 @@ export function catalogGridView(catalogObject) {
 
     // Load options
     const dropDown = document.getElementById("grip-options-dropdown");
-    console.log(catalogObject)
 
     if (catalogObject.hasOptions) {
         const optionDef = catalogObject.extra.find(param => Array.isArray(param.options) && param.options.length > 0);

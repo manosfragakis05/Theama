@@ -66,7 +66,7 @@ async function fetchWatchlists(friendId) {
         .from('lists')
         .select(`
             id, name, is_private, created_at,
-            movies ( id, tmdb_id, title, media_type, poster_path )
+            media ( id, media_id, title, media_type, poster_path, base_url )
         `)
         .eq('user_id', friendId)
         .eq('is_private', false)
@@ -79,12 +79,12 @@ async function fetchWatchlists(friendId) {
 
     return publicLists.map(list => ({
         ...list,
-        items: list.movies || []
+        items: list.media || []
     }));
 }
 
 export async function initFriendProfile(friendId) {
-    console.log(`🔍 Initializing profile view for ID: ${friendId}`);
+    console.log(`Initializing profile view for ID: ${friendId}`);
 
     if (!friendId) return;
 
@@ -140,7 +140,7 @@ function setReadOnlyUI(username, friendId) {
     const followBtn = document.getElementById('profile-follow-btn');
     if (followBtn) {
         followBtn.style.display = 'flex';
-        followBtn.dataset.friendId = friendId; 
+        followBtn.dataset.friendId = friendId;
     }
 }
 
@@ -182,8 +182,16 @@ function renderFriendWatchlists(watchlistsData) {
         const safeId = list.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
         const trackId = `watchlist-track-${safeId}`;
 
-        const handleCardClick = (media) => {
-            openMasterDetail(media);
+        const handleCardClick = (dbMedia) => {
+            const formattedMedia = {
+                id: dbMedia.media_id,
+                type: dbMedia.media_type,
+                title: dbMedia.title,
+                poster: dbMedia.poster_path,
+                baseUrl: dbMedia.base_url || null
+            };
+
+            openMasterDetail(formattedMedia);
         };
 
         // Render the books (Step 2 function)
