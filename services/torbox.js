@@ -149,8 +149,7 @@ async function sendMagnetToTorbox(magnetLink) {
     if (!tbKey) return;
 
     const currentMedia = mediaStore.get();
-    const releaseYear = currentMedia?.releaseYear || '';
-    const customName = `${currentMedia?.title} (${releaseYear})`.trim();
+    const customName = currentMedia ? `${currentMedia.title} (${currentMedia.year})`.trim() : `${currentMedia.title}`;
 
     try {
         const createUrl =
@@ -195,9 +194,8 @@ async function editTorrentInfo(torrentId) {
     const tbKey = getTbKey();
     if (!tbKey) return;
 
-    const mediaData = mediaStore.get();
-    const releaseYear = mediaData.releaseYear;
-    const customName = `${mediaData.title} (${releaseYear})`;
+    const currentMedia = mediaStore.get();
+    const customName = currentMedia.year ? `${currentMedia.title} (${currentMedia.year})`.trim() : `${currentMedia.title}`;
 
     /*if (!torrentId) {
        try {

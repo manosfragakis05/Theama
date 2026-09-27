@@ -59,7 +59,7 @@ async function checkFullData(mediaObject) {
         try {
             // Mediastore saves tv as series
             if (mediaObject.type === "series") mediaObject.type = "tv";
-            
+
             const url = `https://api.themoviedb.org/3/${mediaObject.type}/${mediaObject.id}?api_key=${TMDB_KEY}&language=en-US&append_to_response=credits,external_ids`;
             const res = await fetch(url);
             if (!res.ok) throw new Error("TMDB item fetch failed");
@@ -79,7 +79,7 @@ async function checkFullData(mediaObject) {
             }
 
             mediaObject.overview ||= detailedData.overview || '';
-            mediaObject.year ||= detailedData.year || parseInt(detailedData.release_date);
+            mediaObject.year ||= detailedData.year || (detailedData.release_date ? parseInt(detailedData.release_date) : '');
             mediaObject.genre ||= tmdbGenre;
             mediaObject.cast ||= tmdbCast;
             mediaObject.runtime ||= tmdbRuntime;
@@ -92,10 +92,11 @@ async function checkFullData(mediaObject) {
 
                 const seasonPromises = validSeasons.map(s =>
                     fetch(`https://api.themoviedb.org/3/tv/${mediaObject.id}/season/${s.season_number}?api_key=${TMDB_KEY}`)
-                        .then(r => r.json())
+                        .then(r => r.ok ? r.json() : null)
+                        .catch(() => null)
                 );
 
-                const tmdbSeasonsData = await Promise.all(seasonPromises);
+                const tmdbSeasonsData = (await Promise.all(seasonPromises)).filter(Boolean);
 
                 // Format into universal Stremio structure
                 mediaObject.seasons = tmdbSeasonsData.map(tmdbSeason => ({
@@ -228,6 +229,14 @@ async function checkFullData(mediaObject) {
                 mediaObject.activeEpisodeId = defaultSeason?.episodes[0]?.id;
 
                 renderSeason(mediaObject);
+            } else if (mediaObject.type === 'series') {
+                // Stop the spinner if the addon has no episodes
+                const listContainer = document.getElementById('episode-list-container');
+                const dropdownText = document.getElementById('season-dropdown-text');
+                if (listContainer) {
+                    dropdownText.textContent = "No Episodes";
+                    listContainer.innerHTML = `<p class="text-slate-500 py-10 text-center col-span-full">No episodes found for this show.</p>`;
+                }
             }
 
             mediaStore.set({
