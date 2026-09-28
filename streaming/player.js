@@ -5,44 +5,7 @@ import { openExternalPlayer } from './external-players.js';
 export let art = null;
 let abortPlayback = false;
 
-// --- THE ULTIMATE KILL SWITCH ---
-export function stopPlayback() {
-    abortPlayback = true;
-
-    // 1. Nuke the WASM Engine Memory first
-    if (art && art.mkvEngine) {
-        console.log("🧨 Nuking MKV Engine Buffers...");
-        try {
-            if (typeof art.mkvEngine.destroy === 'function') {
-                art.mkvEngine.destroy();
-            }
-        } catch (e) { }
-        art.mkvEngine = null;
-    }
-
-    // 2. Force the browser to sever active TCP network streams
-    document.querySelectorAll('video, audio').forEach(media => {
-        try {
-            media.pause();
-            media.removeAttribute('src');
-            media.load(); // This specifically tells the browser to drop the buffer!
-            media.remove();
-        } catch (e) { }
-    });
-
-    // 3. Destroy the Artplayer UI
-    if (art) {
-        try { art.destroy(true); } catch (e) { }
-        art = null;
-    }
-
-    // 4. Hide the Theater
-    const wrapper = document.getElementById('player-wrapper');
-    if (wrapper) wrapper.classList.add('hidden');
-}
-
-// --- SECURE PURE LINK FETCHER ---
-// 1. We detach the API call so it has ZERO side effects on the player or UI.
+// LINK FETCHER
 export async function getTorboxLink(tid, fid) {
     const key = localStorage.getItem('tb_api_key');
     const targetUrl = `https://api.torbox.app/v1/api/torrents/requestdl?token=${key}&torrent_id=${tid}&file_id=${fid}&zip=false`;
@@ -64,8 +27,6 @@ export async function getTorboxLink(tid, fid) {
     }
 }
 
-// --- SECURE PLAYBACK ORCHESTRATOR ---
-// 2. This function now uses the pure fetcher, then boots the player.
 export async function requestLink(tid, fid, torrentName, fileName) {
     stopPlayback();
 
@@ -90,7 +51,7 @@ export async function requestLink(tid, fid, torrentName, fileName) {
     startPlayer(streamUrl, fileName || torrentName);
 }
 
-// --- PLAYER INITIALIZATION ---
+//#region Player
 export function startPlayer(url, name, localFileObject = null) {
     stopPlayback();
     abortPlayback = false;
@@ -342,6 +303,38 @@ export function startPlayer(url, name, localFileObject = null) {
     });
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+export function stopPlayback() {
+    abortPlayback = true;
+
+    // Nuke the WASM Engine Memory first
+    if (art && art.mkvEngine) {
+        console.log("Destroying MKV Engine Buffers...");
+        try {
+            if (typeof art.mkvEngine.destroy === 'function') {
+                art.mkvEngine.destroy();
+            }
+        } catch (e) { }
+        art.mkvEngine = null;
+    }
+
+    document.querySelectorAll('video, audio').forEach(media => {
+        try {
+            media.pause();
+            media.removeAttribute('src');
+            media.load();
+            media.remove();
+        } catch (e) { }
+    });
+
+    if (art) {
+        try { art.destroy(true); } catch (e) { }
+        art = null;
+    }
+
+    const wrapper = document.getElementById('player-wrapper');
+    if (wrapper) wrapper.classList.add('hidden');
 }
 
 export function handlePlaybackFailure(reason) {

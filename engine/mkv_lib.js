@@ -18,11 +18,16 @@ function cleanSubtitleText(codec, rawText) {
     return rawText;
 }
 
-// Bypasses background tab throttling
+// Reuse one channel instead of allocating two message ports on every yield.
+let yieldChannel;
+const yieldCallbacks = [];
 const yieldThread = () => new Promise(resolve => {
-    const channel = new MessageChannel();
-    channel.port1.onmessage = resolve;
-    channel.port2.postMessage(null);
+    if (!yieldChannel) {
+        yieldChannel = new MessageChannel();
+        yieldChannel.port1.onmessage = () => yieldCallbacks.shift()?.();
+    }
+    yieldCallbacks.push(resolve);
+    yieldChannel.port2.postMessage(null);
 });
 
 // Memory unlocker
@@ -64,8 +69,10 @@ class FetchWatchdog {
         }, this.timeoutMs);
     }
 
+    pause() { clearTimeout(this._timer); }
+
     dispose() {
-        clearTimeout(this._timer);
+        this.pause();
         if (this._externalSignal) this._externalSignal.removeEventListener('abort', this._onExternalAbort);
     }
 }
@@ -155,94 +162,92 @@ class MKVFetcher {
 
     // FINDS THE SEEK TABLE (skip indexes) FROM THE SeekID (table of contents)
     async read(start, end, signal) {
-        if (this.size !== Infinity && end > this.size) end = this.size;
-        if (start >= end) return new Uint8Array(0);
-
-        if (this.type === 'file') {
-            return new Uint8Array(await this.source.slice(start, end).arrayBuffer());
-        } else {
-            // NOTE: this used to just forward `signal` straight to fetch(). Some callers
-            // (e.g. the Cues/seek-table lookup in preload()) pass signal=null, which meant
-            // those requests could never time out or be cancelled — a stalled response on
-            // that particular byte range would hang forever. FetchWatchdog always applies
-            // its own timeout on top of whatever signal (or lack of one) was passed in.
-            const watchdog = new FetchWatchdog(RANGE_FETCH_TIMEOUT_MS, signal);
-            try {
-                const res = await fetch(this.source, {
-                    headers: { 'Range': `bytes=${start}-${end - 1}` },
-                    signal: watchdog.signal
-                });
-                if (!res.ok) {
-                    if (res.status === 416) return new Uint8Array(0);
-                    throw new Error(`HTTP Error ${res.status} for range ${start}-${end - 1}`);
-                }
-                watchdog.bump(); // headers are in — give the body download its own fresh window
-                return new Uint8Array(await res.arrayBuffer());
-            } finally {
-                watchdog.dispose();
-            }
+        const parts = [];
+        let length = 0;
+        for await (const part of this.stream(start, end, signal)) {
+            parts.push(part);
+            length += part.length;
         }
+        if (parts.length === 1) return parts[0];
+        const result = new Uint8Array(length);
+        let offset = 0;
+        for (const part of parts) { result.set(part, offset); offset += part.length; }
+        return result;
     }
 
-    // Requests chunks but yields the data in tiny fragments to feed bytes in wasm immediately
     async *stream(start, end, signal) {
-        if (this.size !== Infinity && end > this.size) end = this.size;
+        end = Math.min(end, this.size);
         if (start >= end) return;
-
-        let streamObj;
-        let watchdog = null;
-        if (this.type === 'file') {
-            streamObj = this.source.slice(start, end).stream();
-        } else {
-            // Same stalled-connection risk as read(), but here we can do better:
-            // once bytes start flowing we reset the deadline on every chunk, so a
-            // connection has to go fully silent (not just slow) to get killed.
-            watchdog = new FetchWatchdog(RANGE_FETCH_TIMEOUT_MS, signal);
-            let res;
-            try {
-                res = await fetch(this.source, {
-                    headers: { 'Range': `bytes=${start}-${end - 1}` },
+        const watchdog = new FetchWatchdog(RANGE_FETCH_TIMEOUT_MS, signal);
+        let reader;
+        let completed = false;
+        let received = 0;
+        let response;
+        try {
+            let body;
+            if (this.type === 'file') {
+                body = this.source.slice(start, end).stream();
+            } else {
+                response = await fetch(this.source, {
+                    headers: { Range: `bytes=${start}-${end - 1}` },
                     signal: watchdog.signal
                 });
-            } catch (err) {
-                watchdog.dispose();
-                throw err;
+                const range = response.headers.get('content-range');
+                if (response.status === 416) {
+                    const match = /^bytes \*\/(\d+)$/.exec(range || '');
+                    if (match) this.size = Number(match[1]);
+                    if (Number.isFinite(this.size) && start >= this.size) return;
+                    throw new Error('Range rejected; cannot establish end of file.');
+                }
+                if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
+                if (response.status !== 206 && start !== 0)
+                    throw new Error('Server ignored the byte Range request. Seeking requires HTTP 206.');
+                const match = /^bytes (\d+)-(\d+)\/(\d+|\*)$/.exec(range || '');
+                if (match) {
+                    if (Number(match[1]) !== start) throw new Error('Unexpected Content-Range offset.');
+                    if (match[3] !== '*') this.size = Number(match[3]);
+                } else if (response.status === 200) {
+                    const length = Number(response.headers.get('content-length'));
+                    if (length > 0) this.size = length;
+                }
+                end = Math.min(end, this.size);
+                body = response.body;
             }
-            if (!res.ok) {
-                watchdog.dispose();
-                if (res.status === 416) return;
-                throw new Error(`HTTP Error ${res.status} for range ${start}-${end - 1}`);
-            }
-            watchdog.bump(); // headers are in — the body reads below will keep bumping this
-            streamObj = res.body;
-        }
-
-        const reader = streamObj.getReader();
-        let naturallyFinished = false; // Track if the chunk completed gracefully
-
-        try {
-            while (true) {
+            if (!body) throw new Error('Response has no readable body.');
+            reader = body.getReader();
+            while (received < end - start) {
+                if (watchdog.signal.aborted) throw watchdog.signal.reason;
+                watchdog.bump();
                 const { done, value } = await reader.read();
-                if (watchdog) watchdog.bump(); // saw activity — push the stall deadline back out
+                // Slow decoding / disk writes are not network inactivity.
+                watchdog.pause();
                 if (done) {
-                    naturallyFinished = true; // The chunk is 100% downloaded
+                    completed = true;
+                    if (received < end - start) {
+                        if (response?.status === 200 && !Number.isFinite(this.size)) {
+                            this.size = start + received;
+                        } else {
+                            throw new Error('Truncated range response.');
+                        }
+                    }
                     break;
                 }
-                yield value;
+                const part = value.subarray(0, Math.min(value.length, end - start - received));
+                if (part.length) { received += part.length; yield part; }
             }
-        } catch (err) {
-            // AbortError = a real cancellation (seek/destroy/track switch) — end quietly.
-            // Anything else, including our own TimeoutError from a stalled connection,
-            // propagates up so callers (e.g. _streamLoop's retry/backoff) can react to it.
-            if (err.name !== 'AbortError') throw err;
         } finally {
-            reader.releaseLock();
-            if (watchdog) watchdog.dispose();
-            if (!naturallyFinished && streamObj && typeof streamObj.cancel === 'function') {
-                streamObj.cancel().catch(() => { });
+            watchdog.dispose();
+            if (reader) {
+                if (!completed) await reader.cancel().catch(() => {});
+                reader.releaseLock();
+            } else if (response?.body) {
+                await response.body.cancel().catch(() => {});
             }
+            watchdog.controller.abort();
         }
     }
+
+
 }
 
 function readVintJS(buffer, offset, maxOffset) {
@@ -291,7 +296,7 @@ function patchSegmentToUnknown(buffer) {
                     buffer[vintOffset + j] = 0xFF;
                 }
             }
-            break; // Stop after patching the Segment tag
+            return vint ? vintOffset + vint.length : null;
         }
     }
 }
@@ -304,6 +309,8 @@ class Demuxer {
         const codecPtr = wasm._alloc_memory(codecBytes.length);
         new Uint8Array(getWasmMemory(), codecPtr, codecBytes.length).set(codecBytes);
 
+        this.inputPtr = 0;
+        this.inputCapacity = 0;
         this.ptr = wasm._demuxer_create(
             BigInt(videoId), BigInt(audioId),
             Number(width), Number(height),
@@ -327,11 +334,29 @@ class Demuxer {
         return data;
     }
 
+    _copyInput(data) {
+        if (!this.inputPtr || data.length > this.inputCapacity) {
+            const capacity = Math.max(1024 * 1024, data.length, this.inputCapacity * 2);
+            const ptr = wasm._alloc_memory(capacity);
+            if (!ptr) throw new Error('Unable to allocate Wasm input buffer.');
+            if (this.inputPtr) wasm._free_memory(this.inputPtr, this.inputCapacity);
+            this.inputPtr = ptr;
+            this.inputCapacity = capacity;
+        }
+        // Any Wasm allocation may have grown memory; never retain a heap view.
+        new Uint8Array(getWasmMemory(), this.inputPtr, data.length).set(data);
+        return this.inputPtr;
+    }
+
     init(chunkData) {
-        const chunkPtr = wasm._alloc_memory(chunkData.length);
-        new Uint8Array(getWasmMemory(), chunkPtr, chunkData.length).set(chunkData);
-        const ptr = wasm._demuxer_init(this.ptr, chunkPtr, chunkData.length);
-        wasm._free_memory(chunkPtr, chunkData.length);
+        const input = this._copyInput(chunkData);
+        const ptr = wasm._demuxer_init(this.ptr, input, chunkData.length);
+        if (!ptr) {
+            const errorPtr = wasm._demuxer_get_last_error?.(this.ptr);
+            const detail = errorPtr ? wasm.UTF8ToString(errorPtr) :
+                'No diagnostic available; deploy the rebuilt engine JavaScript and Wasm together.';
+            throw new Error(`Rust initialization failed: ${detail}`);
+        }
         return this._handleBufferResult(ptr);
     }
 
@@ -347,21 +372,34 @@ class Demuxer {
     }
 
     parse_chunk(chunkData, isFinal) {
-        const chunkPtr = wasm._alloc_memory(chunkData.length);
-        new Uint8Array(getWasmMemory(), chunkPtr, chunkData.length).set(chunkData);
-        const frames = wasm._demuxer_parse_chunk(this.ptr, chunkPtr, chunkData.length, isFinal);
-        wasm._free_memory(chunkPtr, chunkData.length);
-        return frames;
+        const ptr = this._copyInput(chunkData);
+        return wasm._demuxer_parse_chunk(this.ptr, ptr, chunkData.length, isFinal);
+    }
+
+    parse_chunk_direct(chunkPtr, chunkLength, isFinal) {
+        // No alloc, no .set() copy, no free, just execute.
+        return wasm._demuxer_parse_chunk(this.ptr, chunkPtr, chunkLength, isFinal);
     }
 
     reset() { wasm._demuxer_reset(this.ptr); }
-    destroy() { wasm._demuxer_destroy(this.ptr); }
+    destroy() {
+        if (this.ptr) wasm._demuxer_destroy(this.ptr);
+        if (this.inputPtr) wasm._free_memory(this.inputPtr, this.inputCapacity);
+        this.ptr = this.inputPtr = this.inputCapacity = 0;
+    }
 }
 
+//#region Core Engine
 class CoreEngine {
     constructor() {
         this.video = null;
         this.chunkSize = 10 * 1024 * 1024;
+
+        this._bufferQueue = Promise.resolve();
+        this._streamPromise = null;
+        this._audioGeneration = 0;
+        this._aacPtr = this._aacCapacity = 0;
+        this._pcmBuffer = new Float32Array(0);
 
         this.downloadBuffer = [];
         this.isRecording = false;
@@ -379,14 +417,22 @@ class CoreEngine {
         this.currentStreamId = (this.currentStreamId || 0) + 1;
         this.currentOffset = 0;
         this.cueMap = [];
+        this.cueOffsets = [];
         this.audioTracks = [];
         this.sourceBuffer = null;
 
         this.audioFramesIn = 0;
         this.audioFramesOut = 0;
+        this._eof = false;
+        this._streamError = null;
+        this._lastEviction = 0;
     }
 
     async _bootAudioEncoder(targetAudioTrack) {
+        if (!targetAudioTrack) throw new Error('Missing audio track.');
+        const generation = ++this._audioGeneration;
+        const demuxer = this.demuxer;
+        this._encoderError = null;
         if (this.audioEncoder && this.audioEncoder.state !== 'closed') {
             try { this.audioEncoder.close(); } catch (e) { }
         }
@@ -422,25 +468,15 @@ class CoreEngine {
 
             const support = await AudioEncoder.isConfigSupported(config);
             if (support.supported) {
-                this.log(`Hardware accepted ${test.channels} channels (${test.vbr ? 'VBR' : 'CBR'}).`);
+                this.log(`Encoder supports ${test.channels} channels (${test.vbr ? 'VBR' : 'CBR'}).`);
                 finalConfig = config;
                 finalChannels = test.channels;
                 break; // Stop testing once the hardware accepts one
             }
         }
 
-        // Absolute Fail-Safe (If everything fails)
-        if (!finalConfig) {
-            this.log("Hardware rejected all configs. Forcing basic stereo.");
-            finalChannels = 2;
-            finalConfig = {
-                codec: 'mp4a.40.2',
-                sampleRate: currentSampleRate,
-                numberOfChannels: 2,
-                bitrate: 128000,
-                bitrateMode: "constant"
-            };
-        }
+        if (!finalConfig) throw new Error('This browser has no supported AAC encoder configuration.');
+        if (generation !== this._audioGeneration) return;
 
         this.encoderChannels = finalChannels;
 
@@ -449,24 +485,30 @@ class CoreEngine {
             wasm._demuxer_set_target_channels(this.demuxer.ptr, this.encoderChannels);
         }
 
-        // 5. Boot the Hardware Encoder
+        // Configure the browser audio encoder
         this.audioEncoder = new AudioEncoder({
-            output: (chunk, metadata) => {
-                this.audioFramesOut++;
-                const aacData = new Uint8Array(chunk.byteLength);
-                chunk.copyTo(aacData);
-                const aacPtr = wasm._alloc_memory(aacData.length);
-                new Uint8Array(getWasmMemory(), aacPtr, aacData.length).set(aacData);
-
-                const dtsSamples = BigInt(Math.floor((chunk.timestamp * currentSampleRate) / 1000000));
-                wasm._demuxer_append_aac(this.demuxer.ptr, aacPtr, aacData.length, dtsSamples);
-                wasm._free_memory(aacPtr, aacData.length);
+            output: (chunk) => {
+                if (generation !== this._audioGeneration || this.demuxer !== demuxer || !demuxer.ptr) return;
+                try {
+                    if (chunk.byteLength > this._aacCapacity) {
+                        const capacity = Math.max(8192, chunk.byteLength, this._aacCapacity * 2);
+                        const ptr = wasm._alloc_memory(capacity);
+                        if (!ptr) throw new Error('Unable to allocate AAC staging buffer.');
+                        if (this._aacPtr) wasm._free_memory(this._aacPtr, this._aacCapacity);
+                        this._aacPtr = ptr;
+                        this._aacCapacity = capacity;
+                    }
+                    chunk.copyTo(new Uint8Array(getWasmMemory(), this._aacPtr, chunk.byteLength));
+                    const dts = BigInt(Math.max(0, Math.round(chunk.timestamp * currentSampleRate / 1000000)));
+                    wasm._demuxer_append_aac(demuxer.ptr, this._aacPtr, chunk.byteLength, dts);
+                    this.audioFramesOut++;
+                } catch (e) { this._encoderError = e; this._encoderWake?.(); }
             },
-            error: (e) => console.error("Hardware Encoder Error:", e)
+            error: (e) => { if (generation === this._audioGeneration) { this._encoderError = e; this._encoderWake?.(); } }
         });
 
         this.audioEncoder.configure(finalConfig);
-        this.log(`Hardware Audio Encoder successfully rebuilt for ${this.encoderChannels} channels.`);
+        this.log(`Audio encoder configured for ${this.encoderChannels} channels.`);
     }
 
     attachVideo(videoElement) {
@@ -500,7 +542,8 @@ class CoreEngine {
         this._onlineHandler = () => this._streamLoop();
         window.addEventListener('online', this._onlineHandler);
 
-        this.video.src = URL.createObjectURL(this.mediaSource);
+        this._objectURL = URL.createObjectURL(this.mediaSource);
+        this.video.src = this._objectURL;
         this.log("Video tag attached. Stream routed to screen.");
     }
 
@@ -515,6 +558,7 @@ class CoreEngine {
 
         if (!wasm) wasm = await initModule();
         let ptr = wasm._alloc_memory(capacity);
+        try {
         let memBuffer = getWasmMemory();
         let wasmHeap = new Uint8Array(memBuffer, ptr, capacity);
 
@@ -522,6 +566,7 @@ class CoreEngine {
         let absoluteFileOffset = 0;
         let clusterFound = false;
         let firstClusterIndex = 0; // The clean slice marker
+
 
         while (!clusterFound && absoluteFileOffset < this.sourceInput.size && currentSize < maxProbe) {
             const probeController = new AbortController();
@@ -533,7 +578,7 @@ class CoreEngine {
             try {
                 // 2. Request only up to probeEnd instead of this.sourceInput.size
                 for await (const chunk of this.sourceInput.stream(absoluteFileOffset, probeEnd, probeController.signal)) {
-                    console.log(`🧠 [Probe] Copying ${chunk.length} bytes to WASM RAM. Current Buffer: ${currentSize}`);
+
 
                     if (currentSize + chunk.length > capacity) {
                         let oldPtr = ptr;
@@ -547,7 +592,7 @@ class CoreEngine {
                         wasm._free_memory(oldPtr, oldCapacity);
                         wasmHeap = newWasmHeap;
                     } else if (wasmHeap.buffer.byteLength === 0) {
-                        wasmHeap = new Uint8Array(wasm.memory.buffer, ptr, capacity);
+                        wasmHeap = new Uint8Array(getWasmMemory(), ptr, capacity);
                     }
 
                     wasmHeap.set(chunk, currentSize);
@@ -601,7 +646,8 @@ class CoreEngine {
 
         if (!clusterFound) throw new Error("Could not find Video Track.");
 
-        patchSegmentToUnknown(wasmHeap);
+        this.segmentPayloadStart = patchSegmentToUnknown(wasmHeap.subarray(0, currentSize));
+        if (this.segmentPayloadStart == null) throw new Error("Missing MKV Segment header.");
 
         this.initialHeaderData = wasmHeap.slice(0, firstClusterIndex);
 
@@ -612,6 +658,7 @@ class CoreEngine {
         this.mkvHeader = JSON.parse(jsonStr);
         wasm._free_string(jsonPtr);
         wasm._free_memory(ptr, capacity);
+        ptr = 0;
 
         const videoTrack = (this.mkvHeader.tracks && this.mkvHeader.tracks.length > 0)
             ? this.mkvHeader.tracks.find(t => t.track_type === "video")
@@ -638,7 +685,7 @@ class CoreEngine {
         }
 
         if (this.mkvHeader.cues_position) {
-            const pos = Number(this.mkvHeader.cues_position);
+            const pos = this.segmentPayloadStart + Number(this.mkvHeader.cues_position);
 
             // 1. Fetch just the first 12 bytes of the Cues element to read its size header
             const headerBytes = await this.sourceInput.read(pos, pos + 12, null);
@@ -667,6 +714,10 @@ class CoreEngine {
 
             let cJsonPtr = wasm._parse_cues_json(cPtr, cuesData.length);
             this.cueMap = JSON.parse(wasm.UTF8ToString(cJsonPtr));
+            const scale = (this.mkvHeader.timestamp_scale || 1000000) / 1000000;
+            for (const cue of this.cueMap) cue.time *= scale;
+            this.cueMap.sort((a, b) => a.time - b.time);
+            this.cueOffsets = [...new Set(this.cueMap.map(cue => Number(cue.offset)))].sort((a, b) => a - b);
 
             wasm._free_string(cJsonPtr);
             wasm._free_memory(cPtr, cuesData.length);
@@ -704,6 +755,35 @@ class CoreEngine {
 
         this.mediaSource = new MSE();
         this.mediaSource.addEventListener('sourceopen', () => this._onSourceOpen());
+        } finally { if (ptr) wasm._free_memory(ptr, capacity); }
+    }
+
+    _getOptimalChunkBoundary(startOffset, bufferedAheadSeconds) {
+        // 1. If the user is saving to disk, sprint at maximum speed
+        if (this.isRecording) {
+            let targetEnd = startOffset + (30 * 1024 * 1024);
+            return this._snapToNearestCue(startOffset, targetEnd);
+        }
+
+        // 2. Playback mode: Smoother, smaller bursts
+        let targetSize = 2 * 1024 * 1024; // Startup/Seek: 2MB for fast response
+        if (bufferedAheadSeconds > 3) targetSize = 6 * 1024 * 1024;  // Normal: 6MB
+        if (bufferedAheadSeconds > 10) targetSize = 9 * 1024 * 1024; // Coasting: 9MB cap
+
+        let targetEnd = startOffset + targetSize;
+        return this._snapToNearestCue(startOffset, targetEnd);
+    }
+
+    _snapToNearestCue(startOffset, targetEnd) {
+        if (!this.cueOffsets.length) return Math.min(targetEnd, this.sourceInput.size);
+        const target = targetEnd - this.segmentPayloadStart;
+        let low = 0, high = this.cueOffsets.length;
+        while (low < high) {
+            const mid = (low + high) >>> 1;
+            if (this.cueOffsets[mid] < target) low = mid + 1;
+            else high = mid;
+        }
+        return low < this.cueOffsets.length ? this.segmentPayloadStart + this.cueOffsets[low] : this.sourceInput.size;
     }
 
     async _configureAudioPipeline(videoTrack, audioTrack) {
@@ -751,6 +831,7 @@ class CoreEngine {
     }
 
     async _onSourceOpen() {
+        if (this.sourceBuffer || this._destroying) return;
         try {
             let mime = `video/mp4; codecs="${this.videoTrack.codec_string}`;
             if (this.audioTrack) {
@@ -761,7 +842,6 @@ class CoreEngine {
             this.sourceBuffer.mode = 'segments';
             this.mediaSource.duration = this.mkvHeader.duration;
 
-            await new Promise(r => setTimeout(r, 100));
 
             const initData = this.demuxer.init(this.initialHeaderData);
 
@@ -775,213 +855,225 @@ class CoreEngine {
             this._streamLoop();
 
         } catch (error) {
+            this._streamError = error;
             console.error("Engine Crash in _onSourceOpen:", error);
         }
     }
 
-    async _streamLoop() {
-        if (!this.sourceBuffer || this.mediaSource.readyState !== 'open') return;
+    _bufferedAhead() {
+        const time = this.video?.currentTime || 0;
+        const ranges = this.sourceBuffer?.buffered;
+        if (!ranges) return 0;
+        for (let i = 0; i < ranges.length; i++) {
+            if (ranges.start(i) <= time + 0.05 && ranges.end(i) > time)
+                return ranges.end(i) - time;
+        }
+        return 0;
+    }
 
-        let myStreamId = this.currentStreamId;
-        if (this.isFetching || this.currentOffset >= this.sourceInput.size) return;
+    async _stopStream() {
+        ++this.currentStreamId;
+        this.abortController?.abort();
+        await this._streamPromise;
+        this.isFetching = false;
+        this._eof = false;
+        this._streamError = null;
+    }
+
+    _streamLoop() {
+        if (this._streamPromise) return this._streamPromise;
+        if (this._destroying || this.isSeeking || this._eof || this._streamError ||
+            !this.sourceBuffer || !this.sourceInput || this.mediaSource?.readyState === 'closed')
+            return Promise.resolve();
+        const id = this.currentStreamId;
         this.isFetching = true;
-        this._activeLoops = (this._activeLoops || 0) + 1;
+        this._streamPromise = this._runStream(id).catch(error => {
+            if (id === this.currentStreamId && error?.name !== 'AbortError') {
+                this._streamError = error;
+                console.error('Stream error:', error);
+            }
+        }).finally(() => {
+            this._streamPromise = null;
+            this.isFetching = false;
+        });
+        return this._streamPromise;
+    }
 
-        try {
-            while (this.currentOffset < this.sourceInput.size && myStreamId === this.currentStreamId) {
-                if (this.mediaSource.readyState !== 'open') break;
-
-                let bufferedEnd = this.video ? this.video.currentTime : 0;
-
-                for (let i = 0; i < this.sourceBuffer.buffered.length; i++) {
-                    let end = this.sourceBuffer.buffered.end(i);
-                    if (end > bufferedEnd) bufferedEnd = end;
-                }
-
-                try {
-                    for (let i = 0; i < this.sourceBuffer.buffered.length; i++) {
-                        let end = this.sourceBuffer.buffered.end(i);
-                        if (end > bufferedEnd) bufferedEnd = end;
+    async _runStream(id) {
+        while (id === this.currentStreamId) {
+            if (this.currentOffset >= this.sourceInput.size) {
+                await this._completeInput(id);
+                return;
+            }
+            const ahead = this._bufferedAhead();
+            if (!this.isRecording && ahead >= 30) return;
+            const start = this.currentOffset;
+            const end = Math.min(this._getOptimalChunkBoundary(start, ahead), this.sourceInput.size);
+            if (!(end > start)) throw new Error('Input range made no progress.');
+            const controller = new AbortController();
+            this.abortController = controller;
+            let received = 0;
+            try {
+                for await (const chunk of this.sourceInput.stream(start, end, controller.signal)) {
+                    if (id !== this.currentStreamId) return;
+                    if (!chunk.length) continue;
+                    const nextOffset = this.currentOffset + chunk.length;
+                    const frames = this.demuxer.parse_chunk(chunk, nextOffset >= this.sourceInput.size);
+                    // Commit accepted bytes immediately, before any await.
+                    this.currentOffset = nextOffset;
+                    received += chunk.length;
+                    this._pullSubtitles();
+                    await this._drainAudio(id, controller.signal);
+                    if (id !== this.currentStreamId) return;
+                    if (frames >= 30) await this._emitSegment(id);
+                    if (id !== this.currentStreamId) return;
+                    if (this.isRecording && this.onDownloadProgress && Number.isFinite(this.sourceInput.size)) {
+                        this.onDownloadProgress(Math.min(99, Math.floor(this.currentOffset / this.sourceInput.size * 100)));
                     }
-                } catch (e) {
-                    break; // Buffer was removed, kill the loop cleanly
+                    if (!this.isRecording && this._bufferedAhead() >= 30) return;
                 }
+            } finally {
+                if (this.abortController === controller) this.abortController = null;
+            }
+            if (id !== this.currentStreamId) return;
+            if (this.currentOffset >= this.sourceInput.size) {
+                await this._completeInput(id);
+                return;
+            }
+            if (!received) throw new Error('Empty range response before a confirmed end of file.');
+        }
+    }
 
-                // THE NEW DYNAMIC RAM LIMITER
-                let limit = this.video ? (bufferedEnd - this.video.currentTime) : bufferedEnd;
+    _pullSubtitles() {
+        if (this.subtitleTracks && this.subtitleTracks.length > 0) {
+            // Ask Rust if there are any subtitles waiting (Fast C++ call)
+            const pendingCues = wasm._demuxer_get_subtitle_count(this.demuxer.ptr);
 
-                const durationSeconds = Math.max(this.mkvHeader.duration, 1);
-                const bytesPerSecond = this.sourceInput.size / durationSeconds;
+            if (pendingCues > 0) {
+                // Pull the JSON string from Rust
+                const subJsonPtr = wasm._demuxer_pull_subtitles_json(this.demuxer.ptr);
+                const subJsonStr = wasm.UTF8ToString(subJsonPtr);
+                wasm._free_string(subJsonPtr); // Free the memory!
 
-                // 2. Convert the forward buffer time into Megabytes
-                let forwardBufferMB = (limit * bytesPerSecond) / (1024 * 1024);
+                const cues = JSON.parse(subJsonStr);
 
-                // 3. Stop fetching if we have parked more than 50MB in the browser's RAM
-                if (forwardBufferMB > 50 && !this.isRecording) {
-                    break;
-                }
+                for (let cueData of cues) {
+                    const trackObj = this.textTracks[cueData.track_id];
+                    if (trackObj && cueData.duration_ms > 0) {
+                        // Convert milliseconds to seconds for the browser
+                        const startTime = cueData.start_ms / 1000;
+                        const endTime = startTime + (cueData.duration_ms / 1000);
+                        const cleanText = cleanSubtitleText(trackObj.codec, cueData.text);
 
-                this.abortController = new AbortController();
-                try {
-                    let bytesProcessed = 0;
-
-                    for await (const chunkData of this.sourceInput.stream(this.currentOffset, this.currentOffset + this.chunkSize, this.abortController.signal)) {
-                        if (myStreamId !== this.currentStreamId) break;
-
-                        const isFinal = (this.currentOffset + bytesProcessed + chunkData.length) >= this.sourceInput.size;
-                        const framesStaged = this.demuxer.parse_chunk(chunkData, isFinal);
-
-                        if (this.subtitleTracks && this.subtitleTracks.length > 0) {
-                            // Ask Rust if there are any subtitles waiting (Fast C++ call)
-                            const pendingCues = wasm._demuxer_get_subtitle_count(this.demuxer.ptr);
-
-                            if (pendingCues > 0) {
-                                // Pull the JSON string from Rust
-                                const subJsonPtr = wasm._demuxer_pull_subtitles_json(this.demuxer.ptr);
-                                const subJsonStr = wasm.UTF8ToString(subJsonPtr);
-                                wasm._free_string(subJsonPtr); // Free the memory!
-
-                                const cues = JSON.parse(subJsonStr);
-
-                                for (let cueData of cues) {
-                                    const trackObj = this.textTracks[cueData.track_id];
-                                    if (trackObj && cueData.duration_ms > 0) {
-                                        // Convert milliseconds to seconds for the browser
-                                        const startTime = cueData.start_ms / 1000;
-                                        const endTime = startTime + (cueData.duration_ms / 1000);
-                                        const cleanText = cleanSubtitleText(trackObj.codec, cueData.text);
-
-                                        try {
-                                            // Create the native subtitle cue and inject it!
-                                            const cue = new VTTCue(startTime, endTime, cleanText);
-                                            trackObj.htmlTrack.addCue(cue);
-                                        } catch (e) { } // Ignore overlapping cue errors
-                                    }
-                                }
-                            }
-                        }
-
-                        if (this.audioTrack && this.needsAudioTranscode && this.audioEncoder?.state === 'configured') {
-
-                            // 1. Read the negotiated limits (from our hardware handshake!)
-                            const numChannels = this.encoderChannels || 2;
-                            const sampleRate = this.audioTrack.sample_rate || 48000;
-                            const BYTES_PER_PLANE = 768000;
-
-                            while (true) {
-                                const samples = wasm._demuxer_decode_next_audio_frame(this.demuxer.ptr);
-                                if (samples <= 0) break;
-
-                                const pcmPtr = wasm._get_audio_ptr();
-                                const dtsBigInt = wasm._demuxer_get_last_audio_dts(this.demuxer.ptr);
-
-                                let planarData = [];
-
-                                // 2. Dynamically scoop the exact number of channels in the standard SMPTE order
-                                for (let ch = 0; ch < numChannels; ch++) {
-                                    const planeOffset = pcmPtr + (ch * BYTES_PER_PLANE);
-                                    const rawBytes = new Uint8Array(getWasmMemory(), planeOffset, samples * 4).slice();
-                                    planarData.push(new Float32Array(rawBytes.buffer));
-                                }
-
-                                // 3. Flatten the multi-dimensional planes into one contiguous array for WebCodecs
-                                const totalLength = planarData.reduce((acc, arr) => acc + arr.length, 0);
-                                const combinedFloats = new Float32Array(totalLength);
-                                let offset = 0;
-                                for (let plane of planarData) {
-                                    combinedFloats.set(plane, offset);
-                                    offset += plane.length;
-                                }
-
-                                // 4. Build the AudioData object dynamically
-                                const audioData = new AudioData({
-                                    format: 'f32-planar',
-                                    sampleRate: sampleRate,
-                                    numberOfChannels: numChannels,
-                                    numberOfFrames: samples,
-                                    timestamp: Number((BigInt(dtsBigInt) * 1000000n) / BigInt(sampleRate)),
-                                    data: combinedFloats
-                                });
-
-                                this.audioEncoder.encode(audioData);
-                                audioData.close();
-                                this.audioFramesIn++;
-                            }
-
-                            // Wait for the encoder queue to empty naturally
-                            while (this.audioEncoder && this.audioEncoder.encodeQueueSize > 0 && this.audioEncoder.state === 'configured') {
-                                await yieldThread();
-                            }
-                            await yieldThread();
-                        }
-
-                        if (framesStaged >= 30 || isFinal) {
-                            const segment = this.demuxer.get_mp4_segment();
-
-                            if (this.isRecording && this.diskStream && segment.length > 0) {
-                                // Stream directly to hard drive at maximum speed!
-                                await this.diskStream.write(segment);
-                            }
-
-                            if (isFinal && this.isRecording && this.diskStream) {
-                                console.log("✅ Reached EOF. Generating MFRA box...");
-
-                                if (this.onDownloadProgress) this.onDownloadProgress(100);
-                            }
-
-                            if (segment.length > 0 && this.sourceBuffer && !this.isRecording) {
-                                await this._appendToBuffer(segment);
-
-                                // 🛑 THE NEW, SAFE NUDGE BLOCK
-                                try {
-                                    if (this.video && this.sourceBuffer.buffered.length > 0) {
-                                        // 1. Explicit Autostart (No more accidental seek-starts!)
-                                        if (this.video.currentTime === 0 && this.video.paused) {
-                                            this.video.play().catch(() => { });
-                                        }
-
-                                        // 2. Safe Gap Jump (Only jump true gaps, no artificial kicks!)
-                                        if (!this.video.paused && this.video.readyState <= 2) {
-                                            try {
-                                                for (let i = 0; i < this.sourceBuffer.buffered.length; i++) {
-                                                    let start = this.sourceBuffer.buffered.start(i);
-                                                    if (start > this.video.currentTime) {
-                                                        this.video.currentTime = start + 0.01;
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                            catch (e) { break; }
-                                        }
-                                    }
-                                } catch (e) { }
-                            }
-                        }
-                        bytesProcessed += chunkData.length;
-
-                        if (this.isRecording && this.onDownloadProgress && this.sourceInput.size !== Infinity) {
-                            const currentBytes = this.currentOffset + bytesProcessed;
-                            const percent = Math.floor((currentBytes / this.sourceInput.size) * 100);
-                            this.onDownloadProgress(percent);
-                        }
+                        try {
+                            // Create the native subtitle cue and inject it!
+                            const cue = new VTTCue(startTime, endTime, cleanText);
+                            trackObj.htmlTrack.addCue(cue);
+                        } catch (e) { } // Ignore overlapping cue errors
                     }
-
-                    this.currentOffset += bytesProcessed;
-                } catch (err) {
-                    if (err?.name === 'AbortError') break;
-                    else {
-                        console.error("Fetch error:", err);
-                        await new Promise(r => setTimeout(r, 3000)); // The Wifi backoff!
-                        break;
-                    }
-                } finally {
-                    this.abortController = null;
                 }
             }
-        } finally {                                          // NEW
-            this._activeLoops = Math.max(0, this._activeLoops - 1);
-            if (myStreamId === this.currentStreamId) this.isFetching = false;
         }
+
+    }
+
+    _waitEncoder(encoder, signal) {
+        if (this._encoderError) return Promise.reject(this._encoderError);
+        if (encoder.encodeQueueSize < 16) return Promise.resolve();
+        return new Promise((resolve, reject) => {
+            const cleanup = () => {
+                encoder.removeEventListener('dequeue', check);
+                signal?.removeEventListener('abort', abort);
+                clearTimeout(timer);
+                if (this._encoderWake === check) this._encoderWake = null;
+            };
+            const abort = () => { cleanup(); reject(signal.reason || new DOMException('Stopped', 'AbortError')); };
+            const check = () => {
+                if (signal?.aborted) return abort();
+                if (this._encoderError || encoder.state !== 'configured') {
+                    cleanup(); reject(this._encoderError || new Error('Audio encoder closed.'));
+                } else if (encoder.encodeQueueSize <= 8) { cleanup(); resolve(); }
+            };
+            const timer = setTimeout(() => { cleanup(); reject(new Error('Audio encoder stalled.')); }, 15000);
+            encoder.addEventListener('dequeue', check);
+            signal?.addEventListener('abort', abort, { once: true });
+            this._encoderWake = check;
+            check();
+        });
+    }
+
+    _encodePCM(samples, encoder) {
+        const channels = this.encoderChannels;
+        const sampleRate = Math.round(this.audioTrack.sample_rate || 48000);
+        const total = samples * channels;
+        if (this._pcmBuffer.length < total) this._pcmBuffer = new Float32Array(total);
+        const ptr = wasm._get_audio_ptr();
+        const memory = getWasmMemory();
+        for (let channel = 0; channel < channels; channel++) {
+            this._pcmBuffer.set(new Float32Array(memory, ptr + channel * 192000 * 4, samples), channel * samples);
+        }
+        const dts = BigInt(wasm._demuxer_get_last_audio_dts(this.demuxer.ptr));
+        // Without a transfer list AudioData snapshots the supplied samples.
+        const data = new AudioData({ format: 'f32-planar', sampleRate,
+            numberOfChannels: channels, numberOfFrames: samples,
+            timestamp: Number(dts * 1000000n / BigInt(sampleRate)),
+            data: this._pcmBuffer.subarray(0, total) });
+        try { encoder.encode(data); this.audioFramesIn++; }
+        finally { data.close(); }
+    }
+
+    async _drainAudio(id, signal, final = false) {
+        if (!this.needsAudioTranscode || !this.audioTrack) return;
+        const encoder = this.audioEncoder;
+        if (!encoder || encoder.state !== 'configured') throw new Error('Audio encoder is not configured.');
+        let deadline = performance.now() + 4;
+        let flushing = false;
+        while (id === this.currentStreamId) {
+            if (this._encoderError) throw this._encoderError;
+            if (encoder.encodeQueueSize >= 16) await this._waitEncoder(encoder, signal);
+            if (id !== this.currentStreamId) return;
+            const samples = flushing ? wasm._demuxer_flush_audio(this.demuxer.ptr)
+                : wasm._demuxer_decode_next_audio_frame(this.demuxer.ptr);
+            if (samples < 0) throw new Error(`Audio decoder failed (${samples}).`);
+            if (!samples) {
+                if (final && !flushing) { flushing = true; continue; }
+                break;
+            }
+            this._encodePCM(samples, encoder);
+            if (performance.now() >= deadline) { await yieldThread(); deadline = performance.now() + 4; }
+        }
+        if (final && id === this.currentStreamId) {
+            await encoder.flush();
+            if (this._encoderError) throw this._encoderError;
+        }
+    }
+
+    async _emitSegment(id) {
+        if (id !== this.currentStreamId) return;
+        const segment = this.demuxer.get_mp4_segment();
+        if (!segment.length) return;
+        if (this.isRecording && this.diskStream) await this.diskStream.write(segment);
+        else {
+            await this._appendToBuffer(segment, id);
+            if (id === this.currentStreamId && this.video?.currentTime === 0 && this.video.paused)
+                this.video.play().catch(() => {});
+        }
+    }
+
+    async _completeInput(id) {
+        if (id !== this.currentStreamId || this._eof) return;
+        // Also handles EOF learned from response headers after the last chunk.
+        this.demuxer.parse_chunk(new Uint8Array(0), true);
+        this._pullSubtitles();
+        await this._drainAudio(id, undefined, true);
+        if (id !== this.currentStreamId) return;
+        await this._emitSegment(id);
+        if (id !== this.currentStreamId) return;
+        this._eof = true;
+        if (this.isRecording) this.onDownloadProgress?.(100);
+        else await this._queueBufferOperation(() => {
+            if (this.mediaSource.readyState === 'open') this.mediaSource.endOfStream();
+        }, id);
     }
 
     _onTimeUpdate() {
@@ -991,153 +1083,77 @@ class CoreEngine {
         this._streamLoop();
     }
 
-    async _onSeeking() {
-        if (!this.video || !this.cueMap || this.cueMap.length === 0 || !this.mediaSource || this.mediaSource.readyState !== 'open') {
-            console.warn("No seek table found. Seeking is disabled for this file.");
-            return;
-        }
-
-        // Stop the player from nuking itself on micro-nudges
-        if (this.sourceBuffer) {
-            let target = this.video.currentTime;
-            let isBuffered = false;
-            for (let i = 0; i < this.sourceBuffer.buffered.length; i++) {
-                if (target >= this.sourceBuffer.buffered.start(i) && target < this.sourceBuffer.buffered.end(i)) {
-                    isBuffered = true;
-                    break;
-                }
-            }
-            if (isBuffered) return;
-        }
-
-        if (this.abortController) { this.abortController.abort(); this.abortController = null; }
-        if (this.isSeeking) return;
-
+    async _onSeeking(force = false) {
+        if (this.isSeeking || this._destroying || this.isRecording || !this.video ||
+            !this.cueMap?.length || this.mediaSource?.readyState === 'closed') return;
+        if (!force && this._bufferedAhead() > 0) return;
         this.isSeeking = true;
-        this.currentStreamId++;
-
-        if (this.textTracks) {
-            for (let trackId in this.textTracks) {
-                const track = this.textTracks[trackId].htmlTrack;
-                if (track && track.cues) {
-                    // Must iterate backwards when removing from an array
-                    for (let i = track.cues.length - 1; i >= 0; i--) {
-                        track.removeCue(track.cues[i]);
-                    }
-                }
-            }
-        }
-
-        // 🛑 THE FATAL DOUBLE-WIPE FIX: Clean, single execution!
         try {
-            if (this.sourceBuffer) {
-                if (this.sourceBuffer.updating) {
-                    await new Promise(r => this.sourceBuffer.addEventListener('updateend', r, { once: true }));
-                }
-                if (this.sourceBuffer.buffered.length > 0) {
-                    const wipeStart = Math.max(0, this.video.currentTime - 1);
-                    this.sourceBuffer.remove(wipeStart, this.mediaSource.duration);
-                    await new Promise(r => this.sourceBuffer.addEventListener('updateend', r, { once: true }));
-                }
+            await this._stopStream();
+            const id = this.currentStreamId;
+            await this._queueBufferOperation(buffer => {
+                if (buffer.buffered.length) buffer.remove(0, this.mediaSource.duration);
+            }, id);
+            for (const item of Object.values(this.textTracks || {})) {
+                const track = item.htmlTrack;
+                while (track.cues?.length) track.removeCue(track.cues[track.cues.length - 1]);
             }
-        } catch (e) { }
-
-        let bestCue = this.cueMap[0];
-        for (let i = 0; i < this.cueMap.length; i++) {
-            if (this.cueMap[i].time <= this.video.currentTime) bestCue = this.cueMap[i];
-            else break;
-        }
-
-        const segmentPayloadStart = this.firstClusterOffset - Number(this.cueMap[0].offset);
-        this.currentOffset = segmentPayloadStart + Number(bestCue.offset);
-
-        if (this.demuxer) this.demuxer.reset();
-        if (this.audioTrack && this.needsAudioTranscode) this._bootAudioEncoder(this.audioTrack);
-
-        this.isFetching = false;
-        this.isSeeking = false;
+            const bestCue = this._cueAtTime(this.video.currentTime);
+            this.currentOffset = this.segmentPayloadStart + Number(bestCue.offset);
+            this.demuxer.reset();
+            this._lastEviction = 0;
+            if (this.needsAudioTranscode) await this._bootAudioEncoder(this.audioTrack);
+        } catch (error) {
+            this._streamError = error;
+            console.error('Seek failed:', error);
+        } finally { this.isSeeking = false; }
         this._streamLoop();
-        try { await this.video.play(); } catch (e) { }
+    }
+
+    _cueAtTime(time) {
+        let low = 0, high = this.cueMap.length;
+        while (low < high) {
+            const mid = (low + high) >>> 1;
+            if (this.cueMap[mid].time <= time) low = mid + 1;
+            else high = mid;
+        }
+        return this.cueMap[Math.max(0, low - 1)];
     }
 
     async switchAudioTrack(newTrackNumber) {
-        if (!this.video) return;
-        const targetTime = this.video.currentTime;
+        const track = this.audioTracks.find(t => t.track_number === Number(newTrackNumber));
+        if (!track || track === this.audioTrack || !this.video || this.isSeeking || this.isRecording) return;
+        const time = this.video.currentTime;
+        const resume = !this.video.paused;
         this.video.pause();
-
-        this.video.onseeking = null;
-
-        // Stop the current fetch loop immediately
-        if (this.abortController) { this.abortController.abort(); this.abortController = null; }
-        this.currentStreamId++;
-
-        // Safely wipe the old video buffer
+        this.isSeeking = true;
         try {
-            if (this.sourceBuffer) {
-                if (this.sourceBuffer.updating) {
-                    await new Promise(r => this.sourceBuffer.addEventListener('updateend', r, { once: true }));
-                }
-                if (this.sourceBuffer.buffered.length > 0) {
-                    this.sourceBuffer.remove(0, this.mediaSource.duration);
-                    await new Promise(r => this.sourceBuffer.addEventListener('updateend', r, { once: true }));
-                }
-            }
-        } catch (e) { }
-
-        // 3. Tear down the old Rust engine and build a new one
-        if (this.demuxer) this.demuxer.destroy();
-
-        const newAudioTrack = this.audioTracks.find(t => t.track_number === Number(newTrackNumber));
-        if (!newAudioTrack) return;
-        this.audioTrack = newAudioTrack;
-
-        this.demuxer = new Demuxer(
-            BigInt(this.videoTrack.track_number), BigInt(newAudioTrack.track_number),
-            this.videoTrack.width, this.videoTrack.height,
-            this.mkvHeader.duration * 1000, this.videoTrack.codec_id
-        );
-
-        if (this.subtitleTracks && this.subtitleTracks.length > 0) {
-            wasm._demuxer_clear_subtitle_tracks(this.demuxer.ptr);
-            this.subtitleTracks.forEach(track => {
-                wasm._demuxer_add_subtitle_track(this.demuxer.ptr, BigInt(track.track_number));
+            await this._stopStream();
+            ++this._audioGeneration;
+            if (this.audioEncoder?.state !== 'closed') this.audioEncoder?.close();
+            this.audioEncoder = null;
+            await this._queueBufferOperation(buffer => {
+                if (buffer.buffered.length) buffer.remove(0, this.mediaSource.duration);
             });
-        }
-
-        // 4. Configure transcoding for the new track
-        if (newAudioTrack) {
-            await this._configureAudioPipeline(this.videoTrack, newAudioTrack);
-        }
-
-        // 5. Send the new MP4 headers to the browser
-        const newInitSegment = this.demuxer.init(this.initialHeaderData);
-        await this._appendToBuffer(newInitSegment);
-
-        // Clamp the variables to zero so the stream can reset to the beginning if no cues exist
-        let bestCue = (this.cueMap && this.cueMap.length > 0) ? this.cueMap[0] : { time: 0, offset: 0 };
-        for (let i = 0; i < this.cueMap.length; i++) {
-            if (this.cueMap[i].time <= targetTime) bestCue = this.cueMap[i];
-            else break;
-        }
-
-        const segmentPayloadStart = this.firstClusterOffset - Number(this.cueMap.length > 0 ? this.cueMap[0].offset : 0);
-        this.currentOffset = segmentPayloadStart + Number(bestCue.offset);
-
-        // Jump the video to the new time
-        if (bestCue && this.video.currentTime !== bestCue.time) {
-            this.video.currentTime = bestCue.time;
-        }
-
-        // Re-hook the seeking event after the jump finishes
-        setTimeout(() => {
-            this.video.onseeking = () => this._onSeeking();
-        }, 100);
-
-        // 8. Start fetching the new language!
-        this.isFetching = false;
-        this.isSeeking = false;
+            this.demuxer.destroy();
+            this.audioTrack = track;
+            this.demuxer = new Demuxer(BigInt(this.videoTrack.track_number), BigInt(track.track_number),
+                this.videoTrack.width, this.videoTrack.height, this.mkvHeader.duration * 1000, this.videoTrack.codec_id);
+            for (const subtitle of this.subtitleTracks || [])
+                wasm._demuxer_add_subtitle_track(this.demuxer.ptr, BigInt(subtitle.track_number));
+            await this._configureAudioPipeline(this.videoTrack, track);
+            this.mp4InitSegment = this.demuxer.init(this.initialHeaderData);
+            if (!this.mp4InitSegment.length) throw new Error('Audio track initialization failed.');
+            await this._appendToBuffer(this.mp4InitSegment);
+            const cue = this.cueMap.length ? this._cueAtTime(time) : null;
+            this.currentOffset = cue ? this.segmentPayloadStart + Number(cue.offset) : this.firstClusterOffset;
+            this._lastEviction = 0;
+        } catch (error) {
+            this._streamError = error;
+            console.error('Audio track change failed:', error);
+        } finally { this.isSeeking = false; }
         this._streamLoop();
-        try { await this.video.play(); } catch (e) { }
+        if (resume) this.video.play().catch(() => {});
     }
 
     // Inside CoreEngine
@@ -1155,147 +1171,93 @@ class CoreEngine {
         }
     }
 
-    // THE NEW, SAFE CODE
-    async _appendToBuffer(data) {
+    _waitForBuffer(buffer, action) {
         return new Promise((resolve, reject) => {
-            if (!this.sourceBuffer || this.mediaSource.readyState !== 'open') {
-                return resolve();
-            }
-
-            if (this.sourceBuffer.updating) {
-                setTimeout(() => this._appendToBuffer(data).then(resolve).catch(reject), 50);
-                return;
-            }
+            const source = this.mediaSource;
+            const cleanup = () => {
+                buffer.removeEventListener('updateend', done);
+                buffer.removeEventListener('error', failed);
+                buffer.removeEventListener('abort', failed);
+                source?.removeEventListener('sourceclose', failed);
+            };
+            const done = () => { cleanup(); resolve(); };
+            const failed = () => { cleanup(); reject(new Error('SourceBuffer operation failed or was interrupted.')); };
+            buffer.addEventListener('updateend', done, { once: true });
+            buffer.addEventListener('error', failed, { once: true });
+            buffer.addEventListener('abort', failed, { once: true });
+            source?.addEventListener('sourceclose', failed, { once: true });
             try {
-                const onUpdate = () => { cleanup(); resolve(); };
-                const onError = (e) => { cleanup(); reject(e); };
-                const cleanup = () => {
-                    this.sourceBuffer.removeEventListener('updateend', onUpdate);
-                    this.sourceBuffer.removeEventListener('error', onError);
-                };
-                this.sourceBuffer.addEventListener('updateend', onUpdate);
-                this.sourceBuffer.addEventListener('error', onError);
-
-                this.sourceBuffer.appendBuffer(data);
-            } catch (e) { reject(e); }
+                if (action) action();
+                if (!buffer.updating) done();
+            } catch (error) { cleanup(); reject(error); }
         });
     }
 
-    async _runGarbageCollector() {
-        if (!this.sourceBuffer || this.sourceBuffer.updating || this.mediaSource.readyState !== 'open') return;
-
-        const currentTime = this.video ? this.video.currentTime : 0;
-        const safeBackBuffer = 30; // Keep 30 seconds of history
-
-        // Only delete if we actually have more than 30 seconds of history
-        if (currentTime > safeBackBuffer) {
-            try {
-                await new Promise((resolve, reject) => {
-                    const onUpdate = () => { cleanup(); resolve(); };
-                    const onError = (e) => { cleanup(); reject(e); };
-                    const cleanup = () => {
-                        this.sourceBuffer.removeEventListener('updateend', onUpdate);
-                        this.sourceBuffer.removeEventListener('error', onError);
-                    };
-
-                    this.sourceBuffer.addEventListener('updateend', onUpdate);
-                    this.sourceBuffer.addEventListener('error', onError);
-
-                    // Start the asynchronous deletion
-                    this.sourceBuffer.remove(0, currentTime - safeBackBuffer);
-                });
-
-                this.log(`🗑️ Garbage Collector: Flushed buffer from 0 to ${currentTime - safeBackBuffer}`);
-            } catch (e) {
-                this.log(`Garbage collection skipped: ${e.message}`);
-            }
-        }
+    _queueBufferOperation(action, id = this.currentStreamId) {
+        const buffer = this.sourceBuffer;
+        const task = this._bufferQueue.then(async () => {
+            if (id !== this.currentStreamId || buffer !== this.sourceBuffer) return;
+            if (!buffer || this.mediaSource?.readyState === 'closed') throw new Error('MediaSource is closed.');
+            if (buffer.updating) await this._waitForBuffer(buffer);
+            if (id !== this.currentStreamId || buffer !== this.sourceBuffer) return;
+            await this._waitForBuffer(buffer, () => action(buffer));
+        });
+        this._bufferQueue = task.catch(() => {});
+        return task;
     }
 
-    // Completly reset engine
+    _appendToBuffer(data, id = this.currentStreamId) {
+        return this._queueBufferOperation(buffer => buffer.appendBuffer(data), id);
+    }
+
+    async _runGarbageCollector() {
+        if (this._gcPending || this.isSeeking || this.isRecording || this._destroying || !this.sourceBuffer) return;
+        const cutoff = (this.video?.currentTime || 0) - 30;
+        if (cutoff < this._lastEviction + 5) return;
+        const ranges = this.sourceBuffer.buffered;
+        if (!ranges.length || ranges.start(0) >= cutoff) return;
+        this._gcPending = true;
+        try {
+            await this._queueBufferOperation(buffer => buffer.remove(0, cutoff));
+            this._lastEviction = cutoff;
+        } catch (error) { console.warn('Buffer eviction failed:', error); }
+        finally { this._gcPending = false; }
+    }
+
     async destroy() {
-        this.log("💥 Commencing total engine teardown...");
-
-        // 1. Stop new work, cancel the fetch in flight
-        this.currentStreamId++;
-        if (this.abortController) {
-            this.abortController.abort();
-            this.abortController = null;
-        }
-
-        // 2. Remove the window-level listener — otherwise it leaks forever
-        if (this._onlineHandler) {
-            window.removeEventListener('online', this._onlineHandler);
-        }
-
-        // 3. Wait for any in-flight _streamLoop() to actually unwind before
-        //    nulling anything it might still touch mid-chunk. Bounded so a
-        //    stuck append can never hang teardown forever.
-        const waitStart = Date.now();
-        while ((this._activeLoops || 0) > 0 && Date.now() - waitStart < 2000) {
-            await new Promise(r => setTimeout(r, 20));
-        }
-        this.isFetching = false;
-
-        // 4. Erase Rust WASM allocations (drops all the demuxer's internal
-        //    Vec buffers on the Rust side too)
-        if (this.demuxer) {
-            this.demuxer.destroy();
-            this.demuxer = null;
-        }
-
-        // 5. Kill the hardware audio encoder
-        if (this.audioEncoder && this.audioEncoder.state !== 'closed') {
-            try { this.audioEncoder.close(); } catch (e) { }
-            this.audioEncoder = null;
-        }
-
-        // 6. Explicitly empty the SourceBuffer's media data — safe now,
-        //    since step 3 guarantees nothing is still mid-append
-        if (this.sourceBuffer && this.mediaSource) {
-            try {
-                if (this.sourceBuffer.updating) this.sourceBuffer.abort();
-                if (this.sourceBuffer.buffered.length > 0) {
-                    this.sourceBuffer.remove(0, this.mediaSource.duration || Infinity);
-                }
-            } catch (e) { }
-        }
-
-        // 7. Sever the video element and nuke browser RAM buffers
+        this._destroying = true;
+        await this._stopStream();
+        await this._bufferQueue;
+        ++this._audioGeneration;
+        if (this.audioEncoder?.state !== 'closed') this.audioEncoder?.close();
+        this.audioEncoder = null;
+        this.demuxer?.destroy();
+        this.demuxer = null;
+        if (this._aacPtr) wasm._free_memory(this._aacPtr, this._aacCapacity);
+        this._aacPtr = this._aacCapacity = 0;
+        this._pcmBuffer = new Float32Array(0);
+        if (this._onlineHandler) window.removeEventListener('online', this._onlineHandler);
         if (this.video) {
+            this.video.onseeking = this.video.ontimeupdate = this.video.onwaiting = this.video.onstalled = null;
             this.video.pause();
             this.video.removeAttribute('src');
             this.video.load();
-
-            if (this.textTracks) {
-                for (let trackId in this.textTracks) {
-                    const track = this.textTracks[trackId].htmlTrack;
-                    if (track && track.cues) {
-                        for (let i = track.cues.length - 1; i >= 0; i--) {
-                            track.removeCue(track.cues[i]);
-                        }
-                    }
-                    track.mode = "disabled";
-                }
-            }
-
-            this.video.onseeking = null;
-            this.video.ontimeupdate = null;
-            this.video.onwaiting = null;
-            this.video.onstalled = null;
         }
-
-        // 8. Dereference MSE components
-        if (this.mediaSource && this.mediaSource.readyState === 'open') {
-            try { this.mediaSource.endOfStream(); } catch (e) { }
+        for (const item of Object.values(this.textTracks || {})) {
+            const track = item.htmlTrack;
+            while (track.cues?.length) track.removeCue(track.cues[track.cues.length - 1]);
+            track.mode = 'disabled';
         }
-        this.mediaSource = null;
-        this.sourceBuffer = null;
-        this.sourceInput = null;
-        this.video = null;
-        this.downloadBuffer = [];   // declared in the constructor but never read elsewhere — worth checking if it's dead code
+        if (this._objectURL) URL.revokeObjectURL(this._objectURL);
+        this._objectURL = null;
+        this.mediaSource = this.sourceBuffer = this.sourceInput = this.video = null;
+        this.initialHeaderData = this.mp4InitSegment = null;
+        this.textTracks = {};
     }
+
+
 }
+//#endregion
 
 //#region EXPORT OBJECT
 const streamDictionary = new Map();
@@ -1303,7 +1265,7 @@ const streamDictionary = new Map();
 export async function feed(source) {
     if (!wasm) wasm = await initModule();
 
-    const dictKey = source instanceof File ? source.name : source;
+    const dictKey = source;
 
     if (streamDictionary.has(dictKey)) return streamDictionary.get(dictKey);
 
@@ -1311,7 +1273,8 @@ export async function feed(source) {
     await fetcher.init();
 
     const engine = new CoreEngine();
-    await engine.preload(fetcher);
+    try { await engine.preload(fetcher); }
+    catch (error) { await engine.destroy(); throw error; }
 
     streamDictionary.set(dictKey, engine);
     return engine;
@@ -1326,35 +1289,27 @@ export class MKVPlayer {
 
     async load(source) {
         if (this.engine) {
-            this.engine.currentStreamId++;
-            if (this.engine.abortController) this.engine.abortController.abort();
+            if (this.engine.isRecording) await this._finishRecording(null);
+            const old = this.engine;
+            await old.destroy();
+            for (const [key, value] of streamDictionary) if (value === old) streamDictionary.delete(key);
+            this.engine = null;
         }
-
-        // Completely reset the video tag
-        if (this.video) {
-            this.video.pause();
-            this.video.currentTime = 0;
-            this.video.removeAttribute('src');
-            this.video.load();
-        }
-
-        const isFile = source instanceof File;
-        const dictKey = isFile ? source.name : source;
-
-        // 2. Delete the dead engine from the dictionary! 
-        // Reusing a detached MediaSource is illegal in Chrome/Safari.
-        streamDictionary.delete(dictKey);
-
-        // 3. Load the new stream
+        const key = source;
+        const cached = streamDictionary.get(key);
+        if (cached) { await cached.destroy(); streamDictionary.delete(key); }
         await feed(source);
-
-        // 4. Attach the fresh engine
-        this.engine = streamDictionary.get(dictKey);
+        this.engine = streamDictionary.get(key);
         this.engine.attachVideo(this.video);
     }
 
-    play() {
-        this.video.play().catch(e => {
+    async play() {
+        if (this.engine?._needsPlaybackReset) {
+            if (!this.engine.cueMap.length) throw new Error('Reload this file to resume playback after recording; it has no seek table.');
+            await this.engine._onSeeking(true);
+            this.engine._needsPlaybackReset = false;
+        }
+        return this.video.play().catch(e => {
             if (e.name !== 'AbortError') console.error("Play prevented:", e);
         });
     }
@@ -1398,99 +1353,66 @@ export class MKVPlayer {
     }
 
     async toggleRecording(onStateChange, onProgress, customName = "Media") {
-        if (!this.engine) return;
-
-        if (!this.engine.isRecording) {
-            try {
-                if (!window.showSaveFilePicker) {
-                    alert("Direct-to-disk saving is currently only supported on Desktop Chrome/Edge/Opera.");
-                    return;
-                }
-
-                const fileHandle = await window.showSaveFilePicker({
-                    suggestedName: customName,
-                    types: [{ description: 'MP4 Video', accept: { 'video/mp4': ['.mp4'] } }],
-                });
-
-                this.engine.diskStream = await fileHandle.createWritable();
-                this.engine.isRecording = true;
-
-                this.video.pause();
-
-                // 🛑 1. WIPE THE RUST ENGINE CLEAN (Resets sequence to 1 and fixes timestamps)
-                if (this.engine.demuxer) this.engine.demuxer.reset();
-
-                // 🛑 2. WIPE THE AUDIO ENCODER CLEAN (Destroys ghost frames)
-                if (this.engine.audioTrack && this.engine.needsAudioTranscode) this.engine._bootAudioEncoder();
-
-                // 🛑 3. WRITE THE MP4 HEADERS
-                if (this.engine.mp4InitSegment) {
-                    await this.engine.diskStream.write(new Uint8Array(this.engine.mp4InitSegment));
-                }
-
-                this.engine.onDownloadProgress = (percent) => {
-                    if (onProgress) onProgress(percent);
-                    if (percent >= 100) this._finishRecording(onStateChange);
-                };
-
-                // 🛑 4. JUMP TO THE TRUE START OF THE VIDEO (Skips MKV text headers!)
-                this.engine.currentOffset = this.engine.firstClusterOffset || 0;
-                this.engine.currentStreamId++;
-
-                this.engine.isFetching = false;
-                this.engine._streamLoop();
-
-                if (onStateChange) onStateChange("recording");
-
-            } catch (err) {
-                console.log("User cancelled the save dialog:", err);
-            }
-        } else {
-            // User manually clicked stop
-            this._finishRecording(onStateChange);
-        }
+        const engine = this.engine;
+        if (!engine || engine.isSeeking || engine._destroying) return;
+        if (engine.isRecording) return this._finishRecording(onStateChange);
+        if (!window.showSaveFilePicker) throw new Error('This browser does not support direct-to-disk saving.');
+        let handle;
+        try {
+            handle = await window.showSaveFilePicker({ suggestedName: customName,
+                types: [{ description: 'MP4 Video', accept: { 'video/mp4': ['.mp4'] } }] });
+        } catch (error) { if (error.name === 'AbortError') return; throw error; }
+        engine.isSeeking = true;
+        try {
+            await engine._stopStream();
+            engine.video.pause();
+            engine.demuxer.reset();
+            if (engine.needsAudioTranscode) await engine._bootAudioEncoder(engine.audioTrack);
+            engine.diskStream = await handle.createWritable();
+            await engine.diskStream.write(engine.mp4InitSegment);
+            engine.currentOffset = engine.firstClusterOffset;
+            engine.isRecording = true;
+            engine.onDownloadProgress = percent => {
+                onProgress?.(percent);
+                if (percent >= 100) this._finishRecording(onStateChange).catch(error => console.error('Recording failed:', error));
+            };
+        } catch (error) {
+            if (engine.diskStream) await engine.diskStream.abort().catch(() => {});
+            engine.diskStream = null;
+            throw error;
+        } finally { engine.isSeeking = false; }
+        onStateChange?.('recording');
+        engine._streamLoop();
     }
 
-    async _finishRecording(onStateChange) {
-        if (!this.engine || !this.engine.isRecording) return;
-
-        // 1. Immediately stop the stream loop from fetching new chunks
-        this.engine.isRecording = false;
-        this.engine.onDownloadProgress = null;
-
-        if (this.engine.diskStream) {
-            console.log("🛑 Commencing graceful shutdown...");
-
-            // 2. FLUSH THE AUDIO ENCODER (Fixes the missing audio/dropped buffers!)
-            if (this.engine.audioEncoder && this.engine.audioEncoder.state === 'configured') {
-                try {
-                    console.log("Flushing hardware audio encoder...");
-                    await this.engine.audioEncoder.flush();
-                } catch (e) { console.warn("Audio flush skipped:", e); }
+    _finishRecording(onStateChange) {
+        if (this._finishPromise) return this._finishPromise;
+        const engine = this.engine;
+        if (!engine?.isRecording) return Promise.resolve();
+        this._finishPromise = (async () => {
+            engine.isSeeking = true;
+            engine.onDownloadProgress = null;
+            try {
+                await engine._stopStream();
+                const id = engine.currentStreamId;
+                await engine._drainAudio(id, undefined, true);
+                await engine._emitSegment(id);
+                const mfra = engine.demuxer.get_mfra_box();
+                if (mfra.length) await engine.diskStream.write(mfra);
+                await engine.diskStream.close();
+            } catch (error) {
+                await engine.diskStream?.abort().catch(() => {});
+                throw error;
+            } finally {
+                engine.diskStream = null;
+                engine.isRecording = false;
+                engine.isSeeking = false;
+                // Playback must reset its decoder/timeline before continuing.
+                engine._eof = true;
+                engine._needsPlaybackReset = true;
+                onStateChange?.('stopped');
             }
-
-            if (this.engine.demuxer) {
-                // 3. Package any trailing audio frames that just flushed
-                const finalSegment = this.engine.demuxer.get_mp4_segment();
-                if (finalSegment && finalSegment.length > 0) {
-                    await this.engine.diskStream.write(finalSegment);
-                }
-
-                // 4. WRITE THE MFRA CHEAT SHEET (Fixes seeking on early stops!)
-                const mfraBox = this.engine.demuxer.get_mfra_box();
-                if (mfraBox && mfraBox.length > 0) {
-                    //await this.engine.diskStream.write(mfraBox);
-                    console.log(`📦 MFRA box appended (${mfraBox.length} bytes).`);
-                }
-            }
-
-            // 5. Safely lock the vault
-            await this.engine.diskStream.close();
-            this.engine.diskStream = null;
-            console.log("✅ File successfully saved and closed.");
-        }
-
-        if (onStateChange) onStateChange("stopped");
+        })().finally(() => { this._finishPromise = null; });
+        return this._finishPromise;
     }
 }
-//#endregion
