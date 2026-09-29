@@ -3,7 +3,7 @@ import { smartFetch, showToast } from '../services/config.js';
 import { openExternalPlayer } from './external-players.js';
 
 export let art = null;
-let abortPlayback = false;
+let playbackGeneration = 0;
 
 // LINK FETCHER
 export async function getTorboxLink(tid, fid) {
@@ -28,11 +28,10 @@ export async function getTorboxLink(tid, fid) {
 }
 
 export async function requestLink(tid, fid, torrentName, fileName) {
-    stopPlayback();
+    const generation = stopPlayback();
 
     await new Promise(r => setTimeout(r, 150));
-
-    abortPlayback = false;
+    if (generation !== playbackGeneration) return;
 
     const list = document.getElementById('file-list');
     if (list) list.style.opacity = '0.5';
@@ -43,10 +42,7 @@ export async function requestLink(tid, fid, torrentName, fileName) {
     if (list) list.style.opacity = '1';
 
     // If the fetch failed, or the user clicked another movie while we were waiting, abort.
-    if (!streamUrl || abortPlayback) {
-        if (abortPlayback) console.log("Ghost playback prevented! User clicked something else.");
-        return;
-    }
+    if (!streamUrl || generation !== playbackGeneration) return;
 
     startPlayer(streamUrl, fileName || torrentName);
 }
@@ -54,7 +50,7 @@ export async function requestLink(tid, fid, torrentName, fileName) {
 //#region Player
 export function startPlayer(url, name, localFileObject = null) {
     stopPlayback();
-    abortPlayback = false;
+    const generation = playbackGeneration;
 
     const wrapper = document.getElementById('player-wrapper');
     if (wrapper) wrapper.classList.remove('hidden');
@@ -63,6 +59,10 @@ export function startPlayer(url, name, localFileObject = null) {
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
     const videoType = isMkv ? 'wasm_mkv' : 'auto';
+
+    // This app handles playback errors itself. Artplayer's retry would start
+    // another MKV load after the current player has been torn down.
+    Artplayer.RECONNECT_TIME_MAX = 0;
 
     art = new Artplayer({
         container: '.artplayer-app',
@@ -78,7 +78,9 @@ export function startPlayer(url, name, localFileObject = null) {
         fastForward: true,
         theme: '#3b82f6',
         pip: !isIOS,
-        autoPlayback: true,
+        // Artplayer writes resume data to localStorage on every timeupdate.
+        // Signed MKV URLs change between sessions, so this work is wasted.
+        autoPlayback: !isMkv,
         miniProgressBar: false,
         screenshot: false,
         subtitles: false,
@@ -91,7 +93,7 @@ export function startPlayer(url, name, localFileObject = null) {
                 html: '<svg style="width:22px;height:22px;margin-top:2px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>',
                 tooltip: 'Open in External Player',
                 click: function () {
-                    if (art) art.pause();
+                    if (art && generation === playbackGeneration) art.pause();
                     openExternalPlayer(url, name, localFileObject);
                 },
             }
@@ -101,65 +103,74 @@ export function startPlayer(url, name, localFileObject = null) {
             wasm_mkv: async function (videoElement, artUrl, artInstance) {
                 console.log("MKV Detected! Booting WebAssembly Engine...");
                 artInstance.notice.show = "Booting Engine...";
+                const player = new MKVPlayer(videoElement);
+                artInstance.mkvEngine = player;
+                artInstance.mkvLoading = true;
+                const isCurrent = () => art === artInstance && generation === playbackGeneration;
 
                 try {
-                    const player = new MKVPlayer(videoElement);
-                    artInstance.mkvEngine = player; // Attach IMMEDIATELY so stopPlayback can find it
-
-                    if (abortPlayback) { player.destroy(); return; }
+                    if (!isCurrent()) return;
 
                     await player.load(artUrl);
 
                     // 🛑 RACE CONDITION CATCH: Check again after heavy memory load
-                    if (abortPlayback) {
-                        console.warn("WASM loaded but user clicked away. Self-destructing!");
-                        player.destroy();
-                        return;
-                    }
+                    if (!isCurrent()) return;
 
                     artInstance.notice.show = "Engine Ready!";
 
-                    videoElement.addEventListener('loadeddata', () => {
-                        if (!abortPlayback) artInstance.play();
-                    }, { once: true });
+                    const playWhenReady = () => {
+                        if (isCurrent()) artInstance.play();
+                    };
+                    if (videoElement.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) playWhenReady();
+                    else videoElement.addEventListener('loadeddata', playWhenReady, { once: true });
                 } catch (error) {
-                    console.error("Engine Crash:", error);
-                    if (artInstance && artInstance.notice) {
-                        artInstance.notice.show = "Error: Engine failed to decode this MKV.";
+                    if (isCurrent()) {
+                        console.error("Engine Crash:", error);
+                        handlePlaybackFailure("Engine failed to decode this MKV.");
+                    }
+                } finally {
+                    artInstance.mkvLoading = false;
+                    if (!isCurrent()) {
+                        try { await player.destroy(); }
+                        catch (error) { console.warn("Engine cleanup failed:", error); }
+                        artInstance.mkvEngine = null;
                     }
                 }
             }
         },
     });
 
-    art.on('video:error', () => {
+    const playerArt = art;
+    playerArt.on('video:error', () => {
+        if (art !== playerArt || generation !== playbackGeneration) return;
         console.log("❌ Player Error Detected!");
         handlePlaybackFailure("Format not supported or link is dead.");
     });
 
     // 1. HIDE THE NATIVE GEAR ICON IMMEDIATELY ON BOOT
-    art.on('ready', () => {
+    playerArt.on('ready', () => {
         // Target the actual gear button on the bottom control bar
-        const gearBtn = art.template.$bottom.querySelector('.art-control-setting');
+        const gearBtn = playerArt.template.$bottom.querySelector('.art-control-setting');
         if (gearBtn) gearBtn.style.display = 'none';
     });
 
     // 2. THE SCOUT
     let scoutSent = false;
-    art.on('video:playing', async () => {
-        if (isMkv && !scoutSent && art.mkvEngine) {
+    playerArt.on('video:playing', async () => {
+        if (art !== playerArt || generation !== playbackGeneration) return;
+        if (isMkv && !scoutSent && playerArt.mkvEngine) {
 
             scoutSent = true;
             console.log("🕵️ Fetching tracks from existing engine...");
 
             try {
-                const player = art.mkvEngine;
+                const player = playerArt.mkvEngine;
                 const audioTracks = player.getAudioTracks();
 
                 // Fetch subtitle tracks from your custom engine
                 const subtitleTracks = player.getSubtitleTracks();
 
-                const gearBtn = art.template.$bottom.querySelector('.art-control-setting');
+                const gearBtn = playerArt.template.$bottom.querySelector('.art-control-setting');
 
                 const hasAudioMenu = audioTracks && audioTracks.length > 1;
                 const hasSubMenu = subtitleTracks && subtitleTracks.length > 0;
@@ -238,25 +249,28 @@ export function startPlayer(url, name, localFileObject = null) {
                             return { html: `${langName}${codecName}`, trackNumber: t.track_number, default: index === 0 };
                         });
 
-                        art.setting.add({
+                        playerArt.setting.add({
                             html: 'Audio Track',
                             tooltip: trackOptions[0].html,
                             selector: trackOptions,
                             onSelect: async function (item) {
+                                if (art !== playerArt || generation !== playbackGeneration) return item.html;
 
-                                art.notice.show = `Swapping audio...`;
-                                const savedTime = art.currentTime;
-                                const wasPlaying = art.playing;
+                                playerArt.notice.show = `Swapping audio...`;
+                                const savedTime = playerArt.currentTime;
+                                const wasPlaying = playerArt.playing;
 
                                 player.setAudioTrack(item.trackNumber);
 
                                 const restoreVideo = () => {
 
-                                    art.currentTime = savedTime;
-                                    if (wasPlaying) art.play();
-                                    art.video.removeEventListener('loadeddata', restoreVideo);
+                                    if (art === playerArt && generation === playbackGeneration) {
+                                        playerArt.currentTime = savedTime;
+                                        if (wasPlaying) playerArt.play();
+                                    }
+                                    playerArt.video.removeEventListener('loadeddata', restoreVideo);
                                 };
-                                art.video.addEventListener('loadeddata', restoreVideo);
+                                playerArt.video.addEventListener('loadeddata', restoreVideo);
 
                                 return item.html;
                             }
@@ -280,12 +294,13 @@ export function startPlayer(url, name, localFileObject = null) {
                         // Find whichever option we flagged as default to set the initial tooltip text
                         const defaultSub = subOptions.find(opt => opt.default);
 
-                        art.setting.add({
+                        playerArt.setting.add({
                             html: 'Subtitles',
                             tooltip: defaultSub.html, // Dynamically display the default track name
                             selector: subOptions,
                             onSelect: function (item) {
-                                art.notice.show = `Subtitles: ${item.html}`;
+                                if (art !== playerArt || generation !== playbackGeneration) return item.html;
+                                playerArt.notice.show = `Subtitles: ${item.html}`;
 
                                 player.setSubtitleTrack(item.trackNumber);
 
@@ -306,42 +321,34 @@ export function startPlayer(url, name, localFileObject = null) {
 }
 
 export function stopPlayback() {
-    abortPlayback = true;
+    const generation = ++playbackGeneration;
+    const instance = art;
+    art = null;
 
-    // Nuke the WASM Engine Memory first
-    if (art && art.mkvEngine) {
-        console.log("Destroying MKV Engine Buffers...");
-        try {
-            if (typeof art.mkvEngine.destroy === 'function') {
-                art.mkvEngine.destroy();
+    if (instance) {
+        // A load that is still in progress destroys itself when it settles.
+        if (instance.mkvEngine && !instance.mkvLoading) {
+            try {
+                Promise.resolve(instance.mkvEngine.destroy()).catch(error => {
+                    console.warn("Engine cleanup failed:", error);
+                });
+            } catch (error) {
+                console.warn("Engine cleanup failed:", error);
             }
-        } catch (e) { }
-        art.mkvEngine = null;
-    }
-
-    document.querySelectorAll('video, audio').forEach(media => {
-        try {
-            media.pause();
-            media.removeAttribute('src');
-            media.load();
-            media.remove();
-        } catch (e) { }
-    });
-
-    if (art) {
-        try { art.destroy(true); } catch (e) { }
-        art = null;
+            instance.mkvEngine = null;
+        }
+        try { instance.destroy(true); }
+        catch (error) { console.warn("Player cleanup failed:", error); }
     }
 
     const wrapper = document.getElementById('player-wrapper');
     if (wrapper) wrapper.classList.add('hidden');
+    return generation;
 }
 
 export function handlePlaybackFailure(reason) {
     if (!art) return;
-    art.destroy();
-    clearPlayerInstance();
-    document.getElementById('player-wrapper').classList.add('hidden');
+    stopPlayback();
     showToast(`Playback Failed: ${reason}`, 'error');
 }
 

@@ -108,7 +108,6 @@ option:hover {
 
 .artplayer-app {
     width: 100%;
-    transform: translateZ(0);
     overflow: hidden;
     background: #000;
 }

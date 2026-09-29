@@ -1,4 +1,4 @@
-import initModule from './streaming-engine/target/wasm32-unknown-emscripten/release/streaming-engine.js';
+import initModule from './streaming-engine.js';
 let wasm = null;
 let wasmLoading = null;
 let liveEngineCount = 0;
