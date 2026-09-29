@@ -1,7 +1,25 @@
-import initModule from './streaming-engine.js';
+import initModule from './streaming-engine/target/wasm32-unknown-emscripten/release/streaming-engine.js';
 let wasm = null;
+let wasmLoading = null;
+let liveEngineCount = 0;
+
+async function ensureWasm() {
+    if (wasm) return wasm;
+    if (!wasmLoading) {
+        wasmLoading = Promise.resolve(initModule()).then(module => {
+            wasm = module;
+            return module;
+        }).finally(() => { wasmLoading = null; });
+    }
+    return wasmLoading;
+}
 
 const MSE = window.ManagedMediaSource || window.MediaSource;
+
+function isMseTypeSupported(mime) {
+    try { return Boolean(MSE?.isTypeSupported?.(mime)); }
+    catch (e) { return false; }
+}
 
 // Clear ASS subtitles
 function cleanSubtitleText(codec, rawText) {
@@ -41,6 +59,16 @@ function getWasmMemory() {
 }
 
 const RANGE_FETCH_TIMEOUT_MS = 15000;
+const STREAM_BUFFER_TARGET_SECONDS = 30;
+const STREAM_BUFFER_RESUME_SECONDS = 15;
+// Bound synchronous Wasm calls separately from HTTP ranges. Budgets persist
+// across reader chunks, including reads that resolve without an event-loop turn.
+const PARSE_SLICE_BYTES = 256 * 1024;
+const PARSE_YIELD_BYTES = 1024 * 1024;
+const PARSE_YIELD_MS = 4;
+const SEGMENT_VIDEO_FRAMES = 30;
+const SEGMENT_DURATION_MS = 1000;
+const SEGMENT_MEDIA_BYTES = 4 * 1024 * 1024;
 
 class FetchWatchdog {
     constructor(timeoutMs, externalSignal) {
@@ -82,6 +110,8 @@ class MKVFetcher {
         this.source = source;
         this.type = source instanceof File ? 'file' : 'url';
         this.size = Infinity;
+        this.stats = { rangeRequests: 0, rangeBytesRequested: 0, streamReads: 0,
+            streamBytesRead: 0, streamBytesDelivered: 0, earlyRangeStops: 0 };
     }
 
     // SETS SIZE REGARDLESS OF TYPE
@@ -188,6 +218,8 @@ class MKVFetcher {
             if (this.type === 'file') {
                 body = this.source.slice(start, end).stream();
             } else {
+                this.stats.rangeRequests++;
+                this.stats.rangeBytesRequested += end - start;
                 response = await fetch(this.source, {
                     headers: { Range: `bytes=${start}-${end - 1}` },
                     signal: watchdog.signal
@@ -232,12 +264,19 @@ class MKVFetcher {
                     }
                     break;
                 }
+                this.stats.streamReads++;
+                this.stats.streamBytesRead += value.length;
                 const part = value.subarray(0, Math.min(value.length, end - start - received));
-                if (part.length) { received += part.length; yield part; }
+                if (part.length) {
+                    received += part.length;
+                    this.stats.streamBytesDelivered += part.length;
+                    yield part;
+                }
             }
         } finally {
             watchdog.dispose();
             if (reader) {
+                if (response && received < end - start) this.stats.earlyRangeStops++;
                 if (!completed) await reader.cancel().catch(() => {});
                 reader.releaseLock();
             } else if (response?.body) {
@@ -304,6 +343,8 @@ function patchSegmentToUnknown(buffer) {
 class Demuxer {
     // Allocate wasm memory to convert the js codec string
     constructor(videoId, audioId, width, height, duration, codecId) {
+        if (wasm._demuxer_audio_timing_version?.() !== 1)
+            throw new Error('Rebuild and deploy streaming-engine.js and streaming_engine.wasm together: incompatible audio timing API.');
         const encoder = new TextEncoder();
         const codecBytes = encoder.encode(codecId + "\0");
         const codecPtr = wasm._alloc_memory(codecBytes.length);
@@ -327,11 +368,11 @@ class Demuxer {
     _handleBufferResult(ptr) {
         if (ptr === 0) return new Uint8Array(0);
         const len = wasm._demuxer_get_last_len(this.ptr);
-        if (len === 0) return new Uint8Array(0);
-
-        const data = new Uint8Array(getWasmMemory(), ptr, len).slice();
-        wasm._free_segment(ptr, len);
-        return data;
+        try {
+            return len ? new Uint8Array(getWasmMemory(), ptr, len).slice() : new Uint8Array(0);
+        } finally {
+            wasm._free_segment(ptr, len);
+        }
     }
 
     _copyInput(data) {
@@ -365,6 +406,13 @@ class Demuxer {
         return this._handleBufferResult(ptr);
     }
 
+    should_emit_segment() {
+        if (!wasm._demuxer_should_emit_segment)
+            throw new Error('Rebuild and deploy streaming-engine.js and streaming_engine.wasm together: missing segment budget export.');
+        return Boolean(wasm._demuxer_should_emit_segment(this.ptr,
+            SEGMENT_VIDEO_FRAMES, SEGMENT_DURATION_MS, SEGMENT_MEDIA_BYTES));
+    }
+
     get_mfra_box() {
         if (!wasm._demuxer_get_mfra_box) return new Uint8Array(0); // Safety check
         const ptr = wasm._demuxer_get_mfra_box(this.ptr);
@@ -373,25 +421,47 @@ class Demuxer {
 
     parse_chunk(chunkData, isFinal) {
         const ptr = this._copyInput(chunkData);
-        return wasm._demuxer_parse_chunk(this.ptr, ptr, chunkData.length, isFinal);
+        const frames = wasm._demuxer_parse_chunk(this.ptr, ptr, chunkData.length, isFinal);
+        this._checkParseError();
+        return frames;
     }
 
     parse_chunk_direct(chunkPtr, chunkLength, isFinal) {
         // No alloc, no .set() copy, no free, just execute.
-        return wasm._demuxer_parse_chunk(this.ptr, chunkPtr, chunkLength, isFinal);
+        const frames = wasm._demuxer_parse_chunk(this.ptr, chunkPtr, chunkLength, isFinal);
+        this._checkParseError();
+        return frames;
+    }
+
+    _checkParseError() {
+        const errorPtr = wasm._demuxer_get_last_error(this.ptr);
+        if (errorPtr) {
+            const detail = wasm.UTF8ToString(errorPtr);
+            const error = new Error(`Rust cluster parsing failed: ${detail}`);
+            error.requiresAudioTranscode = detail.startsWith('Native audio trimming requires AAC conversion:');
+            throw error;
+        }
     }
 
     reset() { wasm._demuxer_reset(this.ptr); }
     destroy() {
-        if (this.ptr) wasm._demuxer_destroy(this.ptr);
-        if (this.inputPtr) wasm._free_memory(this.inputPtr, this.inputCapacity);
+        const ptr = this.ptr;
+        const inputPtr = this.inputPtr;
+        const inputCapacity = this.inputCapacity;
         this.ptr = this.inputPtr = this.inputCapacity = 0;
+        try {
+            if (ptr) wasm._demuxer_destroy(ptr);
+        } finally {
+            if (inputPtr) wasm._free_memory(inputPtr, inputCapacity);
+        }
     }
 }
 
 //#region Core Engine
 class CoreEngine {
     constructor() {
+        liveEngineCount++;
+        this._destroyPromise = null;
         this.video = null;
         this.chunkSize = 10 * 1024 * 1024;
 
@@ -417,15 +487,22 @@ class CoreEngine {
         this.currentStreamId = (this.currentStreamId || 0) + 1;
         this.currentOffset = 0;
         this.cueMap = [];
-        this.cueOffsets = [];
         this.audioTracks = [];
         this.sourceBuffer = null;
+        this._sourceBufferMime = null;
+        this._forceTranscodeTracks = new Set();
 
         this.audioFramesIn = 0;
         this.audioFramesOut = 0;
         this._eof = false;
         this._streamError = null;
         this._lastEviction = 0;
+        this._performanceStats = { parseCalls: 0, parsedBytes: 0, parseMs: 0,
+            maxParseMs: 0, parseYields: 0, segments: 0, segmentBytes: 0, maxSegmentBytes: 0 };
+    }
+
+    getPerformanceStats() {
+        return { ...this._performanceStats, network: { ...this.sourceInput?.stats } };
     }
 
     async _bootAudioEncoder(targetAudioTrack) {
@@ -433,6 +510,7 @@ class CoreEngine {
         const generation = ++this._audioGeneration;
         const demuxer = this.demuxer;
         this._encoderError = null;
+        this._audioPcmEndDts = null;
         if (this.audioEncoder && this.audioEncoder.state !== 'closed') {
             try { this.audioEncoder.close(); } catch (e) { }
         }
@@ -456,7 +534,7 @@ class CoreEngine {
         let finalConfig = null;
         let finalChannels = 2;
 
-        // 2. The Hardware Negotiation Loop
+        // 2. Find an AAC configuration the browser accepts.
         for (const test of configsToTry) {
             const config = {
                 codec: 'mp4a.40.2',
@@ -471,7 +549,7 @@ class CoreEngine {
                 this.log(`Encoder supports ${test.channels} channels (${test.vbr ? 'VBR' : 'CBR'}).`);
                 finalConfig = config;
                 finalChannels = test.channels;
-                break; // Stop testing once the hardware accepts one
+                break;
             }
         }
 
@@ -499,8 +577,15 @@ class CoreEngine {
                         this._aacCapacity = capacity;
                     }
                     chunk.copyTo(new Uint8Array(getWasmMemory(), this._aacPtr, chunk.byteLength));
-                    const dts = BigInt(Math.max(0, Math.round(chunk.timestamp * currentSampleRate / 1000000)));
-                    wasm._demuxer_append_aac(demuxer.ptr, this._aacPtr, chunk.byteLength, dts);
+                    const pts = Math.round(chunk.timestamp * currentSampleRate / 1000000);
+                    const packetSamples = Math.round((chunk.duration ?? 1024 * 1000000 / currentSampleRate)
+                        * currentSampleRate / 1000000);
+                    const duration = Math.max(0, Math.min(packetSamples,
+                        (this._audioPcmEndDts ?? pts + packetSamples) - pts));
+                    // Retain negative priming timestamps; the MP4 writer gives
+                    // them signed composition offsets instead of duplicate DTS=0.
+                    if (duration) wasm._demuxer_append_aac(demuxer.ptr,
+                        this._aacPtr, chunk.byteLength, BigInt(pts), duration);
                     this.audioFramesOut++;
                 } catch (e) { this._encoderError = e; this._encoderWake?.(); }
             },
@@ -537,8 +622,9 @@ class CoreEngine {
         this.video.onseeking = () => this._onSeeking();
         this.video.ontimeupdate = () => this._onTimeUpdate();
 
-        this.video.onwaiting = () => this._streamLoop();
-        this.video.onstalled = () => this._streamLoop();
+        this.video.onwaiting = () => { this._alignStartupPosition(); this._streamLoop(); };
+        this.video.onstalled = () => { this._alignStartupPosition(); this._streamLoop(); };
+        this.video.onerror = () => this._onPlaybackError();
         this._onlineHandler = () => this._streamLoop();
         window.addEventListener('online', this._onlineHandler);
 
@@ -556,7 +642,7 @@ class CoreEngine {
         const maxProbe = 100 * 1024 * 1024;
         let capacity = 2 * 1024 * 1024;
 
-        if (!wasm) wasm = await initModule();
+        await ensureWasm();
         let ptr = wasm._alloc_memory(capacity);
         try {
         let memBuffer = getWasmMemory();
@@ -676,7 +762,7 @@ class CoreEngine {
         }
 
         this.audioTracks = this.mkvHeader.tracks.filter(t => t.track_type === "audio");
-        const audioTrack = this.audioTracks.length > 0 ? this.audioTracks[0] : null;
+        const { track: audioTrack, canPlayNatively } = await this._selectInitialAudioTrack(videoTrack);
 
         if (videoTrack.codec_id !== "V_MPEG4/ISO/AVC" && videoTrack.codec_id !== "V_MPEGH/ISO/HEVC") {
             this.log(`Critical: Unsupported video codec ${videoTrack.codec_id}`);
@@ -717,7 +803,6 @@ class CoreEngine {
             const scale = (this.mkvHeader.timestamp_scale || 1000000) / 1000000;
             for (const cue of this.cueMap) cue.time *= scale;
             this.cueMap.sort((a, b) => a.time - b.time);
-            this.cueOffsets = [...new Set(this.cueMap.map(cue => Number(cue.offset)))].sort((a, b) => a - b);
 
             wasm._free_string(cJsonPtr);
             wasm._free_memory(cPtr, cuesData.length);
@@ -747,14 +832,15 @@ class CoreEngine {
         });
 
         if (videoTrack && audioTrack) {
-            await this._configureAudioPipeline(videoTrack, audioTrack);
+            await this._configureAudioPipeline(videoTrack, audioTrack, canPlayNatively);
         }
 
         this.videoTrack = videoTrack;
         this.audioTrack = audioTrack;
 
         this.mediaSource = new MSE();
-        this.mediaSource.addEventListener('sourceopen', () => this._onSourceOpen());
+        this._sourceOpenHandler = () => this._onSourceOpen();
+        this.mediaSource.addEventListener('sourceopen', this._sourceOpenHandler);
         } finally { if (ptr) wasm._free_memory(ptr, capacity); }
     }
 
@@ -762,7 +848,7 @@ class CoreEngine {
         // 1. If the user is saving to disk, sprint at maximum speed
         if (this.isRecording) {
             let targetEnd = startOffset + (30 * 1024 * 1024);
-            return this._snapToNearestCue(startOffset, targetEnd);
+            return Math.min(targetEnd, this.sourceInput.size);
         }
 
         // 2. Playback mode: Smoother, smaller bursts
@@ -771,54 +857,67 @@ class CoreEngine {
         if (bufferedAheadSeconds > 10) targetSize = 9 * 1024 * 1024; // Coasting: 9MB cap
 
         let targetEnd = startOffset + targetSize;
-        return this._snapToNearestCue(startOffset, targetEnd);
+        // Incremental EBML parsing handles split elements. Snapping to sparse
+        // cues could expand a small request all the way to the end of the file.
+        return Math.min(targetEnd, this.sourceInput.size);
     }
 
-    _snapToNearestCue(startOffset, targetEnd) {
-        if (!this.cueOffsets.length) return Math.min(targetEnd, this.sourceInput.size);
-        const target = targetEnd - this.segmentPayloadStart;
-        let low = 0, high = this.cueOffsets.length;
-        while (low < high) {
-            const mid = (low + high) >>> 1;
-            if (this.cueOffsets[mid] < target) low = mid + 1;
-            else high = mid;
+    async _canPlayAudioNatively(videoTrack, audioTrack) {
+        if (this._forceTranscodeTracks.has(audioTrack?.track_number)) return false;
+        if (!audioTrack?.native_mp4) return false;
+        const combinedMime = `video/mp4; codecs="${videoTrack.codec_string}, ${audioTrack.codec_string}"`;
+        if (!isMseTypeSupported(combinedMime)) return false;
+        // MSE checks the combined MP4 codec string. An audio-only capabilities
+        // query can reject Opus even when that combined SourceBuffer is supported.
+        // An explicit audio decoder error can still trigger an AAC retry.
+        if (audioTrack.codec_id !== 'A_OPUS' && navigator.mediaCapabilities?.decodingInfo) {
+            try {
+                const info = await navigator.mediaCapabilities.decodingInfo({
+                    type: 'media-source',
+                    audio: {
+                        contentType: `audio/mp4; codecs="${audioTrack.codec_string}"`,
+                        channels: String(audioTrack.channels || 2),
+                        samplerate: Math.round(audioTrack.sample_rate || 48000)
+                    }
+                });
+                return Boolean(info.supported);
+            } catch (e) { /* MSE's combined type check remains the fallback. */ }
         }
-        return low < this.cueOffsets.length ? this.segmentPayloadStart + this.cueOffsets[low] : this.sourceInput.size;
+        return true;
     }
 
-    async _configureAudioPipeline(videoTrack, audioTrack) {
-        // 1. If no audio track exists, shut the pipeline down.
+    async _selectInitialAudioTrack(videoTrack) {
+        const first = this.audioTracks[0] || null;
+        for (const track of this.audioTracks) {
+            if (await this._canPlayAudioNatively(videoTrack, track))
+                return { track, canPlayNatively: true };
+        }
+        return { track: first, canPlayNatively: false };
+    }
+
+    async _configureAudioPipeline(videoTrack, audioTrack, nativeSupport = null) {
+        this._audioFallbackAttempted = false;
         if (!audioTrack) {
             this.needsAudioTranscode = false;
             if (this.demuxer) this.demuxer.setTranscodeMode(false);
             return;
         }
 
-        // 2. Check Native Browser Support
-        const audioMime = `video/mp4; codecs="${videoTrack.codec_string}, ${audioTrack.codec_string}"`;
-        let canPlayNatively = false;
+        const canPlayNatively = nativeSupport ?? await this._canPlayAudioNatively(videoTrack, audioTrack);
 
-        const MSE = window.ManagedMediaSource || window.MediaSource;
-        if (MSE) {
-            try { canPlayNatively = MSE.isTypeSupported(audioMime); } catch (e) { }
-        }
-
-        // 3. The Transcoder Hit List
-        // - AC3/EAC3/DTS/TRUEHD: Browsers don't have licenses for these.
-        // - FLAC/OPUS: Browsers support them, but your Rust code currently only writes AAC MP4 boxes.
-        const strictlyUnsupported = ["A_TRUEHD", "A_DTS", "A_AC3", "A_EAC3", "A_FLAC", "A_OPUS"];
-
-        // 4. Route the Audio
-        if (canPlayNatively && !strictlyUnsupported.includes(audioTrack.codec_id)) {
-            this.log(`Direct Play Supported! Bypassing Transcoder for: ${audioTrack.codec_id}`);
+        if (canPlayNatively) {
+            this.log(`Native MP4 audio selected for ${audioTrack.codec_id}; bypassing AAC conversion.`);
 
             this.needsAudioTranscode = false;
             if (this.demuxer) this.demuxer.setTranscodeMode(false);
 
-            // Turn off the hardware encoder if it was running
+            // Close the browser encoder if it was running.
             if (this.audioEncoder && this.audioEncoder.state !== 'closed') {
                 try { this.audioEncoder.close(); } catch (e) { }
             }
+            this.audioEncoder = null;
+            if (this._aacPtr) wasm._free_memory(this._aacPtr, this._aacCapacity);
+            this._aacPtr = this._aacCapacity = 0;
         } else {
             this.log(`Routing to Transcoder: ${audioTrack.codec_id}`);
 
@@ -830,15 +929,157 @@ class CoreEngine {
         }
     }
 
+    _outputMime() {
+        const codecs = [this.videoTrack.codec_string];
+        if (this.audioTrack) codecs.push(this.needsAudioTranscode ? 'mp4a.40.2' : this.audioTrack.codec_string);
+        return `video/mp4; codecs="${codecs.join(', ')}"`;
+    }
+
+    async _updateSourceBufferType() {
+        const mime = this._outputMime();
+        if (mime === this._sourceBufferMime) return;
+        await this._queueBufferOperation(buffer => {
+            let changed = false;
+            if (typeof buffer.changeType === 'function') {
+                try { buffer.changeType(mime); changed = true; }
+                catch (error) { if (error?.name !== 'NotSupportedError') throw error; }
+            }
+            if (!changed) {
+                // Older MSE implementations need a fresh buffer for a new codec.
+                this.mediaSource.removeSourceBuffer(buffer);
+                this.sourceBuffer = null;
+                this._sourceBufferMime = null;
+                this.sourceBuffer = this.mediaSource.addSourceBuffer(mime);
+                this.sourceBuffer.mode = 'segments';
+            }
+            this._sourceBufferMime = mime;
+        });
+    }
+
+    _audioSeekOffset(time) {
+        // Opus needs decoder warm-up on every random access, including a switch
+        // into an Opus track. FLAC has no inherent preroll; honor track metadata.
+        const track = this.audioTrack;
+        const preroll = Math.max(Number(track?.seek_pre_roll_ns || 0),
+            Number(track?.codec_delay_ns || 0), track?.codec_id === 'A_OPUS' ? 80000000 : 0) / 1e9;
+        const startTime = Math.max(0, time - preroll);
+        if (!this.cueMap.length || startTime < this.cueMap[0].time) return this.firstClusterOffset;
+        return this.segmentPayloadStart + Number(this._cueAtTime(startTime).offset);
+    }
+
+    _onPlaybackError() {
+        if (this._retryingAudio || this._destroying) return;
+        const mediaError = this.video?.error;
+        const diagnostic = mediaError?.message || '';
+        const error = new Error(`Media playback failed${mediaError ? ` (code ${mediaError.code})` : ''}${diagnostic ? `: ${diagnostic}` : '.'}`);
+        const audioDecoderFailure = (mediaError?.code === 3 || mediaError?.code === 4) &&
+            /\baudio\b/i.test(diagnostic) && !/\bvideo\b/i.test(diagnostic);
+        if (audioDecoderFailure && this.audioTrack && !this.needsAudioTranscode && !this._audioFallbackAttempted) {
+            this._retryAudioAsAac(error).catch(failure => {
+                this._streamError = failure;
+                console.error('AAC retry failed:', failure);
+            });
+        } else if (!this._destroying) {
+            this._streamError = error;
+            console.error('Playback failed:', error);
+        }
+    }
+
+    async _retryAudioAsAac(reason) {
+        if (this._audioFallbackAttempted || this._destroying) return;
+        this._audioFallbackAttempted = true;
+        this._forceTranscodeTracks.add(this.audioTrack?.track_number);
+        this._retryingAudio = true;
+        this.log(`Native MP4 audio rejected (${reason.message}); retrying with AAC.`);
+        const video = this.video;
+        try {
+            const resumeTime = video?.currentTime || 0;
+            const resumePlayback = video && !video.paused;
+            await this._stopStream();
+            if (this.sourceBuffer?.updating) {
+                try { this.sourceBuffer.abort(); } catch (e) { }
+            }
+            await this._bufferQueue;
+            if (this._destroying) return;
+
+            this._clearSubtitleCues();
+
+            if (this.mediaSource && this._sourceOpenHandler)
+                this.mediaSource.removeEventListener('sourceopen', this._sourceOpenHandler);
+            if (this.mediaSource?.readyState === 'open' && this.sourceBuffer) {
+                try { this.mediaSource.removeSourceBuffer(this.sourceBuffer); } catch (e) { }
+            }
+            this.sourceBuffer = null;
+            this._sourceBufferMime = null;
+            video.onerror = null;
+            video.pause();
+            video.removeAttribute('src');
+            video.load();
+            if (this._objectURL) URL.revokeObjectURL(this._objectURL);
+            this._objectURL = null;
+
+            this.demuxer?.destroy();
+            this.demuxer = this._createDemuxer(this.audioTrack);
+            this.needsAudioTranscode = true;
+            this.demuxer.setTranscodeMode(true);
+            await this._bootAudioEncoder(this.audioTrack);
+            if (this._destroying) return;
+            this._needsPlaybackReset = false;
+            this.currentOffset = this.firstClusterOffset || 0;
+            this._sourceStartTime = resumeTime;
+            this._eof = false;
+            this._streamError = null;
+            this.mediaSource = new MSE();
+            this._sourceOpenHandler = () => this._onSourceOpen();
+            this.mediaSource.addEventListener('sourceopen', this._sourceOpenHandler);
+            this._objectURL = URL.createObjectURL(this.mediaSource);
+            if (resumeTime > 0) {
+                this._audioResumeHandler = () => {
+                    this._audioResumeHandler = null;
+                    video.currentTime = resumeTime;
+                };
+                video.addEventListener('loadedmetadata', this._audioResumeHandler, { once: true });
+            }
+            video.src = this._objectURL;
+            if (resumePlayback) video.play().catch(() => {});
+        } finally {
+            if (video && !this._destroying) video.onerror = () => this._onPlaybackError();
+            this._retryingAudio = false;
+        }
+    }
+
+    _createDemuxer(audioTrack) {
+        const demuxer = new Demuxer(
+            BigInt(this.videoTrack.track_number), audioTrack ? BigInt(audioTrack.track_number) : 0n,
+            this.videoTrack.width, this.videoTrack.height,
+            this.mkvHeader.duration * 1000, this.videoTrack.codec_id
+        );
+        for (const subtitle of this.subtitleTracks || [])
+            wasm._demuxer_add_subtitle_track(demuxer.ptr, BigInt(subtitle.track_number));
+        return demuxer;
+    }
+
     async _onSourceOpen() {
         if (this.sourceBuffer || this._destroying) return;
+        const source = this.mediaSource;
+        const id = this.currentStreamId;
+        const startTime = this._sourceStartTime || 0;
+        this._sourceStartTime = 0;
+        let nativeAudioTypeRejected = false;
         try {
-            let mime = `video/mp4; codecs="${this.videoTrack.codec_string}`;
-            if (this.audioTrack) {
-                mime += this.needsAudioTranscode ? `, mp4a.40.2"` : `, ${this.audioTrack.codec_string}"`;
-            } else { mime += `"`; }
+            const mime = this._outputMime();
 
-            this.sourceBuffer = this.mediaSource.addSourceBuffer(mime);
+            try {
+                this.sourceBuffer = this.mediaSource.addSourceBuffer(mime);
+                this._sourceBufferMime = mime;
+            } catch (error) {
+                if (error?.name === 'NotSupportedError' && this.audioTrack && !this.needsAudioTranscode) {
+                    const videoCodec = this.videoTrack.codec_string;
+                    nativeAudioTypeRejected = isMseTypeSupported(`video/mp4; codecs="${videoCodec}"`) &&
+                        isMseTypeSupported(`video/mp4; codecs="${videoCodec}, mp4a.40.2"`);
+                }
+                throw error;
+            }
             this.sourceBuffer.mode = 'segments';
             this.mediaSource.duration = this.mkvHeader.duration;
 
@@ -849,12 +1090,21 @@ class CoreEngine {
 
             if (!initData || initData.length < 100) throw new Error("Invalid Init Segment from Rust");
             await this._appendToBuffer(initData);
+            if (this._destroying || source !== this.mediaSource || id !== this.currentStreamId) return;
 
-            this.currentOffset = this.firstClusterOffset || 0;
+            this.currentOffset = this._audioSeekOffset(startTime);
             this.log("▶️ Stream routed to screen. Buffering clusters...");
             this._streamLoop();
 
         } catch (error) {
+            if (source !== this.mediaSource || this._retryingAudio || this._destroying) return;
+            if (nativeAudioTypeRejected && !this._audioFallbackAttempted) {
+                this._retryAudioAsAac(error).catch(failure => {
+                    this._streamError = failure;
+                    console.error('AAC retry failed:', failure);
+                });
+                return;
+            }
             this._streamError = error;
             console.error("Engine Crash in _onSourceOpen:", error);
         }
@@ -871,6 +1121,21 @@ class CoreEngine {
         return 0;
     }
 
+    _alignStartupPosition() {
+        const video = this.video;
+        if (!video || video.currentTime > 1 || this.isSeeking || this._destroying) return false;
+        const videoRanges = video.buffered;
+        const ranges = videoRanges?.length ? videoRanges : this.sourceBuffer?.buffered;
+        if (!ranges?.length) return false;
+        // Opus pre-skip can put the first playable sample after time zero.
+        const start = ranges.start(0);
+        if (start > video.currentTime + 0.001 && ranges.end(0) > start + 0.001) {
+            video.currentTime = start + 0.001;
+            return true;
+        }
+        return false;
+    }
+
     async _stopStream() {
         ++this.currentStreamId;
         this.abortController?.abort();
@@ -885,10 +1150,23 @@ class CoreEngine {
         if (this._destroying || this.isSeeking || this._eof || this._streamError ||
             !this.sourceBuffer || !this.sourceInput || this.mediaSource?.readyState === 'closed')
             return Promise.resolve();
+        if (!this.isRecording && this.currentOffset < this.sourceInput.size &&
+            this._bufferedAhead() > STREAM_BUFFER_RESUME_SECONDS)
+            return Promise.resolve();
         const id = this.currentStreamId;
         this.isFetching = true;
         this._streamPromise = this._runStream(id).catch(error => {
             if (id === this.currentStreamId && error?.name !== 'AbortError') {
+                if (error.requiresAudioTranscode && !this.needsAudioTranscode &&
+                    !this.isRecording && !this._audioFallbackAttempted) {
+                    // Do not await here: the retry first waits for this stream
+                    // promise to settle before destroying its demuxer.
+                    this._retryAudioAsAac(error).catch(failure => {
+                        this._streamError = failure;
+                        console.error('AAC retry failed:', failure);
+                    });
+                    return;
+                }
                 this._streamError = error;
                 console.error('Stream error:', error);
             }
@@ -900,13 +1178,16 @@ class CoreEngine {
     }
 
     async _runStream(id) {
+        let bytesSinceYield = 0;
+        let parseMsSinceYield = 0;
+        let lastProgress = -1;
         while (id === this.currentStreamId) {
             if (this.currentOffset >= this.sourceInput.size) {
                 await this._completeInput(id);
                 return;
             }
             const ahead = this._bufferedAhead();
-            if (!this.isRecording && ahead >= 30) return;
+            if (!this.isRecording && ahead >= STREAM_BUFFER_TARGET_SECONDS) return;
             const start = this.currentOffset;
             const end = Math.min(this._getOptimalChunkBoundary(start, ahead), this.sourceInput.size);
             if (!(end > start)) throw new Error('Input range made no progress.');
@@ -915,22 +1196,48 @@ class CoreEngine {
             let received = 0;
             try {
                 for await (const chunk of this.sourceInput.stream(start, end, controller.signal)) {
-                    if (id !== this.currentStreamId) return;
-                    if (!chunk.length) continue;
-                    const nextOffset = this.currentOffset + chunk.length;
-                    const frames = this.demuxer.parse_chunk(chunk, nextOffset >= this.sourceInput.size);
-                    // Commit accepted bytes immediately, before any await.
-                    this.currentOffset = nextOffset;
-                    received += chunk.length;
-                    this._pullSubtitles();
-                    await this._drainAudio(id, controller.signal);
-                    if (id !== this.currentStreamId) return;
-                    if (frames >= 30) await this._emitSegment(id);
-                    if (id !== this.currentStreamId) return;
-                    if (this.isRecording && this.onDownloadProgress && Number.isFinite(this.sourceInput.size)) {
-                        this.onDownloadProgress(Math.min(99, Math.floor(this.currentOffset / this.sourceInput.size * 100)));
+                    for (let offset = 0; offset < chunk.length; offset += PARSE_SLICE_BYTES) {
+                        if (id !== this.currentStreamId) return;
+                        if (controller.signal.aborted) throw controller.signal.reason;
+                        const slice = chunk.subarray(offset, offset + PARSE_SLICE_BYTES);
+                        const nextOffset = this.currentOffset + slice.length;
+                        const parseStart = performance.now();
+                        this.demuxer.parse_chunk(slice, nextOffset >= this.sourceInput.size);
+                        const elapsed = performance.now() - parseStart;
+                        // Commit only accepted bytes, before any await. An unread
+                        // tail of this reader chunk is fetched again after a pause.
+                        this.currentOffset = nextOffset;
+                        received += slice.length;
+                        bytesSinceYield += slice.length;
+                        parseMsSinceYield += elapsed;
+                        const stats = this._performanceStats;
+                        stats.parseCalls++;
+                        stats.parsedBytes += slice.length;
+                        stats.parseMs += elapsed;
+                        stats.maxParseMs = Math.max(stats.maxParseMs, elapsed);
+                        this._pullSubtitles();
+                        if (this.needsAudioTranscode) await this._drainAudio(id, controller.signal);
+                        if (id !== this.currentStreamId) return;
+                        if (this.demuxer.should_emit_segment()) {
+                            await this._emitSegment(id);
+                            if (id !== this.currentStreamId) return;
+                            if (!this.isRecording && this._bufferedAhead() >= STREAM_BUFFER_TARGET_SECONDS) return;
+                        }
+                        if (this.isRecording && this.onDownloadProgress && Number.isFinite(this.sourceInput.size)) {
+                            const progress = Math.min(99, Math.floor(this.currentOffset / this.sourceInput.size * 100));
+                            if (progress !== lastProgress) {
+                                lastProgress = progress;
+                                this.onDownloadProgress(progress);
+                            }
+                        }
+                        if (bytesSinceYield >= PARSE_YIELD_BYTES || parseMsSinceYield >= PARSE_YIELD_MS) {
+                            stats.parseYields++;
+                            await yieldThread();
+                            if (id !== this.currentStreamId) return;
+                            bytesSinceYield = 0;
+                            parseMsSinceYield = 0;
+                        }
                     }
-                    if (!this.isRecording && this._bufferedAhead() >= 30) return;
                 }
             } finally {
                 if (this.abortController === controller) this.abortController = null;
@@ -941,6 +1248,15 @@ class CoreEngine {
                 return;
             }
             if (!received) throw new Error('Empty range response before a confirmed end of file.');
+        }
+    }
+
+    _clearSubtitleCues() {
+        // Keep the TextTracks and their selected modes, but discard cues from
+        // the old parsing pass before the restarted demuxer adds them again.
+        for (const { htmlTrack } of Object.values(this.textTracks || {})) {
+            while (htmlTrack.cues?.length)
+                htmlTrack.removeCue(htmlTrack.cues[htmlTrack.cues.length - 1]);
         }
     }
 
@@ -1018,6 +1334,7 @@ class CoreEngine {
             numberOfChannels: channels, numberOfFrames: samples,
             timestamp: Number(dts * 1000000n / BigInt(sampleRate)),
             data: this._pcmBuffer.subarray(0, total) });
+        this._audioPcmEndDts = Math.max(this._audioPcmEndDts ?? 0, Number(dts) + samples);
         try { encoder.encode(data); this.audioFramesIn++; }
         finally { data.close(); }
     }
@@ -1052,11 +1369,17 @@ class CoreEngine {
         if (id !== this.currentStreamId) return;
         const segment = this.demuxer.get_mp4_segment();
         if (!segment.length) return;
+        this._performanceStats.segments++;
+        this._performanceStats.segmentBytes += segment.length;
+        this._performanceStats.maxSegmentBytes = Math.max(this._performanceStats.maxSegmentBytes, segment.length);
         if (this.isRecording && this.diskStream) await this.diskStream.write(segment);
         else {
             await this._appendToBuffer(segment, id);
-            if (id === this.currentStreamId && this.video?.currentTime === 0 && this.video.paused)
-                this.video.play().catch(() => {});
+            if (id === this.currentStreamId) {
+                const aligned = this._alignStartupPosition();
+                if (this.video?.paused && (aligned || this.video.currentTime === 0))
+                    this.video.play().catch(() => {});
+            }
         }
     }
 
@@ -1094,12 +1417,8 @@ class CoreEngine {
             await this._queueBufferOperation(buffer => {
                 if (buffer.buffered.length) buffer.remove(0, this.mediaSource.duration);
             }, id);
-            for (const item of Object.values(this.textTracks || {})) {
-                const track = item.htmlTrack;
-                while (track.cues?.length) track.removeCue(track.cues[track.cues.length - 1]);
-            }
-            const bestCue = this._cueAtTime(this.video.currentTime);
-            this.currentOffset = this.segmentPayloadStart + Number(bestCue.offset);
+            this._clearSubtitleCues();
+            this.currentOffset = this._audioSeekOffset(this.video.currentTime);
             this.demuxer.reset();
             this._lastEviction = 0;
             if (this.needsAudioTranscode) await this._bootAudioEncoder(this.audioTrack);
@@ -1122,35 +1441,40 @@ class CoreEngine {
 
     async switchAudioTrack(newTrackNumber) {
         const track = this.audioTracks.find(t => t.track_number === Number(newTrackNumber));
-        if (!track || track === this.audioTrack || !this.video || this.isSeeking || this.isRecording) return;
+        if (!track || track === this.audioTrack || !this.video || this.isSeeking || this.isRecording || this._destroying || this._retryingAudio) return;
         const time = this.video.currentTime;
         const resume = !this.video.paused;
         this.video.pause();
         this.isSeeking = true;
         try {
             await this._stopStream();
+            if (this._destroying) return;
+            const id = this.currentStreamId;
             ++this._audioGeneration;
             if (this.audioEncoder?.state !== 'closed') this.audioEncoder?.close();
             this.audioEncoder = null;
             await this._queueBufferOperation(buffer => {
                 if (buffer.buffered.length) buffer.remove(0, this.mediaSource.duration);
             });
+            if (this._destroying || id !== this.currentStreamId) return;
+            this._clearSubtitleCues();
             this.demuxer.destroy();
             this.audioTrack = track;
-            this.demuxer = new Demuxer(BigInt(this.videoTrack.track_number), BigInt(track.track_number),
-                this.videoTrack.width, this.videoTrack.height, this.mkvHeader.duration * 1000, this.videoTrack.codec_id);
-            for (const subtitle of this.subtitleTracks || [])
-                wasm._demuxer_add_subtitle_track(this.demuxer.ptr, BigInt(subtitle.track_number));
+            this.demuxer = this._createDemuxer(track);
             await this._configureAudioPipeline(this.videoTrack, track);
+            if (this._destroying || id !== this.currentStreamId) return;
             this.mp4InitSegment = this.demuxer.init(this.initialHeaderData);
             if (!this.mp4InitSegment.length) throw new Error('Audio track initialization failed.');
+            await this._updateSourceBufferType();
+            if (this._destroying || id !== this.currentStreamId) return;
             await this._appendToBuffer(this.mp4InitSegment);
-            const cue = this.cueMap.length ? this._cueAtTime(time) : null;
-            this.currentOffset = cue ? this.segmentPayloadStart + Number(cue.offset) : this.firstClusterOffset;
+            if (this._destroying || id !== this.currentStreamId) return;
+            this.currentOffset = this._audioSeekOffset(time);
             this._lastEviction = 0;
         } catch (error) {
             this._streamError = error;
             console.error('Audio track change failed:', error);
+            throw error;
         } finally { this.isSeeking = false; }
         this._streamLoop();
         if (resume) this.video.play().catch(() => {});
@@ -1224,35 +1548,103 @@ class CoreEngine {
         finally { this._gcPending = false; }
     }
 
-    async destroy() {
+    destroy() {
+        if (!this._destroyPromise) {
+            this._destroying = true;
+            this._destroyPromise = this._destroyInternal();
+        }
+        return this._destroyPromise;
+    }
+
+    async _destroyInternal() {
         this._destroying = true;
-        await this._stopStream();
-        await this._bufferQueue;
-        ++this._audioGeneration;
-        if (this.audioEncoder?.state !== 'closed') this.audioEncoder?.close();
-        this.audioEncoder = null;
-        this.demuxer?.destroy();
-        this.demuxer = null;
-        if (this._aacPtr) wasm._free_memory(this._aacPtr, this._aacCapacity);
-        this._aacPtr = this._aacCapacity = 0;
-        this._pcmBuffer = new Float32Array(0);
-        if (this._onlineHandler) window.removeEventListener('online', this._onlineHandler);
-        if (this.video) {
-            this.video.onseeking = this.video.ontimeupdate = this.video.onwaiting = this.video.onstalled = null;
-            this.video.pause();
-            this.video.removeAttribute('src');
-            this.video.load();
+        try {
+            await this._stopStream();
+            await this._bufferQueue;
+        } finally {
+            let cleanupError = null;
+            const release = action => {
+                try { action(); }
+                catch (error) { cleanupError ??= error; }
+            };
+            ++this._audioGeneration;
+            if (this.audioEncoder?.state !== 'closed') {
+                try { this.audioEncoder.close(); } catch (e) { }
+            }
+            this.audioEncoder = null;
+            this._encoderWake = this._encoderError = null;
+
+            if (this.diskStream) {
+                try { await this.diskStream.abort(); } catch (e) { }
+                this.diskStream = null;
+            }
+            this.isRecording = false;
+
+            release(() => this.demuxer?.destroy());
+            this.demuxer = null;
+            release(() => { if (this._aacPtr) wasm._free_memory(this._aacPtr, this._aacCapacity); });
+            this._aacPtr = this._aacCapacity = 0;
+            this._pcmBuffer = new Float32Array(0);
+
+            release(() => { if (this._onlineHandler) window.removeEventListener('online', this._onlineHandler); });
+            if (this.mediaSource && this._sourceOpenHandler) {
+                release(() => this.mediaSource.removeEventListener('sourceopen', this._sourceOpenHandler));
+            }
+            this._onlineHandler = this._sourceOpenHandler = null;
+            if (this.mediaSource?.readyState === 'open' && this.sourceBuffer) {
+                try {
+                    if (this.sourceBuffer.updating) this.sourceBuffer.abort();
+                    this.mediaSource.removeSourceBuffer(this.sourceBuffer);
+                } catch (e) { }
+            }
+            if (this.video) {
+                this.video.onseeking = this.video.ontimeupdate = this.video.onwaiting = this.video.onstalled = this.video.onerror = null;
+                if (this._audioResumeHandler) this.video.removeEventListener('loadedmetadata', this._audioResumeHandler);
+                this._audioResumeHandler = null;
+                try {
+                    this.video.pause();
+                    this.video.removeAttribute('src');
+                    this.video.load();
+                } catch (e) { }
+            }
+            for (const item of Object.values(this.textTracks || {})) {
+                const track = item.htmlTrack;
+                try {
+                    while (track.cues?.length) track.removeCue(track.cues[track.cues.length - 1]);
+                    track.mode = 'disabled';
+                } catch (e) { }
+            }
+            if (this._objectURL) {
+                try { URL.revokeObjectURL(this._objectURL); } catch (e) { }
+            }
+
+            for (const [key, engine] of streamDictionary) {
+                if (engine === this) streamDictionary.delete(key);
+            }
+            this._objectURL = null;
+            this.mediaSource = this.sourceBuffer = this.sourceInput = this.video = null;
+            this.initialHeaderData = this.mp4InitSegment = this.mkvHeader = null;
+            this.videoTrack = this.audioTrack = null;
+            this.cueMap = this.audioTracks = this.subtitleTracks = [];
+            this.downloadBuffer = [];
+            this.textTracks = {};
+            this.onDownloadProgress = null;
+            this._streamError = null;
+            this._gcPending = false;
+            this._bufferQueue = Promise.resolve();
+            this._streamPromise = null;
+            liveEngineCount--;
+            if (liveEngineCount === 0) {
+                wasm = null;
+                while (yieldCallbacks.length) yieldCallbacks.shift()?.();
+                if (yieldChannel) {
+                    yieldChannel.port1.close();
+                    yieldChannel.port2.close();
+                    yieldChannel = null;
+                }
+            }
+            if (cleanupError) throw cleanupError;
         }
-        for (const item of Object.values(this.textTracks || {})) {
-            const track = item.htmlTrack;
-            while (track.cues?.length) track.removeCue(track.cues[track.cues.length - 1]);
-            track.mode = 'disabled';
-        }
-        if (this._objectURL) URL.revokeObjectURL(this._objectURL);
-        this._objectURL = null;
-        this.mediaSource = this.sourceBuffer = this.sourceInput = this.video = null;
-        this.initialHeaderData = this.mp4InitSegment = null;
-        this.textTracks = {};
     }
 
 
@@ -1261,23 +1653,36 @@ class CoreEngine {
 
 //#region EXPORT OBJECT
 const streamDictionary = new Map();
+const pendingFeeds = new Map();
 
 export async function feed(source) {
-    if (!wasm) wasm = await initModule();
-
     const dictKey = source;
+    const cached = streamDictionary.get(dictKey);
+    if (cached && !cached._destroying) return cached;
+    if (cached) streamDictionary.delete(dictKey);
+    const pending = pendingFeeds.get(dictKey);
+    if (pending) return pending;
 
-    if (streamDictionary.has(dictKey)) return streamDictionary.get(dictKey);
-
-    const fetcher = new MKVFetcher(source);
-    await fetcher.init();
-
-    const engine = new CoreEngine();
-    try { await engine.preload(fetcher); }
-    catch (error) { await engine.destroy(); throw error; }
-
-    streamDictionary.set(dictKey, engine);
-    return engine;
+    const load = (async () => {
+        const engine = new CoreEngine();
+        try {
+            await ensureWasm();
+            const fetcher = new MKVFetcher(source);
+            await fetcher.init();
+            await engine.preload(fetcher);
+            streamDictionary.set(dictKey, engine);
+            return engine;
+        } catch (error) {
+            await engine.destroy();
+            throw error;
+        }
+    })();
+    pendingFeeds.set(dictKey, load);
+    try {
+        return await load;
+    } finally {
+        if (pendingFeeds.get(dictKey) === load) pendingFeeds.delete(dictKey);
+    }
 }
 
 export class MKVPlayer {
@@ -1288,6 +1693,7 @@ export class MKVPlayer {
     }
 
     async load(source) {
+        if (!this.video) throw new Error('MKVPlayer has been destroyed. Create a new player.');
         if (this.engine) {
             if (this.engine.isRecording) await this._finishRecording(null);
             const old = this.engine;
@@ -1317,39 +1723,35 @@ export class MKVPlayer {
     pause() { this.video.pause(); }
     seek(timeInSeconds) { this.video.currentTime = timeInSeconds; }
     getAudioTracks() { return this.engine ? this.engine.audioTracks : []; }
-    setAudioTrack(trackNumber) { if (this.engine) this.engine.switchAudioTrack(trackNumber); }
+    getSelectedAudioTrack() { return this.engine?.audioTrack || null; }
+    getPerformanceStats() { return this.engine?.getPerformanceStats() || null; }
+    setAudioTrack(trackNumber) { return this.engine?.switchAudioTrack(trackNumber); }
 
     getSubtitleTracks() { return this.engine ? this.engine.subtitleTracks : []; }
     setSubtitleTrack(trackNumber) { if (this.engine) this.engine.switchSubtitleTrack(trackNumber); }
 
 
-    // Reset engine * MAKE SURE TO DESTROY THE VIDEO ELEMENT IN HTML *
     async destroy() {
-        if (this.engine) {
-            // Flush any active direct-to-disk writes
-            if (this.engine.isRecording) {
-                await this._finishRecording(null);
-            }
-
-            // Wipe the engine from the global dictionary so a fresh one is built next time
-            for (let [key, val] of streamDictionary.entries()) {
-                if (val === this.engine) {
-                    streamDictionary.delete(key);
-                    break;
-                }
-            }
-
-            // Execute the total teardown
-            await this.engine.destroy();
+        const engine = this.engine;
+        let recordingError = null;
+        if (engine?.isRecording) {
+            try { await this._finishRecording(null); }
+            catch (error) { recordingError = error; }
+        }
+        try {
+            await engine?.destroy();
+        } finally {
             this.engine = null;
+            if (this.video) {
+                try {
+                    this.video.pause();
+                    this.video.removeAttribute('src');
+                    this.video.load();
+                } catch (e) { }
+                this.video = null;
+            }
         }
-
-        // DOM Failsafe
-        if (this.video) {
-            this.video.pause();
-            this.video.removeAttribute('src');
-            this.video.load();
-        }
+        if (recordingError) throw recordingError;
     }
 
     async toggleRecording(onStateChange, onProgress, customName = "Media") {
