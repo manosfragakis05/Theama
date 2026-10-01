@@ -1,4 +1,4 @@
-import { renderAllWatchlists } from '../profile-renderer.js';
+import { renderAllWatchlists } from '../user-data/profile-renderer.js';
 import { parse as pttParse } from './ptt.js';
 
 // Detect and parse full stream data

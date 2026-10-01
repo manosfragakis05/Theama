@@ -1,7 +1,7 @@
-import { appState, showToast } from "./services/config";
-import { supabase } from "./services/db";
+import { appState, showToast } from "../services/config.js";
+import { supabase } from "./db.js";
 import { renderAllWatchlists, renderMediaCards } from './profile-renderer.js';
-import { openMasterDetail } from './api.js';
+import { openMasterDetail } from '../api.js';
 
 const urlParams = new URLSearchParams(window.location.search);
 let viewingUserId = urlParams.get('user');

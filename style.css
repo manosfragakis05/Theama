@@ -36,7 +36,8 @@ textarea:focus-visible {
 }
 
 /* 1. Force override Tailwind's base reset */
-select, ::picker(select) {
+select,
+::picker(select) {
     appearance: base-select !important;
 }
 
@@ -46,9 +47,12 @@ select::picker-icon {
 
 /* 2. Style the popup menu box */
 ::picker(select) {
-    background-color: #0f172a; /* slate-900 */
-    border: 1px solid #334155; /* slate-700 */
-    border-radius: 1rem;       /* Rounded corners for the container */
+    background-color: #0f172a;
+    /* slate-900 */
+    border: 1px solid #334155;
+    /* slate-700 */
+    border-radius: 1rem;
+    /* Rounded corners for the container */
     padding: 0.5rem;
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
 }
@@ -57,7 +61,8 @@ select::picker-icon {
 option {
     background-color: transparent;
     color: white;
-    border-radius: 0.5rem;     /* Rounded corners for individual items */
+    border-radius: 0.5rem;
+    /* Rounded corners for individual items */
     padding: 0.5rem 0.75rem;
     margin-bottom: 0.25rem;
     cursor: pointer;
@@ -65,38 +70,39 @@ option {
 
 /* Hover effects */
 option:hover {
-    background-color: #2563eb; /* blue-600 */
+    background-color: #2563eb;
+    /* blue-600 */
 }
 
 .poster-img::after {
     /* Pulls the text directly from your img.alt attribute */
-    content: attr(alt); 
-    
+    content: attr(alt);
+
     position: absolute;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    
+
     /* Completely covers the native broken image icon */
-    background-color: #1e293b; 
-    
+    background-color: #1e293b;
+
     /* The color of your title text */
-    color: #e2e8f0; 
-    
+    color: #e2e8f0;
+
     /* Flexbox centers the text vertically and horizontally */
     display: flex;
     align-items: center;
     justify-content: center;
     text-align: center;
-    
+
     padding: 0.5rem;
     box-sizing: border-box;
     font-size: 0.875rem;
     font-weight: 500;
-    
+
     /* Ensures it sits strictly above any default browser error styling */
-    z-index: 2; 
+    z-index: 2;
 }
 
 .draggable-row {
@@ -212,4 +218,47 @@ option:hover {
 
 .scrollbar-hide::-webkit-scrollbar {
     display: none;
+}
+
+
+.custom-toggle {
+    /* The Background Track */
+    appearance: none;
+    position: relative;
+    width: 3.5rem;
+    height: 2rem;
+    background-color: #d1d5db;
+    border-radius: 9999px;
+    cursor: pointer;
+    outline: none;
+    transition-property: background-color;
+    transition-duration: 300ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    flex-shrink: 0;
+}
+
+.custom-toggle::after {
+    /* The White Ball */
+    content: "";
+    position: absolute;
+    top: 0.25rem;
+    left: 0.25rem;
+    background-color: white;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 9999px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    transition-property: transform;
+    transition-duration: 300ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.custom-toggle:checked {
+    /* iOS Green Background */
+    background-color: #34C759;
+}
+
+.custom-toggle:checked::after {
+    /* Move the ball to the right */
+    transform: translateX(1.5rem);
 }

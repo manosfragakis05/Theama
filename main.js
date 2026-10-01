@@ -9,18 +9,18 @@ import { registerSW } from 'virtual:pwa-register';
 
 import { authenticateTorboxUser, logoutTorBox, closeStreamPicker } from './services/torbox.js';
 import { appState } from './services/config.js';
-import { initializeSupabase, changeAuthState, toggleAuthMode, toggleUpdateMode, logOutUser, sendPasswordResetEmail } from './services/db.js';
+import { initializeSupabase, changeAuthState, toggleAuthMode, toggleUpdateMode, logOutUser, sendPasswordResetEmail } from './user-data/db.js';
 
-import { goHome, toggleProfile, switchTab, handleSearch, toggleSidebar } from './ui.js';
+import { goHome, toggleProfile, switchTab, handleSearch, toggleSidebar } from './utils/ui.js';
 import { deleteTorrent } from './pages/library.js';
 
 import { closePicker } from './streaming/picker.js';
 import { playDirect } from './streaming/player.js';
 
-import { initFriendProfile, fetchFriendsList, handleFollowToggle } from './network.js';
+import { initFriendProfile, fetchFriendsList, handleFollowToggle } from './user-data/network.js';
+import { initializeSettings } from './user-data/user-settings.js';
 
-import { submitNewAddon } from './user-addons/scrapers.js';
-import { renderInstalledAddons } from './user-addons/scraper-renderer.js';
+import { submitNewAddon, renderInstalledAddons } from './user-addons/user-addons.js';
 
 import { initGlobalDrag, closeGridView } from './user-addons/catalog-renderer.js';
 
@@ -34,7 +34,7 @@ import {
     addToWatchlist,
     createNewList,
     openWatchlists
-} from './profile.js';
+} from './user-data/profile.js';
 
 import { triggerLocalFilePicker, processLocalFile } from './services/offline.js';
 
@@ -210,6 +210,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 authenticateTorboxUser(),
             ]);
 
+            await initializeSettings();
+            
             const friends = await fetchFriendsList();
             renderFriendsSidebar(friends);
 

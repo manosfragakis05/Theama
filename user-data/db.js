@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
-import { updatePublicProfile } from '../network.js';
-import { SUPABASEURL, SUPABASEKEY, showToast, appState } from './config.js';
+import { updatePublicProfile } from './network.js';
+import { SUPABASEURL, SUPABASEKEY, showToast, appState } from '../services/config.js';
 
 export const supabase = createClient(SUPABASEURL, SUPABASEKEY);
 
@@ -21,13 +21,13 @@ function setAuthState(user) {
 let isDbInitialized = false;
 export async function initializeSupabase() {
     if (isDbInitialized) return;
-    
+
     supabase.auth.onAuthStateChange((event, session) => {
         currentSession = session;
         setAuthState(session ? session.user : null);
         updateSettingsUI();
     });
-    
+
     const { data: { session } } = await supabase.auth.getSession();
 
     if (session) {
@@ -39,7 +39,7 @@ export async function initializeSupabase() {
         } else {
             currentSession.user = user;
             isDbInitialized = true;
-            
+
             updateSettingsUI();
         }
     }

@@ -5,11 +5,11 @@
  * ==========================================
  */
 
-import { appState, showToast } from './services/config.js';
-import { renderList } from './pages/library.js';
-import { stopPlayback } from './streaming/player.js';
-import { loadDiscover, searchTMDB } from './user-addons/catalogs.js';
-import { returnToMyProfile } from './profile.js';
+import { appState, showToast } from '../services/config.js';
+import { renderList } from '../pages/library.js';
+import { stopPlayback } from '../streaming/player.js';
+import { loadDiscover, searchTMDB } from '../user-addons/catalogs.js';
+import { returnToMyProfile } from '../user-data/profile.js';
 
 // --- NAVIGATION & TABS ---
 
