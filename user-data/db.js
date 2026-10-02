@@ -1,5 +1,4 @@
 import { createClient } from '@supabase/supabase-js';
-import { updatePublicProfile } from './network.js';
 import { SUPABASEURL, SUPABASEKEY, showToast, appState } from '../services/config.js';
 
 export const supabase = createClient(SUPABASEURL, SUPABASEKEY);
@@ -8,41 +7,23 @@ let currentSession = null;
 let signUp = true;
 let updateDetails = false;
 
-function setAuthState(user) {
-    appState.currentUser = user;
+let initialization;
+export function initializeSupabase() {
+    if (initialization) return initialization;
 
-    const authEvent = new CustomEvent('auth-state-changed', {
-        detail: { user: user }
-    });
-
-    window.dispatchEvent(authEvent);
-}
-
-let isDbInitialized = false;
-export async function initializeSupabase() {
-    if (isDbInitialized) return;
-
-    supabase.auth.onAuthStateChange((event, session) => {
-        currentSession = session;
-        setAuthState(session ? session.user : null);
-        updateSettingsUI();
-    });
-
-    const { data: { session } } = await supabase.auth.getSession();
-
-    if (session) {
-        const { data: { user }, error } = await supabase.auth.getUser();
-
-        if (error || !user) {
-            console.log("User no longer exists on server. Clearing session...");
-            await supabase.auth.signOut();
-        } else {
-            currentSession.user = user;
-            isDbInitialized = true;
-
+    initialization = new Promise(resolve => {
+        supabase.auth.onAuthStateChange((event, session) => {
+            currentSession = session;
+            appState.currentUser = session?.user ?? null;
             updateSettingsUI();
-        }
-    }
+            window.dispatchEvent(new CustomEvent('auth-state-changed', {
+                detail: { user: appState.currentUser }
+            }));
+            if (event === 'INITIAL_SESSION') resolve();
+        });
+    });
+
+    return initialization;
 }
 
 // Set UI according to current state
@@ -173,7 +154,11 @@ export async function changeAuthState(event) {
             return showInputError('password', "New password must be at least 6 characters.");
         }
 
-        response = await performUpdate(username, email, password);
+        const updates = {};
+        if (username) updates.data = { username };
+        if (email) updates.email = email;
+        if (password) updates.password = password;
+        response = await supabase.auth.updateUser(updates);
 
     } else if (signUp) {
         // GUARD CLAUSES
@@ -181,14 +166,18 @@ export async function changeAuthState(event) {
         if (!validUsernameRegex.test(username)) return showInputError('username', "Usernames can only contain letters and numbers.");
         if (password.length < 6) return showInputError('password', "Password must be at least 6 characters.");
 
-        response = await performSignUp(username, email, password);
+        response = await supabase.auth.signUp({
+            email: email || `${username.toLowerCase()}@theama.app`,
+            password,
+            options: { data: { username } }
+        });
 
     } else {
         if (!multi) return showInputError('multi', "Please enter your username or email.");
         if (!password) return showInputError('password', "Password is required.");
 
         const finalEmail = multi.includes('@') ? multi : `${multi.toLowerCase()}@theama.app`;
-        response = await performLogIn(finalEmail, password);
+        response = await supabase.auth.signInWithPassword({ email: finalEmail, password });
     }
 
     const { data, error } = response || {};
@@ -199,10 +188,6 @@ export async function changeAuthState(event) {
         showToast(error.message, "error");
     } else {
         submitBtn.textContent = "Success!";
-
-        if (appState.currentUser) {
-            updatePublicProfile();
-        }
 
         setTimeout(() => {
             submitBtn.textContent = originalText;
@@ -234,48 +219,6 @@ export function toggleUpdateMode() {
     updateDetails = !updateDetails;
     updateSettingsUI();
 };
-
-// Sign up
-async function performSignUp(username, email, password) {
-    const finalEmail = email ? email : `${username.toLowerCase()}@theama.app`;
-
-    return await supabase.auth.signUp({
-        email: finalEmail,
-        password: password,
-        options: {
-            data: {
-                username: username,
-            }
-        }
-    });
-}
-
-// 3. LOG IN FUNCTION
-async function performLogIn(username, password) {
-    return await supabase.auth.signInWithPassword({
-        email: username,
-        password: password,
-    });
-}
-
-// Update user details
-async function performUpdate(username, email, password) {
-    const updates = {};
-
-    if (password) {
-        updates.password = password;
-    }
-
-    if (email) {
-        updates.email = email;
-    }
-
-    if (username) {
-        updates.data = { ...updates.data, username: username };
-    }
-
-    return await supabase.auth.updateUser(updates);
-}
 
 // Forgot password
 export async function sendPasswordResetEmail() {

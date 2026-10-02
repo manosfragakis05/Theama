@@ -8,33 +8,42 @@
 import { registerSW } from 'virtual:pwa-register';
 
 import { authenticateTorboxUser, logoutTorBox, closeStreamPicker } from './services/torbox.js';
-import { appState } from './services/config.js';
-import { initializeSupabase, changeAuthState, toggleAuthMode, toggleUpdateMode, logOutUser, sendPasswordResetEmail } from './user-data/db.js';
+import { appState, showToast } from './services/config.js';
 
-import { goHome, toggleProfile, switchTab, handleSearch, toggleSidebar } from './utils/ui.js';
+import {
+    initializeSupabase,
+    changeAuthState,
+    toggleAuthMode,
+    toggleUpdateMode,
+    logOutUser,
+    sendPasswordResetEmail
+} from './user-data/db.js';
+
+import { goHome, toggleProfile, switchTab, handleSearch, toggleSidebar, updateProfileDropdown } from './utils/ui.js';
+
 import { deleteTorrent } from './pages/library.js';
 
 import { closePicker } from './streaming/picker.js';
 import { playDirect } from './streaming/player.js';
 
-import { initFriendProfile, fetchFriendsList, handleFollowToggle } from './user-data/network.js';
+import { updatePublicProfile, fetchPublicProfile, fetchFriendsList, handleFollowToggle } from './user-data/network.js';
 import { initializeSettings } from './user-data/user-settings.js';
 
-import { submitNewAddon, renderInstalledAddons } from './user-addons/user-addons.js';
+import { initCustomAddons, submitNewAddon } from './user-addons/user-addons.js';
 
 import { initGlobalDrag, closeGridView } from './user-addons/catalog-renderer.js';
 
 import { closeMovieDetail } from './api.js';
 
 import {
-    renderFriendsSidebar,
     shareMyProfile,
     returnToMyProfile,
-    updateProfilePage,
-    addToWatchlist,
+    renderPersonalProfile,
+    syncLocalFavouritesToCloud,
     createNewList,
     openWatchlists
 } from './user-data/profile.js';
+import { renderFriendsSidebar, renderPublicProfile, setFollowButton } from './user-data/profile-renderer.js';
 
 import { triggerLocalFilePicker, processLocalFile } from './services/offline.js';
 
@@ -112,7 +121,33 @@ function setupStaticEventListeners() {
     document.getElementById('dropdown-profile-btn')?.addEventListener('click', () => switchTab('profile-page'));
 
     //Network.js
-    document.getElementById('profile-follow-btn')?.addEventListener('click', handleFollowToggle);
+    document.getElementById('profile-follow-btn')?.addEventListener('click', async event => {
+        const button = event.currentTarget;
+        const friendId = new URLSearchParams(window.location.search).get('user');
+        if (!friendId || button.disabled) return;
+        button.disabled = true;
+        try {
+            const wasFollowing = button.dataset.following === 'true';
+            await handleFollowToggle(friendId, wasFollowing);
+            if (new URLSearchParams(window.location.search).get('user') === friendId) {
+                setFollowButton(!wasFollowing);
+            }
+            await refreshFriendsSidebar();
+        } catch (error) {
+            console.error('Follow toggle failed:', error);
+            showToast(error.message || 'Could not update follow status.', 'error');
+        } finally {
+            button.disabled = false;
+        }
+    });
+    document.getElementById('sidebar-following-list')?.addEventListener('click', event => {
+        const button = event.target.closest('.following-btn');
+        if (!button?.dataset.friendId) return;
+        const url = new URL(window.location.href);
+        url.searchParams.set('user', button.dataset.friendId);
+        window.history.pushState({}, '', url);
+        handleProfileRouting();
+    });
 
     //Offline.js
     document.getElementById('trigger-local-file-btn')?.addEventListener('click', () => triggerLocalFilePicker());
@@ -165,22 +200,43 @@ const updateSW = registerSW({
     }
 });
 
+let routeVersion = 0;
 export async function handleProfileRouting() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const friendId = urlParams.get('user');
+    const version = ++routeVersion;
+    const url = new URL(window.location.href);
+    let friendId = url.searchParams.get('user');
+    const openedProfileLink = Boolean(friendId);
 
-    await initializeSupabase();
-
-    if (friendId && appState.currentUser && friendId === appState.currentUser.id) {
-        console.log("User viewing their own public link. Stripping parameter.");
-        window.history.replaceState({}, document.title, window.location.pathname);
-        return;
+    if (friendId && friendId === appState.currentUser?.id) {
+        url.searchParams.delete('user');
+        window.history.replaceState({}, '', url);
+        friendId = null;
     }
 
-    if (friendId) {
-        console.log("Routing to friend profile:", friendId);
-        await initFriendProfile(friendId);
-        switchTab('profile-page');
+    try {
+        if (friendId) {
+            const profile = await fetchPublicProfile(friendId);
+            if (version !== routeVersion) return;
+            renderPublicProfile(friendId, profile);
+            switchTab('profile-page');
+        } else {
+            await renderPersonalProfile(() => version === routeVersion);
+            if (openedProfileLink && version === routeVersion) switchTab('profile-page');
+        }
+    } catch (error) {
+        if (version !== routeVersion) return;
+        console.error('Profile load failed:', error);
+        showToast('Could not load the profile.', 'error');
+    }
+}
+
+async function refreshFriendsSidebar() {
+    const userId = appState.currentUser?.id;
+    try {
+        const friends = await fetchFriendsList();
+        if (userId === appState.currentUser?.id) renderFriendsSidebar(friends);
+    } catch (error) {
+        console.error('Friends list load failed:', error);
     }
 }
 
@@ -188,6 +244,25 @@ export async function handleProfileRouting() {
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize our new static listeners immediately
     setupStaticEventListeners();
+    window.addEventListener('popstate', handleProfileRouting);
+
+    let lastAuthKey;
+    let authUpdate = Promise.resolve();
+    let appBooted = false;
+    window.addEventListener('auth-state-changed', () => {
+        updateProfileDropdown();
+        const user = appState.currentUser;
+        const authKey = JSON.stringify([user?.id, user?.email, user?.user_metadata?.username]);
+        if (authKey === lastAuthKey) return;
+        lastAuthKey = authKey;
+        authUpdate = authUpdate.then(async () => {
+            if (appState.currentUser) {
+                await Promise.all([syncLocalFavouritesToCloud(), updatePublicProfile()]);
+            }
+            await Promise.all([handleProfileRouting(), refreshFriendsSidebar(), initializeSettings()]);
+            if (appBooted) await initCustomAddons();
+        }).catch(error => console.error('Auth update failed:', error));
+    });
 
     const splash = document.getElementById('pwa-splash');
     const dropShield = () => {
@@ -205,17 +280,10 @@ document.addEventListener('DOMContentLoaded', () => {
     async function bootApp() {
         try {
             initGlobalDrag();
-            await Promise.all([
-                handleProfileRouting(),
-                authenticateTorboxUser(),
-            ]);
-
-            await initializeSettings();
-            
-            const friends = await fetchFriendsList();
-            renderFriendsSidebar(friends);
-
-            renderInstalledAddons();
+            await initializeSupabase();
+            await Promise.all([authUpdate, authenticateTorboxUser()]);
+            await initCustomAddons();
+            appBooted = true;
 
             clearTimeout(failsafeTimer);
         } catch (error) {
@@ -229,10 +297,7 @@ document.addEventListener('DOMContentLoaded', () => {
     bootApp();
 });
 
-// 1. Target your main scrolling container
 const mainContainer = document.getElementById('app-main');
-
-
 const scrollCache = new Map();
 let currentTabId = 'library-page';
 
@@ -241,7 +306,7 @@ document.querySelectorAll('.nav-link').forEach(btn => {
         const targetId = e.currentTarget.getAttribute('data-target');
 
         if (targetId === currentTabId) return;
-        
+
         scrollCache.set(currentTabId, mainContainer.scrollTop);
 
         document.getElementById(currentTabId).classList.add('hidden');

@@ -152,8 +152,3 @@ export function toggleSidebar()
     const sidebar = document.getElementById('desktop-sidebar');
     sidebar.classList.toggle('collapsed');
 }
-
-// Auth Listener
-window.addEventListener('auth-state-changed', (event) => {
-    updateProfileDropdown();
-});

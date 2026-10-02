@@ -1,3 +1,5 @@
+import { openMasterDetail } from '../api.js';
+
 export function renderAllWatchlists(customLists, onEditList = null) {
     const container = document.getElementById('profile-watchlists-container');
     if (!container) return;
@@ -11,25 +13,15 @@ export function renderAllWatchlists(customLists, onEditList = null) {
     }
 
     customLists.forEach(list => {
-        const trackDOM = createWatchlistTrack(list, onEditList);
-        container.appendChild(trackDOM);
-    });
-}
+        const clone = document.getElementById('watchlist-row-template').content.cloneNode(true);
+        const nameEl = clone.querySelector('.wl-row-name');
+        const trackEl = clone.querySelector('.wl-row-track');
+        const editBtn = clone.querySelector('.wl-row-edit-btn');
 
-// Build row
-function createWatchlistTrack(list, onEditList) {
-    const template = document.getElementById('watchlist-row-template');
-    const clone = template.content.cloneNode(true);
+        nameEl.textContent = list.name;
 
-    const nameEl = clone.querySelector('.wl-row-name');
-    const trackEl = clone.querySelector('.wl-row-track');
-    const editBtn = clone.querySelector('.wl-row-edit-btn');
-
-    nameEl.textContent = list.name;
-
-    // Add icon
-    if (!list.is_private) {
-        nameEl.insertAdjacentHTML('afterend', `
+        if (!list.is_private) {
+            nameEl.insertAdjacentHTML('afterend', `
             <svg class="w-5 h-5 text-slate-400 ml-2 inline-block align-middle relative -bottom-[1px] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <title>Public List</title>
                 <circle cx="12" cy="12" r="10"></circle>
@@ -37,18 +29,14 @@ function createWatchlistTrack(list, onEditList) {
                 <path d="M2 12h20"></path>
             </svg>
         `);
-    }
+        }
 
-    // Attach Edit Event
-    if (editBtn) {
         if (onEditList) editBtn.onclick = () => onEditList(list);
         else editBtn.remove();
-    }
 
-    const safeId = list.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
-    trackEl.id = `watchlist-track-${safeId}`;
-
-    return clone;
+        trackEl.id = `watchlist-track-${list.id}`;
+        container.appendChild(clone);
+    });
 }
 
 // Render cards
@@ -146,12 +134,57 @@ export function showPersonalProfile(username) {
     if (watchlistsContainer) watchlistsContainer.innerHTML = '';
 }
 
-export function setProfileUsername(username) {
+export function renderPublicProfile(userId, profile) {
     const usernameDisplay = document.getElementById('profile-username-display');
-    if (usernameDisplay) usernameDisplay.textContent = username;
+    const heading = usernameDisplay.parentElement;
+    heading.replaceChildren(usernameDisplay);
+    usernameDisplay.textContent = profile?.username || 'User not found';
+    heading.append("'s Profile");
+    heading.nextElementSibling.textContent = profile
+        ? 'Browsing public watchlists.' : 'This profile is unavailable.';
+
+    document.getElementById('back-to-profile-btn').classList.remove('hidden');
+    for (const element of [
+        document.getElementById('profile-settings-btn'),
+        document.getElementById('profile-share-btn'),
+        document.querySelector('button[onclick*="create-list-modal"]'),
+        document.getElementById('default-watchlists-container')
+    ]) {
+        if (element) element.style.display = 'none';
+    }
+
+    const followBtn = document.getElementById('profile-follow-btn');
+    followBtn.dataset.friendId = userId;
+    followBtn.style.display = profile ? 'flex' : 'none';
+    if (profile) setFollowButton(profile.isFollowing);
+
+    renderAllWatchlists(profile?.lists || []);
+    for (const list of profile?.lists || []) {
+        renderMediaCards(list.media || [], `watchlist-track-${list.id}`, null, media => {
+            openMasterDetail({
+                id: media.media_id,
+                type: media.media_type,
+                title: media.title,
+                poster: media.poster_path,
+                baseUrl: media.base_url || null
+            });
+        });
+    }
 }
 
-export function renderFriendsSidebar(friendsList, onFriendClick) {
+export function setFollowButton(isFollowing) {
+    const btn = document.getElementById('profile-follow-btn');
+    btn.dataset.following = String(isFollowing);
+    btn.className = isFollowing
+        ? 'px-6 py-3 rounded-2xl font-bold text-sm transition-all flex items-center gap-2 border shadow-sm outline-none bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-700 hover:text-white'
+        : 'px-6 py-3 rounded-2xl font-bold text-sm transition-all flex items-center gap-2 border shadow-sm outline-none bg-blue-600 hover:bg-blue-500 text-white border-blue-500';
+    document.getElementById('follow-text').textContent = isFollowing ? 'Following' : 'Follow';
+    document.getElementById('follow-icon').innerHTML = isFollowing
+        ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>'
+        : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path>';
+}
+
+export function renderFriendsSidebar(friendsList) {
     const container = document.getElementById('sidebar-following-list');
     const emptyState = document.getElementById('sidebar-following-empty');
     const template = document.getElementById('following-user-template');
@@ -172,10 +205,7 @@ export function renderFriendsSidebar(friendsList, onFriendClick) {
 
         nameEl.textContent = friend.username;
         avatar.textContent = friend.username.charAt(0).toUpperCase();
-        btn.onclick = event => {
-            event.preventDefault();
-            onFriendClick(friend);
-        };
+        btn.dataset.friendId = friend.id;
         container.appendChild(clone);
     });
 }

@@ -9,6 +9,12 @@ let userSettings = {
         parseAddonLinks: true
     }
 };
+let settingsListenersAttached = false;
+
+// GLOBAL GETTER
+export function getCurrentUserSettings() {
+    return userSettings;
+}
 
 //#region Init Settings
 export async function initializeSettings() {
@@ -46,6 +52,8 @@ export async function initializeSettings() {
 }
 
 function attachSettingsListeners() {
+    if (settingsListenersAttached) return;
+    settingsListenersAttached = true;
     document.getElementById('saveKeyToCloud').addEventListener('change', (e) => {
         userSettings.user_preferences.saveKeyToCloud = e.target.checked;
         saveSettings();
@@ -53,7 +61,13 @@ function attachSettingsListeners() {
 
     document.getElementById('saveAddonsToCloud').addEventListener('change', (e) => {
         userSettings.user_preferences.saveAddonsToCloud = e.target.checked;
-        saveSettings();
+        if(e.target.checked) {
+            const localAddons = JSON.parse(localStorage.getItem('user_addons')) || [];
+            saveAddonsToCloud(localAddons);
+        } else {
+            // Pass an empty array to delete the urls from the cloud
+            saveAddonsToCloud([]);
+        }
     });
 
     document.getElementById('parseAddonLinks').addEventListener('change', (e) => {
@@ -78,9 +92,22 @@ async function saveSettings() {
 
         if (error) {
             console.error("Failed to sync settings to Supabase:", error.message);
-            // showToast("Failed to sync settings", "error"); 
+            showToast("Failed to sync settings", "error");
         } else {
             console.log("Settings synced to Supabase successfully.");
         }
     }
+}
+
+export async function saveAddonsToCloud(userAddons) {
+    if (!userAddons) return;
+
+    // Store only the url
+    const manifestList = userAddons
+        .map(addon => addon.url)
+        .filter(url => url !== null && url !== "");
+
+    userSettings.addon_links = manifestList;
+
+    await saveSettings();
 }

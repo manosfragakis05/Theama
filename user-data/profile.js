@@ -1,15 +1,12 @@
 import { appState, showToast } from '../services/config.js';
 import { supabase } from './db.js';
 import { mediaStore, openMasterDetail } from '../api.js';
-import { handleProfileRouting } from '../main.js';
 import {
     renderAllWatchlists,
     renderMediaCards,
-    renderFriendsSidebar as renderSidebar,
     renderWatchlistPicker,
     closeWatchlistPicker,
     showPersonalProfile,
-    setProfileUsername,
     getNewListInput,
     clearNewListInput,
     showEditListModal,
@@ -179,7 +176,7 @@ async function syncLocalFavouritesToCloud() {
                 type: media.media_type,
                 title: media.title,
                 poster: media.poster_path,
-                base_url: media.base_url
+                baseUrl: media.base_url
             }, favList);
         }
 
@@ -191,41 +188,12 @@ async function syncLocalFavouritesToCloud() {
     }
 }
 
-async function fetchFollowingSidebarList() {
-    if (!appState.currentUser) return [];
-
-    // Step 1: Get the IDs of everyone we follow
-    const { data: follows, error: followErr } = await supabase
-        .from('follows')
-        .select('following_id')
-        .eq('follower_id', appState.currentUser.id);
-
-    // If there's an error or we follow no one, return an empty array
-    if (followErr || !follows || follows.length === 0) return [];
-
-    // Extract just the IDs into an array: ['uuid-1', 'uuid-2']
-    const followingIds = follows.map(f => f.following_id);
-
-    // Step 2: Fetch their profiles using those IDs (Sorted alphabetically!)
-    const { data: profiles, error: profileErr } = await supabase
-        .from('profiles')
-        .select('id, username')
-        .in('id', followingIds)
-        .order('username', { ascending: true });
-
-    if (profileErr) {
-        console.error("Error fetching friend profiles:", profileErr.message);
-        return [];
-    }
-
-    return profiles;
-}
-
 // Clear viewing state
-export async function returnToMyProfile() {
-    window.history.pushState({}, document.title, window.location.pathname);
-    showPersonalProfile(appState.currentUser?.user_metadata?.username || (appState.currentUser ? 'User' : 'Guest'));
-    await loadAndRenderProfile();
+export function returnToMyProfile() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('user');
+    window.history.pushState({}, '', url);
+    window.dispatchEvent(new Event('popstate'));
 }
 
 export async function shareMyProfile() {
@@ -269,15 +237,13 @@ export async function shareMyProfile() {
 
 
 //#region Profile actions
-async function loadAndRenderProfile() {
-    // 1. Fetch the Shelves
-    const customLists = await getAvailableCustomLists();
-    const favList = await getFavouritesList();
-    const allLists = [favList, ...customLists];
+export async function renderPersonalProfile(isCurrent = () => !new URLSearchParams(window.location.search).has('user')) {
+    if (!isCurrent()) return;
+    const [customLists, favList] = await Promise.all([
+        getAvailableCustomLists(), getFavouritesList()
+    ]);
+    if (!isCurrent()) return;
 
-    renderAllWatchlists(customLists, openEditListModal);
-
-    // THE OPTIMIZED FIX:
     let allUserMovies = [];
     if (appState.currentUser) {
         const { data } = await supabase
@@ -287,50 +253,31 @@ async function loadAndRenderProfile() {
             .order('created_at', { ascending: false });
         allUserMovies = data || [];
     }
+    if (!isCurrent()) return;
+    showPersonalProfile(appState.currentUser?.user_metadata?.username || 'Guest');
+    renderAllWatchlists(customLists, openEditListModal);
 
-    async function populateTrack(listObj, trackId) {
-        let mediaData = [];
+    for (const list of [favList, ...customLists].filter(Boolean)) {
+        const trackId = list.name.toLowerCase() === 'favourites'
+            ? 'watchlist-track-favourites' : `watchlist-track-${list.id}`;
+        const mediaData = appState.currentUser
+            ? allUserMovies.filter(media => media.list_id === list.id)
+            : await getListMedia(list);
+        if (!isCurrent()) return;
 
-        if (appState.currentUser) {
-            mediaData = allUserMovies.filter(media => media.list_id === listObj.id);
-        } else {
-            mediaData = await getListMedia(listObj); // Keep guest local storage logic
-        }
-
-        const handleRemove = async (mediaId) => {
-            await handleRemoveMedia(mediaId, listObj);
-            await loadAndRenderProfile(); // Re-run the optimized render
-        };
-
-        const handleCardClick = (dbMedia) => {
-            // Re-map the database columns to match what openMasterDetail expects
-            const formattedMedia = {
-                id: dbMedia.media_id,
-                type: dbMedia.media_type,
-                title: dbMedia.title,
-                poster: dbMedia.poster_path,
-                baseUrl: dbMedia.base_url || null
-            };
-
-            openMasterDetail(formattedMedia);
-        };
-
-        renderMediaCards(mediaData, trackId, handleRemove, handleCardClick);
+        renderMediaCards(mediaData, trackId, async mediaId => {
+            await handleRemoveMedia(mediaId, list);
+            await renderPersonalProfile();
+        }, media => {
+            openMasterDetail({
+                id: media.media_id,
+                type: media.media_type,
+                title: media.title,
+                poster: media.poster_path,
+                baseUrl: media.base_url || null
+            });
+        });
     }
-
-    // 4. Trigger population instantly
-    allLists.forEach(list => {
-        const safeId = list.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
-        const trackId = `watchlist-track-${safeId}`;
-        populateTrack(list, trackId);
-    });
-}
-
-export function renderFriendsSidebar(friendsList) {
-    renderSidebar(friendsList, friend => {
-        window.history.pushState({}, '', `?user=${friend.id}`);
-        handleProfileRouting();
-    });
 }
 
 export async function openWatchlists() {
@@ -339,10 +286,6 @@ export async function openWatchlists() {
         getFavouritesList()
     ]);
     renderWatchlistPicker(customLists, favList, Boolean(appState.currentUser), addToWatchlist);
-}
-
-export function updateProfilePage() {
-    setProfileUsername(appState.currentUser?.user_metadata?.username || (appState.currentUser ? 'User' : 'Guest'));
 }
 
 // Create list popup
@@ -384,7 +327,7 @@ export async function createNewList() {
         clearNewListInput();
 
         // Re-fetch and render the lists
-        await loadAndRenderProfile();
+        await renderPersonalProfile();
     } catch (err) {
         console.error("Error creating list:", err);
         showToast("Failed to create list.", "error");
@@ -409,7 +352,7 @@ export async function addToWatchlist(list) {
             showToast(`Added to ${list.name}!`, "success");
             closeWatchlistPicker();
 
-            await loadAndRenderProfile();
+            await renderPersonalProfile();
         }
     } catch (err) {
         console.error("Unexpected error saving media:", err);
@@ -460,7 +403,7 @@ export function openEditListModal(list) {
             if (error) throw error;
 
             closeEditListModal();
-            await loadAndRenderProfile();
+            await renderPersonalProfile();
         } catch (err) {
             console.error("Error updating list:", err);
             showToast("Failed to update list.", "error");
@@ -479,7 +422,7 @@ export function openEditListModal(list) {
 
             showToast("List deleted.", "success");
             closeEditListModal();
-            await loadAndRenderProfile();
+            await renderPersonalProfile();
         } catch (err) {
             console.error("Error deleting list:", err);
             showToast("Failed to delete list.", "error");
@@ -489,29 +432,5 @@ export function openEditListModal(list) {
     });
 }
 
-let lastRenderedUserId = null;
-window.addEventListener('auth-state-changed', async () => {
-    const currentUserId = appState.currentUser ? appState.currentUser.id : 'guest';
-    if (lastRenderedUserId === currentUserId) {
-        return;
-    }
-
-    lastRenderedUserId = currentUserId;
-
-    const urlParams = new URLSearchParams(window.location.search);
-    const isViewingFriend = urlParams.has('user');
-
-    if (appState.currentUser) {
-        await syncLocalFavouritesToCloud();
-    }
-
-    if (isViewingFriend) {
-        console.log("Viewing friend's profile. Ignoring personal UI update.");
-        return;
-    }
-
-    // 5. Actually update the screen
-    updateProfilePage();
-    await loadAndRenderProfile();
-});
+export { syncLocalFavouritesToCloud };
 //#endregion

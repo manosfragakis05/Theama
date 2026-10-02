@@ -1,7 +1,95 @@
 import { showToast, MY_PROXY } from '../services/config.js';
+import { getCurrentUserSettings, saveAddonsToCloud } from '../user-data/user-settings.js';
+
+let userAddons = [];
+
+// GLOBAL GETTER
+
+
+//#region Init Addons
+export async function initCustomAddons() {
+    // 1. Load what we already have locally
+    userAddons = JSON.parse(localStorage.getItem('user_addons')) || [];
+
+    // Ensure TMDB is always there
+    if (!userAddons.some(a => a.name === "TMDB")) {
+        const defaultAddon = await formatTMDBAddon();
+        userAddons.push(defaultAddon);
+    }
+
+    // 2. Read the downloaded cloud data from your settings script
+    const settings = getCurrentUserSettings();
+
+    // 3. If cloud sync is on, check for missing addons
+    if (settings.user_preferences.saveAddonsToCloud && settings.addon_links && settings.addon_links.length > 0) {
+
+        // Make a list of URLs we already have locally
+        const localUrls = userAddons.map(a => a.url);
+
+        // Filter the cloud URLs to find only the ones we are missing
+        const missingUrls = settings.addon_links.filter(url => !localUrls.includes(url));
+
+        if (missingUrls.length > 0) {
+            console.log(`Syncing ${missingUrls.length} addons from cloud...`);
+
+            // Run your existing detector on all missing URLs in parallel
+            const fetchPromises = missingUrls.map(url => detectAndValidateAddon(url));
+            const results = await Promise.all(fetchPromises);
+
+            let newlyInstalled = false;
+
+            results.forEach(result => {
+                if (result.success) {
+                    const manifest = result.manifest;
+                    const addonData = {
+                        id: manifest.id,
+                        name: manifest.name,
+                        url: result.url,
+                        catalogs: manifest.catalogs || [],
+                        version: manifest.version,
+                        logo: manifest.logo || null,
+                        description: manifest.description || null,
+                        configurable: manifest.behaviorHints?.configurable || false,
+                        types: manifest.types || [],
+                        idPrefixes: getStreamIdPrefixes(manifest),
+                        capabilities: result.capabilities
+                    };
+
+                    userAddons.push(addonData);
+                    newlyInstalled = true;
+                }
+            });
+
+            // If we successfully downloaded new manifests, save the updated list locally
+            if (newlyInstalled) {
+                localStorage.setItem('user_addons', JSON.stringify(userAddons));
+            }
+        }
+    }
+
+    // 4. Finally, render the complete list to the UI
+    renderInstalledAddons(userAddons);
+}
+async function formatTMDBAddon() {
+    return {
+        id: null,
+        name: "TMDB",
+        url: null,
+        catalogs: [],
+        version: "1.0",
+        logo: "https://www.themoviedb.org/assets/v4/logos/v2/blue_square_2-d537fb228cf3ded904ef09b136fe3fec72548ebc1fea3fbbd1ad9e36364db38b.svg" || null,
+        description: "Default TMDB metadata, with a custom Kitsu integration for better anime url results",
+        configurable: false,
+        types: ["movie", "series"],
+        idPrefixes: ["tmdb:", "tt", "kitsu"],
+        capabilities: { streams: false, catalogs: true, meta: true }
+    };
+}
+
+//#endregion
+
 
 //#region Addon Options
-
 // Add new Addon
 export async function submitNewAddon() {
     const inputField = document.getElementById('addon-url-input');
@@ -23,7 +111,7 @@ export async function submitNewAddon() {
 
     if (result.success) {
         const manifest = result.manifest;
-        let userAddons = JSON.parse(localStorage.getItem('user_addons')) || [];
+        userAddons = JSON.parse(localStorage.getItem('user_addons')) || [];
 
         const idPrefix = getStreamIdPrefixes(manifest);
 
@@ -57,7 +145,14 @@ export async function submitNewAddon() {
 
         // Save to storage and refresh UI
         localStorage.setItem('user_addons', JSON.stringify(userAddons));
-        renderInstalledAddons();
+
+        // Save to cloud only if user wants to
+        if (getCurrentUserSettings().user_preferences.saveAddonsToCloud) {
+            console.log("Saving addons");
+            await saveAddonsToCloud(userAddons);
+        }
+
+        renderInstalledAddons(userAddons);
 
         inputField.value = '';
     } else {
@@ -149,13 +244,11 @@ async function detectAndValidateAddon(rawUrl) {
 //#region Render Addons
 
 // Show Addons
-export function renderInstalledAddons() {
+function renderInstalledAddons(userAddons) {
     const container = document.getElementById('installed-addons-list');
     const template = document.getElementById('installed-addon-template');
 
     if (!container || !template) return;
-
-    const userAddons = JSON.parse(localStorage.getItem('user_addons')) || [];
 
     // Clear out the container first
     container.innerHTML = '';
@@ -261,7 +354,7 @@ export function renderInstalledAddons() {
 
         // 6. Wire up the Uninstall Button
         if (uninstallBtn) {
-            uninstallBtn.addEventListener('click', () => {
+            uninstallBtn.addEventListener('click', (async) => {
                 removeAddon(addon.id);
             });
         }
@@ -271,12 +364,18 @@ export function renderInstalledAddons() {
 }
 
 // Uninstall Addon
-function removeAddon(addonId) {
+async function removeAddon(addonId) {
     let userAddons = JSON.parse(localStorage.getItem('user_addons')) || [];
     userAddons = userAddons.filter(a => a.id !== addonId);
+
+    // Save locally
     localStorage.setItem('user_addons', JSON.stringify(userAddons));
 
-    renderInstalledAddons();
+    // Push the newly filtered array to the cloud if they have syncing enabled
+    if (getCurrentUserSettings().user_preferences.saveAddonsToCloud) {
+        await saveAddonsToCloud(userAddons);
+    }
 
+    renderInstalledAddons(userAddons);
     showToast("Add-on uninstalled.", "success");
 }
