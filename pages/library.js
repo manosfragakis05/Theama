@@ -5,17 +5,18 @@
  * ==========================================
  */
 
-import { appState, getTbKey, smartFetch, showToast } from '../services/config.js';
+import { getCurrentUserSettings } from '../user-data/user-settings.js';
+import { appState, smartFetch, showToast } from '../services/config.js';
+
 import { getPosterForLibrary, getTmdbId } from '../services/metadata.js';
+import { openPicker } from '../streaming/picker.js';
+
 import { parseMediaData } from '../utils/parseMedia.js';
 import { requestLink } from '../streaming/player.js';
 
-import { openPicker } from '../streaming/picker.js';
-
 // --- DATA FETCHING ---
-
 export async function fetchLibrary(bypassCache = true) {
-    const key = getTbKey();
+    const key = getCurrentUserSettings().user_preferences.torboxApiKey;
     if (!key) return;
 
     try {
@@ -42,7 +43,7 @@ export async function deleteTorrent(torrentId, event) {
     if (event) event.stopPropagation();
     if (!confirm("Are you sure you want to delete this from TorBox?")) return;
 
-    const key = getTbKey();
+    const key = getCurrentUserSettings().user_preferences.torboxApiKey;
     if (!key) return;
     const targetUrl = 'https://api.torbox.app/v1/api/torrents/controltorrent';
 
@@ -63,9 +64,6 @@ export async function deleteTorrent(torrentId, event) {
 
         if (data.success) {
             showToast("Deleted successfully!", 'success');
-
-            // Delete data from localstorage
-
 
             appState.allTorrents = appState.allTorrents.filter(t => t.id !== torrentId);
             renderList(appState.allTorrents);
@@ -91,7 +89,7 @@ export async function deleteTorrent(torrentId, event) {
  * @param {string} fileName - used as the share-sheet title on iOS fallback
  */
 export async function downloadFile(torrentId, fileId, fileName) {
-    const key = getTbKey();
+    const key = getCurrentUserSettings().user_preferences.torboxApiKey;
     if (!key) {
         showToast("API key not found.", "error");
         return;

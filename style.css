@@ -262,3 +262,19 @@ option:hover {
     /* Move the ball to the right */
     transform: translateX(1.5rem);
 }
+
+.custom-toggle-sm {
+    width: 2.75rem;
+    height: 1.5rem;
+}
+
+.custom-toggle-sm::after {
+    top: 0.1875rem;
+    left: 0.1875rem;
+    width: 1.125rem;
+    height: 1.125rem;
+}
+
+.custom-toggle-sm:checked::after {
+    transform: translateX(1.25rem);
+}

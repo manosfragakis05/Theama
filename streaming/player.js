@@ -1,5 +1,6 @@
 import { MKVPlayer } from '../engine/mkv_lib.js';
 import { smartFetch, showToast } from '../services/config.js';
+import { getCurrentUserSettings } from '../user-data/user-settings.js';
 import { openExternalPlayer } from './external-players.js';
 
 export let art = null;
@@ -7,7 +8,7 @@ let playbackGeneration = 0;
 
 // LINK FETCHER
 export async function getTorboxLink(tid, fid) {
-    const key = localStorage.getItem('tb_api_key');
+    const key = getCurrentUserSettings().user_preferences.torboxApiKey; // CHANGE
     const targetUrl = `https://api.torbox.app/v1/api/torrents/requestdl?token=${key}&torrent_id=${tid}&file_id=${fid}&zip=false`;
 
     try {
@@ -78,8 +79,6 @@ export function startPlayer(url, name, localFileObject = null) {
         fastForward: true,
         theme: '#3b82f6',
         pip: !isIOS,
-        // Artplayer writes resume data to localStorage on every timeupdate.
-        // Signed MKV URLs change between sessions, so this work is wasted.
         autoPlayback: !isMkv,
         miniProgressBar: false,
         screenshot: false,

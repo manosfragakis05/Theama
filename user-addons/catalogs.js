@@ -9,6 +9,7 @@ import {
     initGlobalClickListener,
     rearmObservers
 } from "./catalog-renderer";
+import { getAllAddons } from "./user-addons";
 
 // APP BOOTER
 function handleTypeChange(e) {
@@ -81,9 +82,9 @@ export const rowState = {
     movie: {
         'trending-movies-row': { containerId: 'trending-movies-row', title: 'Trending Movies', addonName: 'TMDB', type: 'movie', page: 1, endpoint: 'trending/movie/week', loading: false, hasOptions: false, hasMore: true },
         'top-row': { containerId: 'top-row', title: 'Top Rated Movies', addonName: 'TMDB', type: 'movie', page: 1, endpoint: 'movie/top_rated', loading: false, hasOptions: false, hasMore: true },
-        'action-row': { containerId: 'action-row', title: 'Action Blockbusters', addonName: 'TMDB', type: 'movie', page: 1, endpoint: 'discover/movie?with_genres=28&sort_by=vote_count.desc&vote_average.gte=7&vote_count.gte=3000', loading: false, hasOptions: false, hasMore: true },
-        'comedy-row': { containerId: 'comedy-row', title: 'Comedies', addonName: 'TMDB', type: 'movie', page: 1, endpoint: 'discover/movie?with_genres=35&sort_by=vote_count.desc&vote_average.gte=6.5&vote_count.gte=2000', loading: false, hasOptions: false, hasMore: true },
-        'thriller-row': { containerId: 'thriller-row', title: 'Thrillers', addonName: 'TMDB', type: 'movie', page: 1, endpoint: 'discover/movie?with_genres=53&without_genres=27,28&sort_by=vote_count.desc&vote_average.gte=7.5&vote_count.gte=1500', loading: false, hasOptions: false, hasMore: true }
+        'action-row': { containerId: 'action-row', title: 'Action Blockbusters', addonName: 'TMDB', type: 'movie', page: 1, endpoint: 'discover/movie?with_genres=28&sort_by=vote_count.desc&vote_average.gte=5&vote_count.gte=1500', loading: false, hasOptions: false, hasMore: true },
+        'comedy-row': { containerId: 'comedy-row', title: 'Comedies', addonName: 'TMDB', type: 'movie', page: 1, endpoint: 'discover/movie?with_genres=35&sort_by=vote_count.desc&vote_average.gte=5&vote_count.gte=1000', loading: false, hasOptions: false, hasMore: true },
+        'thriller-row': { containerId: 'thriller-row', title: 'Thrillers', addonName: 'TMDB', type: 'movie', page: 1, endpoint: 'discover/movie?with_genres=53&without_genres=27,28&sort_by=vote_count.desc&vote_average.gte=6&vote_count.gte=800', loading: false, hasOptions: false, hasMore: true }
     },
     series: {
         'trending-shows-row': { containerId: 'trending-shows-row', title: 'Trending Series', addonName: 'TMDB', type: 'tv', page: 1, endpoint: 'trending/tv/week', loading: false, hasOptions: false, hasMore: true },
@@ -175,7 +176,7 @@ export async function searchTMDB(query) {
 export function getCatalogProviders() {
     let userAddons = [];
     try {
-        userAddons = JSON.parse(localStorage.getItem('user_addons')) || [];
+        userAddons = getAllAddons();
     } catch (err) {
         console.error("Corrupted user_addons in localStorage:", err);
     }

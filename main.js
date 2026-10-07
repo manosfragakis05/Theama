@@ -281,7 +281,10 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             initGlobalDrag();
             await initializeSupabase();
-            await Promise.all([authUpdate, authenticateTorboxUser()]);
+            await authUpdate;
+
+            await authenticateTorboxUser();
+
             await initCustomAddons();
             appBooted = true;
 

@@ -6,7 +6,8 @@
  */
 
 
-import { getTbKey, smartFetch, showToast } from './config.js';
+import { smartFetch, showToast } from './config.js';
+import { getCurrentUserSettings, saveTorboxKey, deleteTorboxKey} from '../user-data/user-settings.js';
 import { fetchLibrary } from '../pages/library.js';
 import { mediaStore } from '../api.js';
 
@@ -16,6 +17,7 @@ export async function authenticateTorboxUser() {
 
     let key = "";
 
+    // IF INPUT IS EMPTY GET KEY FROM EITHER METHOD
     if (input.value) {
         key = input.value.trim();
         if (!key) return;
@@ -25,12 +27,12 @@ export async function authenticateTorboxUser() {
         input.disabled = true;
 
     } else {
-        checkAuth();
-
-        key = getTbKey();
+        key = getCurrentUserSettings().user_preferences.torboxApiKey;
         if (!key) return;
-
-        await fetchLibrary();
+        
+        checkAuth();
+        console.log(key);
+        fetchLibrary();
 
         return;
     }
@@ -44,13 +46,17 @@ export async function authenticateTorboxUser() {
 
         const data = await res.json();
 
+        // If the user is found save key even if its saved (COULD OPTIMIZE)
         if (data.success && data.data) {
-            localStorage.setItem('tb_api_key', key);
+            const currentKey = getCurrentUserSettings().user_preferences.torboxApiKey;
+            if (currentKey !== key) {
+                await saveTorboxKey(key);
+            }
 
             button.innerText = "Connected!";
             button.classList.replace('bg-blue-600', 'bg-green-600');
 
-            await fetchLibrary();
+            fetchLibrary();
 
         } else {
             throw new Error(data.detail || "Invalid API Key");
@@ -66,8 +72,10 @@ export async function authenticateTorboxUser() {
     checkAuth();
 }
 
+
+// Renderer and final check
 function checkAuth() {
-    const key = getTbKey();
+    const key = getCurrentUserSettings().user_preferences.torboxApiKey;
 
     const connectedBadge = document.getElementById('tb-status-connected');
     const disconnectedBadge = document.getElementById('tb-status-disconnected');
@@ -93,10 +101,10 @@ function checkAuth() {
     }
 }
 
-export function logoutTorBox() {
+export async function logoutTorBox() {
     if (confirm("Disconnect TorBox API?")) {
-        localStorage.removeItem('tb_api_key');
-        location.reload();
+        await deleteTorboxKey();
+        window.location.reload();
     }
 }
 
@@ -114,38 +122,9 @@ export async function addStreamtoTorbox(finalLink) {
     }
 }
 
-// Ping the http stream so TB adds it
-async function pingAddonLink(url) {
-    const controller = new AbortController();
-
-    try {
-        console.log("Pinging add-on to trigger TorBox addition...");
-
-        await fetch(url, {
-            method: 'GET',
-            mode: 'no-cors',
-            signal: controller.signal
-        });
-
-        controller.abort();
-
-        console.log("Ping complete! Stream added to library.");
-        return true;
-
-    } catch (error) {
-        if (error.name === 'AbortError') {
-            console.log("Ping complete and connection safely closed.");
-            return true;
-        }
-
-        console.warn("Ping encountered a network/CORS error, but side-effect likely succeeded.");
-        return true;
-    }
-}
-
 // Add a link to users library  
 async function sendMagnetToTorbox(magnetLink) {
-    const tbKey = getTbKey();
+    const tbKey = getCurrentUserSettings().user_preferences.torboxApiKey;
     if (!tbKey) return;
 
     const currentMedia = mediaStore.get();
@@ -191,7 +170,7 @@ async function sendMagnetToTorbox(magnetLink) {
 }
 
 async function editTorrentInfo(torrentId) {
-    const tbKey = getTbKey();
+    const tbKey = getCurrentUserSettings().user_preferences.torboxApiKey;
     if (!tbKey) return;
 
     const currentMedia = mediaStore.get();

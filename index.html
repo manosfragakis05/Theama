@@ -623,8 +623,8 @@
                                 </div>
                             </form>
 
-                            <div
-                                class="md:w-72 flex flex-col justify-center border-t md:border-t-0 md:border-l border-slate-700/50 pt-6 md:pt-0 md:pl-8">
+                            <div id="settings-logged-in-info"
+                                class="hidden md:w-72 flex flex-col justify-center border-t md:border-t-0 md:border-l border-slate-700/50 pt-6 md:pt-0 md:pl-8">
                                 <div class="mb-4">
                                     <h3 class="font-bold text-white text-lg">Sign Out</h3>
                                     <p class="text-sm text-slate-400 mt-1">Disconnect this device and clear local data.
@@ -635,6 +635,15 @@
                                     class="w-full bg-red-500/10 hover:bg-red-500/20 text-red-500 py-3 rounded-xl transition-all font-bold text-sm border border-red-500/20 hover:border-red-500/40">
                                     Log Out of Theama
                                 </button>
+                            </div>
+                            <div id="settings-logged-out-info"
+                                class="md:w-72 flex flex-col justify-center border-t md:border-t-0 md:border-l border-slate-700/50 pt-6 md:pt-0 md:pl-8">
+                                <div class="mb-4">
+                                    <h3 class="font-bold text-white text-lg">Log in</h3>
+                                    <p class="text-m text-slate-400 mt-1">To save and share watchlists, track media and
+                                        much more.
+                                    </p>
+                                </div>
                             </div>
 
                         </div>
@@ -692,56 +701,44 @@
 
                             </div>
 
-                            <div
-                                class="bg-slate-800/40 backdrop-blur border border-slate-700/50 p-6 rounded-2xl flex flex-col justify-between gap-6 shadow-lg">
-                                <div class="flex justify-between items-start">
-                                    <div>
-                                        <h3 class="font-bold text-white text-lg">Trakt.tv</h3>
-                                        <p class="text-sm text-slate-400 mt-1">Sync your watch history</p>
-                                    </div>
-                                    <span
-                                        class="flex items-center gap-1.5 bg-slate-900/50 text-slate-300 px-2.5 py-1 rounded-md text-xs font-bold border border-slate-700">
-                                        <span id="trakt-status-dot" class="w-2 h-2 bg-red-500 rounded-full"></span>
-                                        Status
-                                    </span>
-                                </div>
-                                <button id="trakt-action-btn" onclick="handleTraktAuth()"
-                                    class="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl transition-all font-bold text-sm shadow-[0_0_15px_rgba(37,99,235,0.2)]">
-                                    Connect Trakt
-                                </button>
-                            </div>
-
                         </div>
                     </section>
 
                     <section>
                         <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                            <svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4">
-                                </path>
+                            <svg class="w-6 h-6 text-gray-400 shrink-0" fill="none" stroke="currentColor">
+                                <use href="#icon-settings"></use>
                             </svg>
                             Preferences
                         </h2>
 
-                        <div class="bg-slate-800/40 border border-slate-700/50 p-6 rounded-2xl shadow-lg">
+                        <div class="bg-slate-800/40 border border-slate-700/50 p-6 py-3 rounded-2xl shadow-lg">
+
+                            <label class="flex items-center justify-between py-3 cursor-pointer select-none">
+                                <span class="text-gray-900 font-bold dark:text-white text-base">Trust this device. If
+                                    disabled addons and preferences will be gone when closing the tab.
+                                    <br> This does not affect data saved in your Theama account.</span>
+
+                                <input type="checkbox" id="trust-device-toggle" class="custom-toggle" checked>
+                            </label>
+
                             <label class="flex items-center justify-between py-3 cursor-pointer select-none">
                                 <span class="text-gray-900 dark:text-white font-medium text-base">Parse and format addon
                                     links</span>
 
-                                <input type="checkbox" id="parseAddonLinks" class="custom-toggle" checked>
+                                <input type="checkbox" id="parse-links-toggle" class="custom-toggle" checked>
                             </label>
 
                             <label class="flex items-center justify-between py-3 cursor-pointer select-none">
                                 <span class="text-gray-900 dark:text-white font-medium text-base">Link API Key to Theama
                                     Account.</span>
-                                <input type="checkbox" id="saveKeyToCloud" class="custom-toggle">
+                                <input type="checkbox" id="cloud-key-toggle" class="custom-toggle">
                             </label>
 
                             <label class="flex items-center justify-between py-3 cursor-pointer select-none">
                                 <span class="text-gray-900 dark:text-white font-medium text-base">Save Addons to Theama
-                                    Account.</span>
-                                <input type="checkbox" id="saveAddonsToCloud" class="custom-toggle">
+                                    Account. If disabled any existing addons will be removed only from cloud.</span>
+                                <input type="checkbox" id="cloud-addons-toggle" class="custom-toggle">
                             </label>
                         </div>
                     </section>

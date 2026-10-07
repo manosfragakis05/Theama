@@ -1,78 +1,92 @@
-import { showToast, MY_PROXY } from '../services/config.js';
-import { getCurrentUserSettings, saveAddonsToCloud } from '../user-data/user-settings.js';
+import { showToast, MY_PROXY, appState } from '../services/config.js';
+import { getCurrentUserSettings, getStorage, saveAddons } from '../user-data/user-settings.js';
+import { renderAddonData } from './scraper-renderer.js';
 
-let userAddons = [];
+// 1. In-Memory State: The single source of truth for the UI while the app is running
+let cachedAddons = [];
 
-// GLOBAL GETTER
-
-
-//#region Init Addons
-export async function initCustomAddons() {
-    // 1. Load what we already have locally
-    userAddons = JSON.parse(localStorage.getItem('user_addons')) || [];
-
-    // Ensure TMDB is always there
-    if (!userAddons.some(a => a.name === "TMDB")) {
-        const defaultAddon = await formatTMDBAddon();
-        userAddons.push(defaultAddon);
-    }
-
-    // 2. Read the downloaded cloud data from your settings script
+export async function initAddonManager() {
     const settings = getCurrentUserSettings();
 
-    // 3. If cloud sync is on, check for missing addons
-    if (settings.user_preferences.saveAddonsToCloud && settings.addon_links && settings.addon_links.length > 0) {
+    // The official list of what the user should have installed
+    const officialUrls = settings.addon_links || [];
 
-        // Make a list of URLs we already have locally
-        const localUrls = userAddons.map(a => a.url);
+    const storage = getStorage();
+    let storedData = JSON.parse(storage.getItem('full_addon_data')) || [];
 
-        // Filter the cloud URLs to find only the ones we are missing
-        const missingUrls = settings.addon_links.filter(url => !localUrls.includes(url));
+    // STEP 1: Clean up Ghost Add-ons
+    // Keep the local default TMDB, and only keep addons that exist in the officialUrls list
+    storedData = storedData.filter(addon =>
+        addon.id === "local.default.addon" || officialUrls.includes(addon.url)
+    );
 
-        if (missingUrls.length > 0) {
-            console.log(`Syncing ${missingUrls.length} addons from cloud...`);
+    // STEP 2: Identify Missing Add-ons
+    // Create a Set of URLs we already have full data for, to easily find what's missing
+    const storedUrls = new Set(storedData.map(addon => addon.url));
+    const missingUrls = officialUrls.filter(url => !storedUrls.has(url));
 
-            // Run your existing detector on all missing URLs in parallel
-            const fetchPromises = missingUrls.map(url => detectAndValidateAddon(url));
-            const results = await Promise.all(fetchPromises);
+    // STEP 3: Fetch & Hydrate Missing Add-ons
+    if (missingUrls.length > 0) {
+        console.log(`Hydrating ${missingUrls.length} missing add-ons from cloud...`);
 
-            let newlyInstalled = false;
+        const fetchPromises = missingUrls.map(url => detectAndValidateAddon(url));
+        const results = await Promise.all(fetchPromises);
 
-            results.forEach(result => {
-                if (result.success) {
-                    const manifest = result.manifest;
-                    const addonData = {
-                        id: manifest.id,
-                        name: manifest.name,
-                        url: result.url,
-                        catalogs: manifest.catalogs || [],
-                        version: manifest.version,
-                        logo: manifest.logo || null,
-                        description: manifest.description || null,
-                        configurable: manifest.behaviorHints?.configurable || false,
-                        types: manifest.types || [],
-                        idPrefixes: getStreamIdPrefixes(manifest),
-                        capabilities: result.capabilities
-                    };
-
-                    userAddons.push(addonData);
-                    newlyInstalled = true;
-                }
-            });
-
-            // If we successfully downloaded new manifests, save the updated list locally
-            if (newlyInstalled) {
-                localStorage.setItem('user_addons', JSON.stringify(userAddons));
+        results.forEach(result => {
+            if (result && result.success) {
+                const manifest = result.manifest;
+                storedData.push({
+                    id: manifest.id,
+                    name: manifest.name,
+                    url: result.url,
+                    catalogs: manifest.catalogs || [],
+                    version: manifest.version,
+                    logo: manifest.logo || null,
+                    description: manifest.description || null,
+                    configurable: manifest.behaviorHints?.configurable || false,
+                    types: manifest.types || [],
+                    idPrefixes: getStreamIdPrefixes(manifest),
+                    capabilities: result.capabilities
+                });
+            } else {
+                console.warn(`Failed to hydrate addon: ${result?.error}`);
             }
-        }
+        });
     }
 
-    // 4. Finally, render the complete list to the UI
-    renderInstalledAddons(userAddons);
+    // STEP 4: Ensure the Local Default Add-on exists
+    let defaultAddon = storedData.find(addon => addon.id === "local.default.addon");
+    if (!defaultAddon) {
+        defaultAddon = await formatTMDBAddon();
+        storedData.push(defaultAddon);
+    }
+
+    // STEP 5: Update Memory and Storage
+    cachedAddons = storedData;
+
+    // Only persist the cache to storage if the user trusts the device
+
+    storage.setItem("full_addon_data", JSON.stringify(cachedAddons));
+
+
+    return cachedAddons;
+}
+
+export async function initCustomAddons() {
+    // 1. Let the Manager reconcile URLs, clean storage, and hydrate the cache
+    const fullAddonData = await initAddonManager();
+
+    // 2. Render the UI
+    renderInstalledAddons(fullAddonData);
+}
+
+// Simple Getter for the rest of your app to use without touching localStorage
+export function getAllAddons() {
+    return cachedAddons;
 }
 async function formatTMDBAddon() {
     return {
-        id: null,
+        id: "local.default.addon",
         name: "TMDB",
         url: null,
         catalogs: [],
@@ -89,8 +103,74 @@ async function formatTMDBAddon() {
 //#endregion
 
 
-//#region Addon Options
+//#region Install Addon
 // Add new Addon
+async function installAddon(rawUrl) {
+    if (!rawUrl) return { success: false, error: "URL is required" };
+
+    // 1. Fetch and Validate
+    const result = await detectAndValidateAddon(rawUrl);
+    if (!result || !result.success) {
+        return { success: false, error: result?.error || "Invalid add-on URL" };
+    }
+
+    const manifest = result.manifest;
+    const cleanUrl = result.url;
+    const addonId = manifest.id;
+
+    // 2. Format the full add-on object
+    const addonData = {
+        id: manifest.id,
+        name: manifest.name,
+        url: cleanUrl,
+        catalogs: manifest.catalogs || [],
+        version: manifest.version,
+        logo: manifest.logo || null,
+        description: manifest.description || null,
+        configurable: manifest.behaviorHints?.configurable || false,
+        types: manifest.types || [],
+        idPrefixes: getStreamIdPrefixes(manifest),
+        capabilities: result.capabilities
+    };
+
+    // 3. Update the Official URL List (Source of Truth)
+    const settings = getCurrentUserSettings();
+    let currentUrls = settings.addon_links || [];
+
+    const existingCacheIndex = cachedAddons.findIndex(a => a.id === addonId);
+
+    if (existingCacheIndex !== -1) {
+        // Update old addon
+        const oldUrl = cachedAddons[existingCacheIndex].url;
+
+        // Remove old url
+        currentUrls = currentUrls.filter(url => url !== oldUrl);
+
+        // Add the new url
+        if (!currentUrls.includes(cleanUrl)) currentUrls.push(cleanUrl);
+
+        // Overwrite the cache with the fresh manifest data
+        cachedAddons[existingCacheIndex] = addonData;
+
+    } else {
+        // --- BRAND NEW ADD-ON ---
+        if (!currentUrls.includes(cleanUrl)) currentUrls.push(cleanUrl);
+        cachedAddons.push(addonData);
+    }
+
+    await saveAddons(currentUrls);
+
+    // Update local cache
+    getStorage().setItem("full_addon_data", JSON.stringify(cachedAddons));
+
+    // 6. Return success
+    return {
+        success: true,
+        addon: addonData,
+        isUpdate: existingCacheIndex !== -1
+    };
+}
+
 export async function submitNewAddon() {
     const inputField = document.getElementById('addon-url-input');
     const submitBtn = document.getElementById('addon-submit-btn') || inputField.nextElementSibling;
@@ -103,58 +183,24 @@ export async function submitNewAddon() {
     submitBtn.innerText = "Verifying...";
     submitBtn.disabled = true;
 
-    // Call our new detector
-    const result = await detectAndValidateAddon(rawUrl);
+    // Let the Addon Manager do all the work
+    const result = await installAddon(rawUrl);
 
+    // Restore UI state
     submitBtn.innerText = originalText;
     submitBtn.disabled = false;
 
     if (result.success) {
-        const manifest = result.manifest;
-        userAddons = JSON.parse(localStorage.getItem('user_addons')) || [];
-
-        const idPrefix = getStreamIdPrefixes(manifest);
-
-        // 1. Build the complete add-on object
-        const addonData = {
-            id: manifest.id,
-            name: manifest.name,
-            url: result.url,
-            catalogs: manifest.catalogs || [], // ONLY IF ITS A METADATA PROVIDER
-            version: manifest.version,
-            logo: manifest.logo || null,
-            description: manifest.description || null,
-            configurable: manifest.behaviorHints?.configurable || false,
-            types: manifest.types || [],
-            idPrefixes: idPrefix,
-            capabilities: result.capabilities
-        };
-
-        // 2. Prevent duplicates, but allow configuration updates (Upsert)
-        const existingIndex = userAddons.findIndex(a => a.id === manifest.id);
-
-        if (existingIndex !== -1) {
-            // Overwrite existing (User updated their settings/URL)
-            userAddons[existingIndex] = addonData;
-            showToast(`${manifest.name} configuration updated.`, "success");
+        if (result.isUpdate) {
+            showToast(`${result.addon.name} configuration updated.`, "success");
         } else {
-            // Save brand new add-on
-            userAddons.push(addonData);
-            showToast(`Success! ${manifest.name} was added.`, "success");
+            showToast(`Success! ${result.addon.name} was added.`, "success");
         }
-
-        // Save to storage and refresh UI
-        localStorage.setItem('user_addons', JSON.stringify(userAddons));
-
-        // Save to cloud only if user wants to
-        if (getCurrentUserSettings().user_preferences.saveAddonsToCloud) {
-            console.log("Saving addons");
-            await saveAddonsToCloud(userAddons);
-        }
-
-        renderInstalledAddons(userAddons);
 
         inputField.value = '';
+
+        // Re-render the UI using the Manager's universally updated cache
+        renderInstalledAddons(getAllAddons());
     } else {
         showToast(`Error: ${result.error}`, "error");
     }
@@ -181,12 +227,7 @@ function getStreamIdPrefixes(manifest) {
 async function detectAndValidateAddon(rawUrl) {
     let url = rawUrl.trim();
 
-    if (!url.endsWith('manifest.json')) {
-        url = url.endsWith('/') ? `${url}manifest.json` : `${url}/manifest.json`;
-    }
-
-    // Replace stremio:// protocol with https:// if the user copied a deep link
-    url = url.replace('stremio://', 'https://');
+    if (!url.endsWith('manifest.json')) return { success: false, error: "URL must end with manifest.json" };
 
     try {
         // Fetch the Manifest (With CORS Fallback)
@@ -352,30 +393,48 @@ function renderInstalledAddons(userAddons) {
             });
         }
 
-        // 6. Wire up the Uninstall Button
+        // Skip for TMDB
         if (uninstallBtn) {
-            uninstallBtn.addEventListener('click', (async) => {
-                removeAddon(addon.id);
-            });
+            if (addon.id === "local.default.addon") {
+                uninstallBtn.classList.add('hidden');
+            } else {
+                uninstallBtn.classList.remove('hidden');
+                uninstallBtn.addEventListener('click', async () => {
+                    await removeAddon(addon.url);
+                });
+            }
         }
-
         container.appendChild(clone);
     });
 }
 
 // Uninstall Addon
-async function removeAddon(addonId) {
-    let userAddons = JSON.parse(localStorage.getItem('user_addons')) || [];
-    userAddons = userAddons.filter(a => a.id !== addonId);
+async function removeAddon(addonUrl) {
+    // Let the Addon Manager handle database, memory, and local storage cleanup
+    const result = await uninstallAddon(addonUrl);
 
-    // Save locally
-    localStorage.setItem('user_addons', JSON.stringify(userAddons));
-
-    // Push the newly filtered array to the cloud if they have syncing enabled
-    if (getCurrentUserSettings().user_preferences.saveAddonsToCloud) {
-        await saveAddonsToCloud(userAddons);
+    if (result.success) {
+        // Fetch the fresh list of full objects and re-render
+        renderInstalledAddons(getAllAddons());
+        showToast("Add-on uninstalled.", "success");
+    } else {
+        showToast(result.error || "Failed to uninstall add-on.", "error");
     }
+}
+export async function uninstallAddon(urlToRemove) {
+    if (!urlToRemove) return { success: false, error: "No URL provided" };
 
-    renderInstalledAddons(userAddons);
-    showToast("Add-on uninstalled.", "success");
+    const settings = getCurrentUserSettings();
+    let currentUrls = settings.addon_links || [];
+
+    currentUrls = currentUrls.filter(url => url !== urlToRemove);
+
+    // saveAddons handles both local settings update and Supabase sync
+    await saveAddons(currentUrls);
+
+    cachedAddons = cachedAddons.filter(addon => addon.url !== urlToRemove);
+
+    getStorage().setItem("full_addon_data", JSON.stringify(cachedAddons));
+
+    return { success: true };
 }

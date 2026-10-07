@@ -28,8 +28,6 @@ export const appState = {
 //#endregion
 
 //#region Core Utilities
-export const getTbKey = () => localStorage.getItem('tb_api_key');
-
 // Cloudflare Proxy Fetcher
 export async function smartFetch(targetUrl, options = {}) {
     return fetch(MY_PROXY + encodeURIComponent(targetUrl), options);

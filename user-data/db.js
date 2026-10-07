@@ -1,7 +1,37 @@
 import { createClient } from '@supabase/supabase-js';
 import { SUPABASEURL, SUPABASEKEY, showToast, appState } from '../services/config.js';
 
-export const supabase = createClient(SUPABASEURL, SUPABASEKEY);
+const privacyAwareStorage = {
+    getItem: (key) => {
+        // Look in both places to find the token when the app boots
+        return sessionStorage.getItem(key) || localStorage.getItem(key);
+    },
+    setItem: (key, value) => {
+        // Get local settings
+        const settingsStr = localStorage.getItem('user_settings') || sessionStorage.getItem('user_settings');
+        const settings = settingsStr ? JSON.parse(settingsStr) : null;
+
+        // Default to true if not found
+        const trustDevice = settings?.user_preferences?.trustThisDevice ?? true;
+
+        if (trustDevice) {
+            localStorage.setItem(key, value);
+        } else {
+            sessionStorage.setItem(key, value);
+        }
+    },
+    removeItem: (key) => {
+        // Scorched earth on logout
+        localStorage.removeItem(key);
+        sessionStorage.removeItem(key);
+    }
+};
+
+export const supabase = createClient(SUPABASEURL, SUPABASEKEY, {
+    auth: {
+        storage: privacyAwareStorage
+    }
+});
 
 let currentSession = null;
 let signUp = true;
@@ -48,6 +78,10 @@ function updateSettingsUI() {
     const emailInput = document.getElementById('settings-email');
     const passwordInput = document.getElementById('settings-password');
 
+    // Info next to input fields, and log out button
+    const loggedInPanel = document.getElementById('settings-logged-in-info');
+    const loggedOutPanel = document.getElementById('settings-logged-out-info');
+
     if (currentSession) {   // Logged in
         const currentUsername = currentSession.user.user_metadata.username;
         const currentEmail = currentSession.user.email;
@@ -56,6 +90,10 @@ function updateSettingsUI() {
         accountMessage.textContent = `Welcome, ${currentUsername}!`;
         multiDiv.classList.add('hidden');
         toggleAuthDiv.classList.add('hidden');
+
+        //Show log out button
+        loggedInPanel.classList.remove("hidden");
+        loggedOutPanel.classList.add("hidden");
 
         if (hasEmail) emailInput.placeholder = currentEmail;
         else emailInput.placeholder = "Not Added Yet";
@@ -88,6 +126,10 @@ function updateSettingsUI() {
 
         usernameInput.placeholder = "Username";
         emailInput.placeholder = "Email";
+
+        //Remove log out button
+        loggedInPanel.classList.add("hidden");
+        loggedOutPanel.classList.remove("hidden");
 
         if (!signUp) {
             usernameDiv.classList.add('hidden');
@@ -261,6 +303,13 @@ export async function logOutUser() {
         console.error("Logout Error:", error.message);
         alert("Failed to log out: " + error.message);
     } else {
+        appState.currentUser = null;
+        localStorage.removeItem('user_settings');
+        localStorage.removeItem('full_addon_data');
+        sessionStorage.removeItem('user_settings');
+        sessionStorage.removeItem('full_addon_data');
+
+        window.location.reload();
         console.log("Successfully logged out.");
     }
 }

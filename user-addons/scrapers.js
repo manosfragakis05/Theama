@@ -1,8 +1,9 @@
 import { streamState, renderAddonData, filterAndSortStreams } from './scraper-renderer.js';
+import { getAllAddons } from './user-addons.js';
 
 //#region Fetch Streams
 export function getScrapingProviders() {
-    const userAddons = JSON.parse(localStorage.getItem('user_addons')) || [];
+    const userAddons = getAllAddons();
 
     return userAddons.filter(addon => addon.capabilities && addon.capabilities.streams === true);
 }
