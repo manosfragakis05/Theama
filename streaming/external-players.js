@@ -7,7 +7,8 @@ let listenersAttached = false;
 let onPlayerSelected = null;
 
 const playerPlatforms = {
-    vlc: ['windows', 'macos', 'ios', 'android', 'linux', 'unknown'],
+    vlc: ['ios', 'android'],
+    potplayer: ['windows'],
     infuse: ['ios', 'macos'],
     outplayer: ['ios'],
     mxplayer: ['android'],
@@ -111,8 +112,11 @@ export function urlExternalPlayer(player) {
 
     switch (player) {
         case 'vlc':
-            showToast("Cant open VLC in pc.", "error");
             deepLink = currentVideoUrl.replace(/^https?:\/\//i, 'vlc://');
+            break;
+
+        case 'potplayer':
+            deepLink = `potplayer://${currentVideoUrl}`;;
             break;
 
         case 'infuse':
