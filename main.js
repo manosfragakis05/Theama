@@ -24,7 +24,7 @@ import { goHome, toggleProfile, switchTab, handleSearch, toggleSidebar, updatePr
 import { deleteTorrent } from './pages/library.js';
 
 import { closePicker } from './streaming/picker.js';
-import { playDirect } from './streaming/player.js';
+import { playDirect, stopPlayback } from './streaming/player.js';
 
 import { updatePublicProfile, fetchPublicProfile, fetchFriendsList, handleFollowToggle } from './user-data/network.js';
 import { initializeSettings } from './user-data/user-settings.js';
@@ -49,6 +49,8 @@ import { triggerLocalFilePicker, processLocalFile } from './services/offline.js'
 
 // NEW LOGIC: Setup Static Event Listeners
 function setupStaticEventListeners() {
+    document.getElementById('close-player-btn')?.addEventListener('click', stopPlayback);
+
     // 1. Forms
     const torboxForm = document.getElementById('torbox-auth-form');
     if (torboxForm) {

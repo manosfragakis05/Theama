@@ -146,6 +146,14 @@ export function startPlayer(url, name, localFileObject = null) {
     });
 
     const playerArt = art;
+    const closePlayerButton = document.getElementById('close-player-btn');
+    const syncCloseButton = () => {
+        if (art !== playerArt || generation !== playbackGeneration) return;
+        closePlayerButton?.classList.toggle('hidden', !playerArt.controls.show);
+    };
+    playerArt.on('control', syncCloseButton);
+    syncCloseButton();
+
     playerArt.on('video:error', () => {
         if (art !== playerArt || generation !== playbackGeneration) return;
         console.log("❌ Player Error Detected!");
@@ -154,6 +162,7 @@ export function startPlayer(url, name, localFileObject = null) {
 
     // 1. HIDE THE NATIVE GEAR ICON IMMEDIATELY ON BOOT
     playerArt.on('ready', () => {
+        syncCloseButton();
         // Target the actual gear button on the bottom control bar
         const gearBtn = playerArt.template.$bottom.querySelector('.art-control-setting');
         if (gearBtn) gearBtn.style.display = 'none';

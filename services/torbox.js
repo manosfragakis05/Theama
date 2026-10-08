@@ -30,7 +30,6 @@ export async function authenticateTorboxUser() {
         key = getCurrentUserSettings().user_preferences.torboxApiKey;
         
         checkAuth();
-        console.log(key);
         if (!key) return;
         fetchLibrary();
 
@@ -116,8 +115,6 @@ export async function addStreamtoTorbox(finalLink) {
             await editTorrentInfo(torrentId);
             console.log("Edited magnet");
             return;
-        } else {
-            console.log
         }
     }
 }

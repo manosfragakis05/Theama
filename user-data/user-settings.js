@@ -86,7 +86,7 @@ export async function initializeSettings() {
         const defaultPlayer = userSettings.user_preferences.defaultPlayer || 'Internal';
         const playerButton = Array.from(document.querySelectorAll('#external-player-modal .external-player-btn'))
             .find(button => button.dataset.player === defaultPlayer);
-        document.getElementById('select-player-btn').textContent =
+        document.getElementById('select-player-label').textContent =
             playerButton?.querySelector('.font-bold').textContent.trim() || 'Internal';
     }
 
@@ -102,7 +102,7 @@ function attachSettingsListeners() {
         openPlayerSelection(async (player, label) => {
             try {
                 await updateUserPreference('defaultPlayer', player);
-                document.getElementById('select-player-btn').textContent = label;
+                document.getElementById('select-player-label').textContent = label;
             } catch (error) {
                 console.error('Failed to save default player:', error);
                 showToast('Failed to save default player.', 'error');

@@ -226,7 +226,7 @@ export function renderWatchlistPicker(customLists, favList, isLoggedIn, onSelect
             <div class="overflow-hidden">
                 <div class="font-bold text-white group-hover:text-red-400 transition truncate">Favourites</div>
                 <div class="text-[10px] text-slate-400 flex items-center mt-0.5 uppercase tracking-wider font-bold">
-                    ${isLoggedIn ? 'Saved to Cloud' : 'Saved to Device'}
+                    ${isLoggedIn ? 'Saved to Cloud (Private)' : 'Saved to Device'}
                 </div>
             </div>
         </div>
