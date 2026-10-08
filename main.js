@@ -43,7 +43,7 @@ import {
     createNewList,
     openWatchlists
 } from './user-data/profile.js';
-import { renderFriendsSidebar, renderPublicProfile, setFollowButton } from './user-data/profile-renderer.js';
+import { renderFriendsSidebar, renderProfileFriends, renderPublicProfile, setFollowButton } from './user-data/profile-renderer.js';
 
 import { triggerLocalFilePicker, processLocalFile } from './services/offline.js';
 
@@ -134,7 +134,7 @@ function setupStaticEventListeners() {
             if (new URLSearchParams(window.location.search).get('user') === friendId) {
                 setFollowButton(!wasFollowing);
             }
-            await refreshFriendsSidebar();
+            await refreshFriendsLists();
         } catch (error) {
             console.error('Follow toggle failed:', error);
             showToast(error.message || 'Could not update follow status.', 'error');
@@ -142,14 +142,16 @@ function setupStaticEventListeners() {
             button.disabled = false;
         }
     });
-    document.getElementById('sidebar-following-list')?.addEventListener('click', event => {
-        const button = event.target.closest('.following-btn');
-        if (!button?.dataset.friendId) return;
-        const url = new URL(window.location.href);
-        url.searchParams.set('user', button.dataset.friendId);
-        window.history.pushState({}, '', url);
-        handleProfileRouting();
-    });
+    for (const containerId of ['sidebar-following-list', 'profile-friends-list']) {
+        document.getElementById(containerId)?.addEventListener('click', event => {
+            const button = event.target.closest('.following-btn, .profile-friend-btn');
+            if (!button?.dataset.friendId) return;
+            const url = new URL(window.location.href);
+            url.searchParams.set('user', button.dataset.friendId);
+            window.history.pushState({}, '', url);
+            handleProfileRouting();
+        });
+    }
 
     //Offline.js
     document.getElementById('trigger-local-file-btn')?.addEventListener('click', () => triggerLocalFilePicker());
@@ -232,11 +234,14 @@ export async function handleProfileRouting() {
     }
 }
 
-async function refreshFriendsSidebar() {
+async function refreshFriendsLists() {
     const userId = appState.currentUser?.id;
     try {
         const friends = await fetchFriendsList();
-        if (userId === appState.currentUser?.id) renderFriendsSidebar(friends);
+        if (userId === appState.currentUser?.id) {
+            renderFriendsSidebar(friends);
+            renderProfileFriends(friends);
+        }
     } catch (error) {
         console.error('Friends list load failed:', error);
     }
@@ -264,7 +269,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (appState.currentUser) {
                 await Promise.all([syncLocalFavouritesToCloud(), updatePublicProfile()]);
             }
-            await Promise.all([handleProfileRouting(), refreshFriendsSidebar(), initializeSettings()]);
+            await Promise.all([handleProfileRouting(), refreshFriendsLists(), initializeSettings()]);
             if (appBooted) {
                 await initCustomAddons();
                 await authenticateTorboxUser();

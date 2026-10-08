@@ -424,6 +424,29 @@
                         </div>
                     </div>
 
+                    <section id="profile-friends-section" class="flex md:hidden flex-col gap-6" aria-labelledby="profile-friends-heading">
+                        <div class="flex items-center justify-between px-2">
+                            <h2 id="profile-friends-heading" class="text-2xl font-bold text-white flex items-center gap-3">
+                                <span class="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-500 border border-blue-500/20 shadow-inner">
+                                    <svg class="w-5 h-5" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m20 0v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                                    </svg>
+                                </span>
+                                My Friends
+                            </h2>
+                        </div>
+
+                        <div class="bg-slate-800/30 backdrop-blur border border-slate-700/50 rounded-3xl p-4 sm:p-8 shadow-lg">
+                            <div id="profile-friends-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                <div id="profile-friends-empty" class="col-span-full text-center py-10 px-4 bg-slate-900/50 border border-dashed border-slate-700/50 rounded-2xl">
+                                    <p class="text-slate-400 font-medium">No friends yet.</p>
+                                    <p class="text-slate-500 text-sm mt-1">People you follow will appear here.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
                     <section class="flex flex-col gap-6">
 
                         <div class="flex items-center justify-between px-2">
@@ -721,8 +744,7 @@
                         <div class="bg-slate-800/40 border border-slate-700/50 p-6 py-3 rounded-2xl shadow-lg">
 
                             <label class="flex items-center justify-between py-3 cursor-pointer select-none">
-                                <span class="text-gray-900 font-bold dark:text-white text-base">Trust this device. If
-                                    disabled addons and preferences will be gone when closing the tab.
+                                <span class="text-gray-900 font-bold dark:text-white text-base">Trust this device.
                                 </span>
 
                                 <input type="checkbox" id="trust-device-toggle" class="custom-toggle" checked>
@@ -1382,6 +1404,16 @@
         </button>
     </template>
 
+    <template id="profile-friend-template">
+        <button type="button" data-friend-id=""
+            class="profile-friend-btn w-full min-w-0 min-h-11 flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-left text-slate-400 transition-colors hover:bg-slate-800/50 hover:text-white group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+            <span class="profile-friend-name min-w-0 font-medium text-sm truncate"></span>
+            <svg class="w-3.5 h-3.5 shrink-0 text-slate-600 -rotate-90 group-hover:text-slate-400" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <use href="#icon-arrow"></use>
+            </svg>
+        </button>
+    </template>
+
     <div id="external-player-modal"
         class="hidden fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6">
         <div
@@ -1443,7 +1475,7 @@
                         INF</div>
                     <div>
                         <div class="font-bold text-white group-hover:text-red-400 transition">Infuse</div>
-                        <div class="text-xs text-slate-400">iOS, Mac, Apple TV</div>
+                        <div class="text-xs text-slate-400">iOS, Mac</div>
                     </div>
                 </button>
 

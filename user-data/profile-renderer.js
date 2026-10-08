@@ -125,7 +125,8 @@ export function showPersonalProfile(username) {
         document.getElementById('profile-settings-btn'),
         document.getElementById('profile-share-btn'),
         document.querySelector('button[onclick*="create-list-modal"]'),
-        document.getElementById('default-watchlists-container')
+        document.getElementById('default-watchlists-container'),
+        document.getElementById('profile-friends-section')
     ]) {
         if (element) element.style.display = '';
     }
@@ -148,7 +149,8 @@ export function renderPublicProfile(userId, profile) {
         document.getElementById('profile-settings-btn'),
         document.getElementById('profile-share-btn'),
         document.querySelector('button[onclick*="create-list-modal"]'),
-        document.getElementById('default-watchlists-container')
+        document.getElementById('default-watchlists-container'),
+        document.getElementById('profile-friends-section')
     ]) {
         if (element) element.style.display = 'none';
     }
@@ -208,6 +210,24 @@ export function renderFriendsSidebar(friendsList) {
         btn.dataset.friendId = friend.id;
         container.appendChild(clone);
     });
+}
+
+export function renderProfileFriends(friendsList) {
+    const container = document.getElementById('profile-friends-list');
+    const emptyState = document.getElementById('profile-friends-empty');
+    const template = document.getElementById('profile-friend-template');
+    if (!container || !template) return;
+
+    container.querySelectorAll('.profile-friend-btn').forEach(button => button.remove());
+    emptyState?.classList.toggle('hidden', Boolean(friendsList?.length));
+
+    for (const friend of friendsList || []) {
+        const clone = template.content.cloneNode(true);
+        const username = friend.username || 'User';
+        clone.querySelector('.profile-friend-name').textContent = username;
+        clone.querySelector('.profile-friend-btn').dataset.friendId = friend.id;
+        container.appendChild(clone);
+    }
 }
 
 export function renderWatchlistPicker(customLists, favList, isLoggedIn, onSelect) {
