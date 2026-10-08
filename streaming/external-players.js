@@ -4,8 +4,72 @@ import { showToast } from '../services/config.js';
 let currentVideoUrl = "";
 let currentVideoName = "";
 let listenersAttached = false;
+let onPlayerSelected = null;
 
-export function openExternalPlayer(videoUrl, videoName, localFileObject = null) {
+const playerPlatforms = {
+    vlc: ['windows', 'macos', 'ios', 'android', 'linux', 'unknown'],
+    infuse: ['ios', 'macos'],
+    outplayer: ['ios'],
+    mxplayer: ['android'],
+    iina: ['macos'],
+};
+
+function getOperatingSystem() {
+    const userAgent = navigator.userAgent || '';
+    const platform = navigator.userAgentData?.platform || navigator.platform || '';
+
+    // iPadOS can identify itself as a Mac when using a desktop user agent.
+    if (/iPad|iPhone|iPod/i.test(userAgent) ||
+        (/Mac/i.test(platform) && navigator.maxTouchPoints > 1)) return 'ios';
+    if (/Android/i.test(userAgent)) return 'android';
+    if (/Win/i.test(platform) || /Windows/i.test(userAgent)) return 'windows';
+    if (/Mac/i.test(platform) || /Macintosh/i.test(userAgent)) return 'macos';
+    if (/Linux/i.test(platform) || /Linux/i.test(userAgent)) return 'linux';
+    return 'unknown';
+}
+
+function showPlayerModal(onSelect = null) {
+    onPlayerSelected = onSelect;
+    const modal = document.getElementById('external-player-modal');
+    const operatingSystem = getOperatingSystem();
+    const players = modal.querySelectorAll('.external-player-btn');
+    modal.querySelector('h3').textContent = onSelect ? 'Default Player' : 'Open in App...';
+
+    players.forEach(player => {
+        const supported = player.dataset.player === 'Internal'
+            ? Boolean(onSelect)
+            : playerPlatforms[player.dataset.player]?.includes(operatingSystem) ?? false;
+        player.classList.toggle('hidden', !supported);
+    });
+
+    if (!listenersAttached) {
+        players.forEach(player => {
+            player.addEventListener('click', (e) => {
+                const button = e.currentTarget;
+                const target = button.dataset.player;
+                if (!target || button.classList.contains('hidden')) return;
+
+                if (onPlayerSelected) {
+                    const onSelect = onPlayerSelected;
+                    onPlayerSelected = null;
+                    modal.classList.add('hidden');
+                    onSelect(target, button.querySelector('.font-bold').textContent.trim());
+                } else {
+                    urlExternalPlayer(target);
+                }
+            });
+        });
+        listenersAttached = true;
+    }
+
+    modal.classList.remove('hidden');
+}
+
+export function openPlayerSelection(onSelect) {
+    showPlayerModal(onSelect);
+}
+
+export function openExternalPlayer(videoUrl, videoName, localFileObject = null, selectedPlayer = null) {
     if (!videoUrl) return;
 
     currentVideoUrl = videoUrl;
@@ -26,21 +90,12 @@ export function openExternalPlayer(videoUrl, videoName, localFileObject = null) 
     }
 
     if (currentVideoUrl.startsWith("http")) {
-        showToast("URL selected.");
-        document.getElementById('external-player-modal').classList.remove('hidden');
-
-        if (!listenersAttached) {
-            const extPlayers = document.querySelectorAll('.external-player-btn');
-            extPlayers.forEach(player => {
-                player.addEventListener('click', (e) => {
-                    const target = e.currentTarget.dataset.player;
-                    if (target) {
-                        urlExternalPlayer(target);
-                    }
-                });
-            });
-            listenersAttached = true;
+        if (selectedPlayer) {
+            urlExternalPlayer(selectedPlayer);
+            return;
         }
+        showToast("URL selected.");
+        showPlayerModal();
     }
 }
 
@@ -75,6 +130,10 @@ export function urlExternalPlayer(player) {
         case 'iina':
             deepLink = `iina://weblink?url=${encodedUrl}`;
             break;
+
+        default:
+            showToast("Unknown external player. Please select a default player in settings.", "error");
+            return;
     }
 
     document.getElementById('external-player-modal').classList.add('hidden');

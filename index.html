@@ -717,16 +717,23 @@
                             <label class="flex items-center justify-between py-3 cursor-pointer select-none">
                                 <span class="text-gray-900 font-bold dark:text-white text-base">Trust this device. If
                                     disabled addons and preferences will be gone when closing the tab.
-                                    <br> This does not affect data saved in your Theama account.</span>
+                                </span>
 
                                 <input type="checkbox" id="trust-device-toggle" class="custom-toggle" checked>
                             </label>
 
                             <label class="flex items-center justify-between py-3 cursor-pointer select-none">
                                 <span class="text-gray-900 dark:text-white font-medium text-base">Parse and format addon
-                                    links. If enabled custom badges and info will appear in stream results.</span>
-
+                                    links.
+                                </span>
                                 <input type="checkbox" id="parse-links-toggle" class="custom-toggle" checked>
+                            </label>
+
+                            <label class="flex items-center justify-between py-3 cursor-pointer select-none">
+                                <span class="text-gray-900 dark:text-white font-medium text-base">
+                                    Default Player
+                                </span>
+                                <button id="select-player-btn">Internal</button>
                             </label>
 
                             <label class="flex items-center justify-between py-3 cursor-pointer select-none">
@@ -737,7 +744,7 @@
 
                             <label class="flex items-center justify-between py-3 cursor-pointer select-none">
                                 <span class="text-gray-900 dark:text-white font-medium text-base">Save Addons to Theama
-                                    Account. If disabled any existing addons will be removed only from cloud.</span>
+                                    Account.</span>
                                 <input type="checkbox" id="cloud-addons-toggle" class="custom-toggle">
                             </label>
                         </div>
@@ -1382,6 +1389,17 @@
 
             <div
                 class="flex-1 p-4 flex flex-col gap-3 bg-slate-900/50 overflow-y-auto custom-scrollbar overscroll-contain">
+
+                <button data-player="Internal"
+                    class="external-player-btn hidden flex items-center gap-4 p-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 transition text-left group">
+                    <div
+                        class="w-12 h-12 bg-gradient-to-br from-slate-500 to-slate-700 rounded-lg flex items-center justify-center text-white font-black shadow-lg">
+                        INT</div>
+                    <div>
+                        <div class="font-bold text-white">Internal</div>
+                        <div class="text-xs text-slate-400">Play inside Theama</div>
+                    </div>
+                </button>
 
                 <button data-player="vlc"
                     class="external-player-btn flex items-center gap-4 p-3 rounded-xl bg-slate-800 hover:bg-orange-600/20 border border-slate-700 hover:border-orange-500 transition text-left group">

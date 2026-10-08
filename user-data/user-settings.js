@@ -1,5 +1,6 @@
 import { showToast, appState } from '../services/config.js';
 import { supabase } from "./db.js";
+import { openPlayerSelection } from '../streaming/external-players.js';
 
 let userSettings = {
     addon_links: [],
@@ -8,7 +9,8 @@ let userSettings = {
         torboxApiKey: "",
         saveAddonsToCloud: false,
         trustThisDevice: true,
-        parseAddonLinks: true
+        parseAddonLinks: true,
+        defaultPlayer: "Internal"
     }
 };
 
@@ -80,6 +82,12 @@ export async function initializeSettings() {
         document.getElementById('cloud-addons-toggle').checked = userSettings.user_preferences.saveAddonsToCloud || false;
         document.getElementById('trust-device-toggle').checked = userSettings.user_preferences.trustThisDevice || false;
         document.getElementById('parse-links-toggle').checked = userSettings.user_preferences.parseAddonLinks || false;
+        
+        const defaultPlayer = userSettings.user_preferences.defaultPlayer || 'Internal';
+        const playerButton = Array.from(document.querySelectorAll('#external-player-modal .external-player-btn'))
+            .find(button => button.dataset.player === defaultPlayer);
+        document.getElementById('select-player-btn').textContent =
+            playerButton?.querySelector('.font-bold').textContent.trim() || 'Internal';
     }
 
     attachSettingsListeners();
@@ -89,6 +97,18 @@ let settingsListenersAttached = false;
 function attachSettingsListeners() {
     if (settingsListenersAttached) return;
     settingsListenersAttached = true;
+
+    document.getElementById('select-player-btn').addEventListener('click', () => {
+        openPlayerSelection(async (player, label) => {
+            try {
+                await updateUserPreference('defaultPlayer', player);
+                document.getElementById('select-player-btn').textContent = label;
+            } catch (error) {
+                console.error('Failed to save default player:', error);
+                showToast('Failed to save default player.', 'error');
+            }
+        });
+    });
 
     document.getElementById('cloud-key-toggle').addEventListener('click', (e) => {
         if (!appState.currentUser) {

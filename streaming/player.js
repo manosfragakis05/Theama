@@ -51,6 +51,12 @@ export async function requestLink(tid, fid, torrentName, fileName) {
 //#region Player
 export function startPlayer(url, name, localFileObject = null) {
     stopPlayback();
+    const defaultPlayer = getCurrentUserSettings().user_preferences.defaultPlayer || 'Internal';
+    if (defaultPlayer !== 'Internal') {
+        openExternalPlayer(url, name, localFileObject, defaultPlayer);
+        return;
+    }
+
     const generation = playbackGeneration;
 
     const wrapper = document.getElementById('player-wrapper');
