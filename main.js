@@ -249,18 +249,24 @@ document.addEventListener('DOMContentLoaded', () => {
     let lastAuthKey;
     let authUpdate = Promise.resolve();
     let appBooted = false;
+
     window.addEventListener('auth-state-changed', () => {
         updateProfileDropdown();
         const user = appState.currentUser;
         const authKey = JSON.stringify([user?.id, user?.email, user?.user_metadata?.username]);
         if (authKey === lastAuthKey) return;
+
         lastAuthKey = authKey;
+
         authUpdate = authUpdate.then(async () => {
             if (appState.currentUser) {
                 await Promise.all([syncLocalFavouritesToCloud(), updatePublicProfile()]);
             }
             await Promise.all([handleProfileRouting(), refreshFriendsSidebar(), initializeSettings()]);
-            if (appBooted) await initCustomAddons();
+            if (appBooted) {
+                await initCustomAddons();
+                await authenticateTorboxUser();
+            }
         }).catch(error => console.error('Auth update failed:', error));
     });
 

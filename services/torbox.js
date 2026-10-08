@@ -28,10 +28,10 @@ export async function authenticateTorboxUser() {
 
     } else {
         key = getCurrentUserSettings().user_preferences.torboxApiKey;
-        if (!key) return;
         
         checkAuth();
         console.log(key);
+        if (!key) return;
         fetchLibrary();
 
         return;
