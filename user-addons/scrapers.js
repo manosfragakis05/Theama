@@ -43,29 +43,34 @@ export async function loadAllAddonsParallel(type, streamId, season = null, episo
     }
 
     // Fire all addons in parallel
+    // Fire all addons in parallel
     userAddons.forEach(addon => {
         fetchSingleAddon(addon, type, pathId)
             .then(streams => {
-                if (streams === null) {
-                    console.log(`${addon.name} is offline or failed.`);
-                }
-                else if (streams.length === 0) {
-                    console.log(`${addon.name} found 0 streams.`);
+                const shortName = addon.name.split(' ')[0];
+
+                if (streams === null || streams.length === 0) {
+                    console.log(`${shortName} is offline or found 0 streams.`);
+
+                    // Manually trigger the empty state in the renderer
+                    renderAddonData({
+                        addonName: shortName,
+                        bucket4K: [],
+                        bucket1080p: [],
+                        bucketOther: []
+                    });
                 }
                 else {
-                    const shortName = addon.name.split(' ')[0];
-
                     // 1. Filter and pack the data
                     const packedData = filterAndSortStreams(streams, shortName);
 
-                    //Cach it
+                    // 2. Cache it
                     streamState.addons[shortName] = packedData;
 
                     // 3. Draw it to the screen
                     renderAddonData(packedData);
                 }
             });
-
     });
 }
 

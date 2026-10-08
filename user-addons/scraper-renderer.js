@@ -1,4 +1,5 @@
 import { addStreamtoTorbox } from "../services/torbox.js";
+import { getCurrentUserSettings } from "../user-data/user-settings.js";
 import { parseFormated } from "../utils/parseMedia";
 import { getScrapingProviders } from "./scrapers.js";
 
@@ -150,7 +151,7 @@ function switchAddonTab(addonName) {
         activeTab.className = "addon-tab flex-shrink-0 rounded-full px-4 py-1.5 text-xs font-bold whitespace-nowrap transition-all bg-blue-600 text-white shadow-md shadow-blue-900/20 active:scale-95";
     }
 
-    // 2. --- SWAP THE PANELS ---
+    // SWAP THE PANELS
     const allPanels = document.querySelectorAll('.addon-panel');
 
     allPanels.forEach(panel => {
@@ -180,7 +181,7 @@ const createHeader = (title, colorClass, borderClass, bgClass) => {
     return header;
 };
 
-// 🎨 THE PARENT RENDERER
+// THE RENDERER
 export function renderAddonData(packedData) {
     // 1. Unpack the data
     const { addonName, bucket4K, bucket1080p, bucketOther } = packedData;
@@ -426,7 +427,7 @@ function createStreamCard(stream, isRecommended) {
     };
 
     // Show Raw Data
-    if (false) {
+    if (!getCurrentUserSettings().user_preferences.parseAddonLinks) {
         btn.innerHTML = `
         <div class="w-full flex justify-between items-start text-left cursor-default">            
             <span class="text-[14px] font-semibold text-slate-300 break-words block">${rawInfo}</span>
