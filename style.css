@@ -123,7 +123,7 @@ option:hover {
     /* Keep your existing padding for safe areas */
     padding-left: 1rem;
     padding-right: 1rem;
-    padding-top: calc(env(safe-area-inset-top) + 1.5rem);
+    padding-top: calc(env(safe-area-inset-top) + 1rem);
     padding-bottom: max(4.5rem, calc(env(safe-area-inset-bottom) + 2.5rem));
 }
 

@@ -18,12 +18,25 @@ export async function fetchPublicProfile(userId) {
     if (profileError) throw profileError;
     if (!profile) return null;
 
-    const { data: lists, error: listsError } = await supabase
+    // Fetch lists with nested global_media
+    const { data: listsData, error: listsError } = await supabase
         .from('lists')
-        .select('id, name, is_private, created_at, media ( id, media_id, title, media_type, poster_path, base_url )')
+        .select(`
+            id, name, is_private, created_at, 
+            list_items ( 
+                global_media ( media_id, media_type, title, poster_path, base_url ) 
+            )
+        `)
         .eq('user_id', userId).eq('is_private', false)
         .order('created_at', { ascending: true });
+
     if (listsError) throw listsError;
+
+    // Map the nested bridge data back into a flat 'media' array for the UI
+    const lists = (listsData || []).map(list => ({
+        ...list,
+        media: list.list_items.map(item => item.global_media)
+    }));
 
     let isFollowing = false;
     if (appState.currentUser) {

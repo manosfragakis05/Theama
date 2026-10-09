@@ -21,7 +21,7 @@ import {
 
 import { goHome, toggleProfile, switchTab, handleSearch, toggleSidebar, updateProfileDropdown } from './utils/ui.js';
 
-import { deleteTorrent } from './pages/library.js';
+import { deleteTorrent, initializeLibraryTabs } from './pages/library.js';
 
 import { closePicker } from './streaming/picker.js';
 import { playDirect, stopPlayback } from './streaming/player.js';
@@ -47,8 +47,9 @@ import { renderFriendsSidebar, renderProfileFriends, renderPublicProfile, setFol
 
 import { triggerLocalFilePicker, processLocalFile } from './services/offline.js';
 
-// NEW LOGIC: Setup Static Event Listeners
+// Setup Static Event Listeners
 function setupStaticEventListeners() {
+    initializeLibraryTabs();
     document.getElementById('close-player-btn')?.addEventListener('click', stopPlayback);
 
     // 1. Forms

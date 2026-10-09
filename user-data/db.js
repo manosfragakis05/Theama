@@ -304,10 +304,8 @@ export async function logOutUser() {
         alert("Failed to log out: " + error.message);
     } else {
         appState.currentUser = null;
-        localStorage.removeItem('user_settings');
-        localStorage.removeItem('full_addon_data');
-        sessionStorage.removeItem('user_settings');
-        sessionStorage.removeItem('full_addon_data');
+        localStorage.clear();
+        sessionStorage.clear();
 
         window.location.reload();
         console.log("Successfully logged out.");

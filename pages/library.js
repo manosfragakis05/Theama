@@ -14,6 +14,23 @@ import { openPicker } from '../streaming/picker.js';
 import { parseMediaData } from '../utils/parseMedia.js';
 import { requestLink } from '../streaming/player.js';
 
+export function initializeLibraryTabs() {
+    const tabs = [...document.querySelectorAll('[data-library-tab]')];
+
+    function selectTab(selectedTab) {
+        tabs.forEach(tab => {
+            const selected = tab === selectedTab;
+            tab.setAttribute('aria-selected', String(selected));
+            tab.tabIndex = selected ? 0 : -1;
+            document.getElementById(tab.dataset.libraryTab).classList.toggle('hidden', !selected);
+        });
+    }
+
+    tabs.forEach((tab, index) => {
+        tab.addEventListener('click', () => selectTab(tab));
+    });
+}
+
 // --- DATA FETCHING ---
 export async function fetchLibrary(bypassCache = true) {
     const key = getCurrentUserSettings().user_preferences.torboxApiKey;

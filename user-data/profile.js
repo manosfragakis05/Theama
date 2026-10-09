@@ -73,9 +73,12 @@ async function getListMedia(list) {
         if (!list || !list.id) return []; // Safety check
 
         const { data, error } = await supabase
-            .from('media')
-            .select('id, list_id, media_id, title, media_type, poster_path, base_url')
-            .eq('user_id', appState.currentUser.id)
+            .from('list_items')
+            .select(`
+                list_id,
+                created_at,
+                global_media ( media_id, media_type, title, poster_path, base_url )
+            `)
             .eq('list_id', list.id)
             .order('created_at', { ascending: false });
 
@@ -83,7 +86,12 @@ async function getListMedia(list) {
             console.error(`Error fetching ${list.name}:`, error.message);
             return [];
         }
-        return data || [];
+
+        return (data || []).map(item => ({
+            list_id: item.list_id,
+            created_at: item.created_at,
+            ...item.global_media
+        }));
     } else {
         // Guest routing
         const normalizedList = list.name.toLowerCase();
@@ -103,42 +111,43 @@ async function saveMediaToList(mediaData, list) {
     };
 
     if (appState.currentUser) {
-        // Cloud routing
-        payload.user_id = appState.currentUser.id;
-        payload.list_id = list.id;
+        // 1. Upsert into the Global Catalog (ignores if it already exists)
+        await supabase.from('global_media').upsert({
+            media_id: mediaData.id,
+            media_type: mediaData.type,
+            title: mediaData.title,
+            poster_path: mediaData.poster,
+            base_url: mediaData.baseUrl
+        }, { onConflict: 'media_id' });
 
-        const { error } = await supabase.from('media').insert(payload);
+        // Insert the connection into the bridge table
+        const { error } = await supabase.from('list_items').insert({
+            list_id: list.id,
+            media_id: mediaData.id
+        });
 
-        // Prevents duplicate movies in the same list
         if (error && error.code === '23505') return { status: 'duplicate' };
         if (error) throw error;
 
         return { status: 'success' };
     } else {
-        // Guest routing
+        // Guests
         const normalizedList = list.name.toLowerCase();
         const existingData = await getListMedia(list);
-
-        // Prevents duplicate movies in the same local list
-        if (existingData.some(item => item.media_id === payload.media_id)) {
-            return { status: 'duplicate' };
-        }
-
+        if (existingData.some(item => item.media_id === payload.media_id)) return { status: 'duplicate' };
         payload.list_id = list.id;
         existingData.unshift(payload);
-
         localStorage.setItem(`guest_watchlist_${normalizedList}`, JSON.stringify(existingData));
         return { status: 'success' };
     }
 }
 
-// Delete media
+// Delete media, removes the relation instead of the global media
 async function removeMediaFromList(mediaId, list) {
     if (appState.currentUser) {
         const { error } = await supabase
-            .from('media')
+            .from('list_items')
             .delete()
-            .eq('user_id', appState.currentUser.id)
             .eq('media_id', mediaId)
             .eq('list_id', list.id);
 
@@ -247,11 +256,19 @@ export async function renderPersonalProfile(isCurrent = () => !new URLSearchPara
     let allUserMovies = [];
     if (appState.currentUser) {
         const { data } = await supabase
-            .from('media')
-            .select('id, list_id, media_id, title, media_type, poster_path, base_url')
-            .eq('user_id', appState.currentUser.id)
+            .from('list_items')
+            .select(`
+                list_id,
+                global_media ( media_id, media_type, title, poster_path, base_url ),
+                lists!inner ( user_id )
+            `)
+            .eq('lists.user_id', appState.currentUser.id)
             .order('created_at', { ascending: false });
-        allUserMovies = data || [];
+
+        allUserMovies = (data || []).map(item => ({
+            list_id: item.list_id,
+            ...item.global_media
+        }));
     }
     if (!isCurrent()) return;
     showPersonalProfile(appState.currentUser?.user_metadata?.username || 'Guest');
