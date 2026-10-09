@@ -30,6 +30,8 @@ export async function updateUserPreference(key, value) {
 // Cloud preferences will overwrite local changes when the user logs in,
 // but addon saves will be upserted when the user logs in.
 
+
+// Returns ONLY the cloud data if the user is logged in
 export async function initializeSettings() {
     console.log("INITIALIZING");
     if (appState.currentUser) {
@@ -43,13 +45,10 @@ export async function initializeSettings() {
             const storedSettings = sessionStorage.getItem('user_settings') || localStorage.getItem('user_settings');
             const localSettings = storedSettings ? JSON.parse(storedSettings) : null;
 
-            const localAddons = localSettings ? localSettings.addon_links : [];
             const cloudAddons = settings.addon_links || [];
 
-            // Merge addons
-            const mergedAddons = [...new Set([...localAddons, ...cloudAddons])];
             // Update memory
-            userSettings.addon_links = mergedAddons;
+            userSettings.addon_links = cloudAddons;
 
             const localPrefs = localSettings ? localSettings.user_preferences : userSettings.user_preferences;
 
@@ -57,11 +56,11 @@ export async function initializeSettings() {
                 ...localPrefs, // Keep local defaults
                 ...settings.user_preferences,      // Overwrite with cloud settings
 
-                torboxApiKey: settings.user_preferences.torboxApiKey || localPrefs.torboxApiKey
+                torboxApiKey: settings.user_preferences.torboxApiKey || localPrefs.torboxApiKey,
+                defaultPlayer: localPrefs.defaultPlayer ?? 'Internal'
             };
-
-            // Save only if they dont match
-            if (mergedAddons.length !== cloudAddons.length) await saveSettings();
+            console.log(localPrefs);
+            console.log(settings.user_preferences);
         } else {
 
             const storedSettings = sessionStorage.getItem('user_settings') || localStorage.getItem('user_settings');
@@ -157,6 +156,8 @@ async function saveSettings() {
 
         // Dont upload device trust to the cloud
         delete prefsToSync.trustThisDevice;
+        // Keep players locally
+        delete prefsToSync.defaultPlayer;
 
         // Apply API Key privacy logic to the clone
         if (!prefsToSync.saveKeyToCloud) {
