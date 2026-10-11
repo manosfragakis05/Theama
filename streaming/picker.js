@@ -6,14 +6,13 @@
  */
 
 import { appState, showToast } from '../services/config.js';
-import { parseMediaData } from '../utils/parseMedia.js';
+import { parseFileData, parseMediaData } from '../utils/parseMedia.js';
 import { requestLink } from './player.js';
 import { fetchAnimeMapping } from '../api.js';
 import { downloadFile } from '../pages/library.js';
 
 // Import the "Brain" functions we built in metadata.js
 import {
-    getTmdbId,
     getAnilistIdFromText,
     getDirectSequel,
     processKitsuFallback
@@ -25,7 +24,8 @@ function preProcessEpisodeTorrentData(videoFiles, mainShowTitle) {
     const franchiseGroups = {};
 
     videoFiles.forEach(file => {
-        const fileData = parseMediaData(file.name);
+        const fileData = parseFileData(file.name);
+        // READ NEW DATA FOR  LOGAS
 
         let mergedInfo = {
             title: fileData.title || mainShowTitle || 'Unknown',
@@ -89,7 +89,7 @@ function preProcessEpisodeTorrentData(videoFiles, mainShowTitle) {
 //#endregion
 
 //#region Main Picker Logic
-export async function openPicker(torrent) {
+export async function openPicker(torrent, tmdbId) {
     const picker = document.getElementById('file-picker');
     const list = document.getElementById('picker-list');
     const title = document.getElementById('picker-title');
@@ -107,15 +107,9 @@ export async function openPicker(torrent) {
 
     const videoFiles = torrent.files.filter(f => f.name.match(/\.(mkv|mp4|avi|mov)$/i));
     const baseInfo = parseMediaData(torrent.name);
-    const cleanName = baseInfo.title.replace(/(^\w|[\s-]\w)/g, match => match.toUpperCase());
-
-    const vault = JSON.parse(localStorage.getItem('tmdb_vault') || '{}');
-    const vaultData = vault[(torrent.hash || "").toLowerCase()];
-
-    let tmdbId = vaultData ? vaultData.id : null;
+    const cleanName = baseInfo.title.replace(/(^\w|[\s-]\w)/g, m => m.toUpperCase());
 
     if (!tmdbId) {
-        tmdbId = await getTmdbId(cleanName);
         console.log("Fetched TMDB id from fallback");
     }
 
@@ -352,7 +346,7 @@ function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cle
     const seasonContainer = document.getElementById('season-dropdown-container');
 
     const renderSeason = (showKey, seasonFilter) => {
-        listElement.innerHTML = '';
+        listElement.replaceChildren();
         const showData = franchiseGroups[showKey];
         let filesToRender = [];
 

@@ -296,7 +296,8 @@
                     </div>
 
                     <div id="library-panel" aria-labelledby="library-tab" tabindex="0" class="hidden">
-                        <p class="text-center text-slate-500 mt-10">Your library is empty.</p>
+                        <div id="app-library-info-text" class="text-center text-slate-500 mt-10">Loading your library...</div>
+                        <div id="app-library-list" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4"></div>
                     </div>
                 </div>
 
@@ -1362,6 +1363,30 @@
             </div>
         </div>
     </div>
+
+    <template id="library-card-template">
+        <div class="relative flex-col cursor-pointer transition-transform hover:scale-105 select-none group">
+            <div class="relative w-full aspect-[2/3] bg-slate-800 rounded-lg shadow-lg overflow-hidden border border-slate-700/50">
+                <img class="library-poster absolute inset-0 w-full h-full object-cover hidden" loading="lazy" draggable="false" alt="Poster">
+                <div class="library-fallback absolute inset-0 flex items-center justify-center p-4 text-center text-slate-500 font-bold text-sm bg-slate-800"></div>
+                <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3">
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="library-type text-white font-bold text-xs truncate drop-shadow-md"></span>
+                        <div class="flex items-center action-buttons">
+                            <button data-action="download" class="text-blue-400 hover:text-blue-300 p-1 bg-black/50 rounded-full transition z-10 w-8 h-8 flex items-center justify-center backdrop-blur-sm mr-2" title="Download">
+                                <svg style="width:22px;height:22px;margin-top:2px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            </button>
+                            <button data-action="delete" class="text-red-500 hover:text-red-400 p-1 bg-black/50 rounded-full transition z-10 w-8 h-8 flex items-center justify-center backdrop-blur-sm" title="Delete from library">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor"><use href="#icon-delete"></use></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="library-size absolute top-2 right-2 bg-blue-600/90 text-white text-[10px] font-bold px-2 py-1 rounded backdrop-blur shadow-lg hidden"></div>
+            </div>
+            <p class="library-title text-xs text-slate-300 mt-2 truncate font-semibold pl-1"></p>
+        </div>
+    </template>
 
     <!-- Catalog rows -->
     <template id="catalog-row-template">

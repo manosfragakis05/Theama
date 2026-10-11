@@ -7,9 +7,13 @@
 
 
 import { smartFetch, showToast } from './config.js';
-import { getCurrentUserSettings, saveTorboxKey, deleteTorboxKey} from '../user-data/user-settings.js';
-import { fetchLibrary } from '../pages/library.js';
+import { getCurrentUserSettings, saveTorboxKey, deleteTorboxKey } from '../user-data/user-settings.js';
+
 import { mediaStore } from '../api.js';
+
+import { fetchLibrary } from '../pages/library.js';
+import { addToAppLibrary, linkHashToMedia } from '../pages/app-library.js';
+
 
 export async function authenticateTorboxUser() {
     const input = document.getElementById('api-input');
@@ -28,7 +32,7 @@ export async function authenticateTorboxUser() {
 
     } else {
         key = getCurrentUserSettings().user_preferences.torboxApiKey;
-        
+
         checkAuth();
         if (!key) return;
         fetchLibrary();
@@ -107,14 +111,19 @@ export async function logoutTorBox() {
     }
 }
 
+
 //#region Add to Library
 export async function addStreamtoTorbox(finalLink) {
     if (finalLink.startsWith("magnet")) {
-        const torrentId = await sendMagnetToTorbox(finalLink);
-        if (torrentId) {
-            await editTorrentInfo(torrentId);
+        const createData = await sendMagnetToTorbox(finalLink);
+        if (createData) {
+            // Edit title
+            await editTorboxInfo(createData?.torrent_id);
             console.log("Edited magnet");
-            return;
+
+            // Add to app library
+            await addToAppLibrary(mediaStore.get());
+            await linkHashToMedia(mediaStore.get(), createData?.hash);
         }
     }
 }
@@ -146,8 +155,6 @@ async function sendMagnetToTorbox(magnetLink) {
 
         const createData = await createRes.json();
 
-        console.log('TorBox createtorrent response:', createData);
-
         if (!createData.success) {
             throw new Error(
                 createData.detail || 'TorBox rejected the magnet.'
@@ -158,7 +165,7 @@ async function sendMagnetToTorbox(magnetLink) {
         closeStreamPicker();
         showToast('Successfully added to library', 'success');
 
-        return createData.data?.torrent_id;
+        return createData.data;
 
     } catch (e) {
         console.error('TorBox create failed:', e);
@@ -166,7 +173,7 @@ async function sendMagnetToTorbox(magnetLink) {
     }
 }
 
-async function editTorrentInfo(torrentId) {
+async function editTorboxInfo(torrentId) {
     const tbKey = getCurrentUserSettings().user_preferences.torboxApiKey;
     if (!tbKey) return;
 

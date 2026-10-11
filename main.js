@@ -22,6 +22,7 @@ import {
 import { goHome, toggleProfile, switchTab, handleSearch, toggleSidebar, updateProfileDropdown } from './utils/ui.js';
 
 import { deleteTorrent, initializeLibraryTabs } from './pages/library.js';
+import { loadAppLibrary } from './pages/app-library.js';
 
 import { closePicker } from './streaming/picker.js';
 import { playDirect, stopPlayback } from './streaming/player.js';
@@ -270,7 +271,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (appState.currentUser) {
                 await Promise.all([syncLocalFavouritesToCloud(), updatePublicProfile()]);
             }
-            await Promise.all([handleProfileRouting(), refreshFriendsLists(), initializeSettings()]);
+            await Promise.all([handleProfileRouting(), refreshFriendsLists(), initializeSettings(), loadAppLibrary()]);
             if (appBooted) {
                 await initCustomAddons();
                 await authenticateTorboxUser();

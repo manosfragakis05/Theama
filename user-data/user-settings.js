@@ -59,8 +59,6 @@ export async function initializeSettings() {
                 torboxApiKey: settings.user_preferences.torboxApiKey || localPrefs.torboxApiKey,
                 defaultPlayer: localPrefs.defaultPlayer ?? 'Internal'
             };
-            console.log(localPrefs);
-            console.log(settings.user_preferences);
         } else {
 
             const storedSettings = sessionStorage.getItem('user_settings') || localStorage.getItem('user_settings');

@@ -5,14 +5,21 @@
  * ==========================================
  */
 
-import { getCurrentUserSettings } from '../user-data/user-settings.js';
+import { getCurrentUserSettings, getStorage } from '../user-data/user-settings.js';
 import { appState, smartFetch, showToast } from '../services/config.js';
 
+import { parseMediaData } from '../utils/parseMedia.js';
 import { getPosterForLibrary, getTmdbId } from '../services/metadata.js';
 import { openPicker } from '../streaming/picker.js';
 
-import { parseMediaData } from '../utils/parseMedia.js';
 import { requestLink } from '../streaming/player.js';
+import { downloadFile } from '../streaming/download.js';
+import { createLibraryCard } from './library-renderer.js';
+import { addToAppLibrary, linkHashToMedia, loadAppLibrary } from './app-library.js';
+import { supabase } from '../user-data/db.js';
+
+export { downloadFile } from '../streaming/download.js';
+
 
 export function initializeLibraryTabs() {
     const tabs = [...document.querySelectorAll('[data-library-tab]')];
@@ -24,28 +31,91 @@ export function initializeLibraryTabs() {
             tab.tabIndex = selected ? 0 : -1;
             document.getElementById(tab.dataset.libraryTab).classList.toggle('hidden', !selected);
         });
+        if (selectedTab.dataset.libraryTab === 'library-panel') loadAppLibrary();
     }
 
-    tabs.forEach((tab, index) => {
+    tabs.forEach(tab => {
         tab.addEventListener('click', () => selectTab(tab));
     });
 }
 
-// --- DATA FETCHING ---
-export async function fetchLibrary(bypassCache = true) {
+//#region Torbox
+export async function fetchLibrary() {
     const key = getCurrentUserSettings().user_preferences.torboxApiKey;
     if (!key) return;
 
     try {
-        const res = await smartFetch(`https://api.torbox.app/v1/api/torrents/mylist?bypass_cache=${bypassCache}`, {
+        const res = await smartFetch('https://api.torbox.app/v1/api/torrents/mylist?bypass_cache=true', {
             headers: { 'Authorization': `Bearer ${key}` }
         });
         const data = await res.json();
 
         if (data.success) {
-            // Save to our global state so other files can search/filter it
-            appState.allTorrents = data.data.filter(t => t.download_finished);
-            renderList(appState.allTorrents);
+            const torrents = data.data.filter(t => t.download_finished);
+            //Set globally
+            appState.allTorrents = torrents;
+
+            // LAYER 1: LOCAL CACHE
+            const localCache = getLocalMetaCache();
+            const fullyCachedItems = [];
+            const missingFromLocal = [];
+
+            for (const t of torrents) {
+                const cachedMeta = localCache[t.hash];
+                if (cachedMeta) {
+                    // Rebuild the item using fresh Torbox data + cached metadata
+                    fullyCachedItems.push({
+                        torrent: t,
+                        name: cachedMeta.name,
+                        isSingle: (t.files || []).filter(f => /\.(mkv|mp4|avi|mov)$/i.test(f.name)).length === 1,
+                        size: t.size,
+                        tmdbId: cachedMeta.tmdbId,
+                        poster: cachedMeta.poster
+                    });
+                } else {
+                    missingFromLocal.push(t);
+                }
+            }
+            if (missingFromLocal.length === 0) {
+                if (appState.allTorrents === torrents) renderList(fullyCachedItems);
+                return;
+            }
+
+            // LAYER 2: CLOUD CACHE
+            const cloudRows = await getMediaFromHash(missingFromLocal);
+            const cloudHashes = new Set(cloudRows.map(r => r.added_hash));
+
+            const cloudItems = cloudRows.map(row => {
+                const t = missingFromLocal.find(x => x.hash === row.added_hash);
+                return {
+                    torrent: t,
+                    name: row.global_media.title,
+                    isSingle: (t.files || []).filter(f => /\.(mkv|mp4|avi|mov)$/i.test(f.name)).length === 1,
+                    size: t.size,
+                    tmdbId: { id: row.media_id },
+                    poster: row.global_media.poster_path
+                };
+            });
+
+            // LAYER 3: TMDB FETCH & UPLOAD
+            const needsTmdb = missingFromLocal.filter(t => !cloudHashes.has(t.hash));
+            const newTmdbItems = needsTmdb.length > 0 ? await fetchMainMetadata(needsTmdb) : [];
+
+            // Save new findings (from both Supabase and TMDB) to Local Storage for next time
+            saveToMetaCache([...cloudItems, ...newTmdbItems]);
+
+            // Combine all arrays
+            const allItems = [...fullyCachedItems, ...cloudItems, ...newTmdbItems];
+
+            // Map over original torbox array to perfectly preserve the user's native TorBox order
+            const sortedItems = torrents
+                .map(t => allItems.find(item => item.torrent.hash === t.hash))
+                .filter(Boolean);
+
+            if (appState.allTorrents === torrents) {
+                renderList(sortedItems);
+            }
+
         } else {
             showToast("Error: " + data.detail, 'error');
         }
@@ -58,300 +128,262 @@ export async function fetchLibrary(bypassCache = true) {
 
 export async function deleteTorrent(torrentId, event) {
     if (event) event.stopPropagation();
-    if (!confirm("Are you sure you want to delete this from TorBox?")) return;
+    if (!confirm("Are you sure you want to delete this from TorBox?")) return false;
 
     const key = getCurrentUserSettings().user_preferences.torboxApiKey;
-    if (!key) return;
-    const targetUrl = 'https://api.torbox.app/v1/api/torrents/controltorrent';
+    if (!key) return false;
 
     try {
-        const res = await smartFetch(targetUrl, {
+        const res = await smartFetch('https://api.torbox.app/v1/api/torrents/controltorrent', {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${key}`,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                torrent_id: torrentId,
-                operation: "delete"
-            })
+            body: JSON.stringify({ torrent_id: torrentId, operation: "delete" })
         });
 
         const data = await res.json();
 
         if (data.success) {
-            showToast("Deleted successfully!", 'success');
+            showToast("Deleted from Torbox successfully!", 'success');
 
+            // 1. Find the deleted torrent and remove it from Supabase (Background)
+            const deletedTorrent = appState.allTorrents.find(t => t.id === torrentId);
+            if (deletedTorrent && appState.currentUser?.id) {
+                supabase.from('added_sources')
+                    .delete()
+                    .eq('user_id', appState.currentUser.id)
+                    .eq('added_hash', deletedTorrent.hash)
+                    .then(({ error }) => { if (error) console.error("DB cleanup failed:", error); });
+            }
+
+            // 2. Remove it from your local appState
             appState.allTorrents = appState.allTorrents.filter(t => t.id !== torrentId);
-            renderList(appState.allTorrents);
+
+            return true; // Tell the UI it succeeded!
         } else {
             showToast("Error: " + data.detail, 'error');
+            return false;
         }
     } catch (e) {
         console.error("Delete Error:", e);
         showToast("Failed to delete torrent.", 'error');
+        return false;
     }
 }
+//#endregion
 
-// --- DOWNLOAD ---
 
-/**
- * Requests a direct CDN link from TorBox and triggers a download.
- * On iOS standalone PWAs (no native download manager), tries Chrome,
- * Brave, then Firefox via custom URL schemes before falling back to
- * the native share sheet.
- *
- * @param {string|number} torrentId
- * @param {string|number} fileId
- * @param {string} fileName - used as the share-sheet title on iOS fallback
- */
-export async function downloadFile(torrentId, fileId, fileName) {
-    const key = getCurrentUserSettings().user_preferences.torboxApiKey;
-    if (!key) {
-        showToast("API key not found.", "error");
-        return;
+//#region Cach Data
+async function getMediaFromHash(torrents) {
+    if (!torrents || torrents.length === 0) return [];
+
+    // 1. Extract just the hash strings into an array
+    const hashes = torrents.map(t => t.hash);
+
+    // 2. Fetch all matching sources for this user in a single query
+    const { data, error } = await supabase
+        .from('added_sources')
+        .select(`
+            media_id,
+            added_hash,
+            global_media ( media_type, title, poster_path )
+        `)
+        .eq('user_id', appState.currentUser.id)
+        .in('added_hash', hashes);
+
+    if (error) {
+        console.error("Error fetching cached media:", error.message);
+        return [];
     }
 
-    showToast("Starting download...", "info");
+    return data;
+}
+
+const CACHE_KEY = 'theama_meta_cache';
+
+function getLocalMetaCache() {
+    // Get active storage
+    const storage = getStorage();
 
     try {
-        const apiUrl = `https://api.torbox.app/v1/api/torrents/requestdl?token=${key}&torrent_id=${torrentId}&file_id=${fileId}`;
-        const response = await smartFetch(apiUrl);
-        const result = await response.json();
-
-        if (!result.success || !result.data) {
-            showToast(result.detail || "Failed to get download link.", "error");
-            return;
-        }
-
-        const cdnUrl = result.data;
-
-        if (isIOS() && isStandalonePWA()) {
-            await openWithBrowserFallbackChain(cdnUrl, fileName);
-            return;
-        }
-
-        const a = document.createElement('a');
-        a.href = cdnUrl;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-
-    } catch (error) {
-        console.error("Download error:", error);
-        showToast("Network error starting download.", "error");
+        return JSON.parse(storage.getItem(CACHE_KEY) || '{}');
+    } catch {
+        return {}; // Fallback if JSON is corrupted
     }
 }
 
-// --- UI RENDERING ---
+function saveToMetaCache(itemsToCache) {
+    const cache = getLocalMetaCache();
+    const storage = getStorage();
 
+    for (const item of itemsToCache) {
+        if (!item || !item.torrent?.hash) continue;
+
+        // Save only the static metadata tied to the hash
+        cache[item.torrent.hash] = {
+            name: item.name,
+            poster: item.poster,
+            tmdbId: item.tmdbId
+        };
+    }
+    storage.setItem(CACHE_KEY, JSON.stringify(cache));
+}
+
+//#endregion
+
+//#region Metadata
+
+export async function searchLibrary(searchString) {
+    const filtered = appState.allTorrents.filter(t => t.name.toLowerCase().includes(searchString));
+
+    const items = await fetchMainMetadata(filtered);
+    if (appState.allTorrents === torrents) renderList(items);
+}
+
+// Prepare torrent metadata without touching the DOM or reading a cache.
+async function fetchMainMetadata(items) {
+    const RATE_LIMIT_MS = 50;
+
+    const promises = items.map(async (torrent, index) => {
+        const allFiles = (torrent.files || []).filter(f => /\.(mkv|mp4|avi|mov)$/i.test(f.name));
+
+        const vidCount = allFiles.length;
+        const isSingle = vidCount == 1;
+
+        // If the first file is has a season or episode tag consider the torrent a series
+        const firstFileTitle = allFiles[0].short_name || allFiles[0].name;
+        const parseFirstFile = firstFileTitle ? parseMediaData(firstFileTitle) : null;
+        const hasSeason = parseFirstFile.episodes.length > 0;    // false if null
+
+        // Pass main folder title
+        const mediaInfo = parseMediaData(torrent.name);
+        const cleanName = mediaInfo.title.replace(/(^\w|[\s-]\w)/g, m => m.toUpperCase());
+
+        const item = {
+            torrent: torrent,
+            name: cleanName,
+            isSingle: isSingle,
+            size: torrent.size
+        };
+
+        const type = hasSeason ? 'tv' : 'movie'
+
+        // Stagger metadata lookups by 50ms and fetch fresh data for every item.
+        await new Promise(resolve => setTimeout(resolve, index * RATE_LIMIT_MS));
+
+        try {
+            const tmdbId = await getTmdbId(cleanName, mediaInfo.year, type);
+            const poster = tmdbId ? await getPosterForLibrary(tmdbId.id, type) : null;
+
+            const global_media = {
+                id: tmdbId.id,
+                type: type,
+                title: tmdbId.officialName,
+                poster: poster,
+                base_url: null,
+                season: null,
+                episode: null
+            };
+
+            if (tmdbId.officialName && poster) {
+                // 1. Save the media to global_media (ignoring if it exists)
+                await addToAppLibrary(global_media);
+
+                // 2. Link this specific user and hash to the media
+                await linkHashToMedia(global_media, torrent.hash);
+            }
+
+            return { ...item, tmdbId, poster };
+        } catch (error) {
+            console.warn(`Failed to fetch library metadata for ${cleanName}:`, error);
+            return { ...item, tmdbId: null, poster: null };
+        }
+
+    });
+
+    // Preserve torrent order even when requests finish out of order.
+    return Promise.all(promises);
+}
+
+//#endregion
+
+//#region Rendering
 export function renderList(items) {
     const libraryText = document.getElementById('library-info-text');
     const list = document.getElementById('file-list');
     list.replaceChildren();
 
     if (items.length === 0) {
-        libraryText.innerText = "No files added yet.";
+        libraryText.textContent = "No files added yet.";
         libraryText.classList.remove("hidden");
         return;
     }
 
     libraryText.classList.add("hidden");
+    items.forEach(renderItem);
+}
 
-    // Read vault ONCE
-    const vault = JSON.parse(localStorage.getItem('tmdb_vault') || '{}');
-    const itemsNeedsFetching = [];
+function renderItem(item) {
+    const t = item.torrent;
+    const files = t.files;
+    const video = files.find(f => /\.(mkv|mp4|avi|mov)$/i.test(f.name));
+    const playableFile = video || files[0];
 
-    // 1. INSTANT UI RENDER
-    items.forEach((t) => {
-        const vidCount = t.files.filter(f => f.name.match(/\.(mkv|mp4|avi|mov)$/i)).length;
-        const isShow = vidCount > 1;
+    const card = createLibraryCard(
+        item.name,
+        item.poster,
+        item.isSingle,
+        item.size
+    );
 
-        const mediaInfo = parseMediaData(t.name);
-        const cleanName = mediaInfo.title.replace(/(^\w|[\s-]\w)/g, m => m.toUpperCase());
+    // Handle Clicks cleanly
+    card.addEventListener('click', async (event) => {
+        const btn = event.target.closest('button');
 
-        // Using ID instead of Hash
-        const vaultData = vault[t.id];
-        const hasVid = t.files.some(f => f.name.match(/\.(mkv|mp4|avi|mov)$/i));
+        // Handle Actions
+        if (btn?.dataset.action === 'delete') {
+            event.stopPropagation();
 
-        const card = document.createElement('div');
-        card.className = "relative flex-col cursor-pointer transition-transform hover:scale-105 select-none group";
+            // Wait for the delete function to finish
+            const success = await deleteTorrent(t.id, event);
 
-        // Build Action Buttons
-        let actionButtonsHTML = `<button data-id="${t.id}" data-action="delete" class="text-red-500 hover:text-red-400 p-1 bg-black/50 rounded-full transition z-10 w-8 h-8 flex items-center justify-center backdrop-blur-sm"
-        title="Delete from library">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor">
-                <use href="#icon-delete"></use>
-            </svg>
-        </button>`;
+            if (success) {
+                // Instantly wipe the card from the screen without re-rendering the list!
+                card.remove();
 
-        if (!isShow && hasVid) {
-            actionButtonsHTML = `
-                <button data-id="${t.id}" data-action="download" class="text-blue-400 hover:text-blue-300 p-1 bg-black/50 rounded-full transition z-10 w-8 h-8 flex items-center justify-center backdrop-blur-sm mr-2" title="Download">
-                <svg style="width:22px;height:22px;margin-top:2px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg></button>
-                ${actionButtonsHTML}
-            `;
+                // Show the "empty library" text if that was their very last torrent
+                if (appState.allTorrents.length === 0) {
+                    const libraryText = document.getElementById('library-info-text');
+                    libraryText.textContent = "No files added yet.";
+                    libraryText.classList.remove("hidden");
+                }
+            }
+            return;
+        }
+        if (btn?.dataset.action === 'download') {
+            event.stopPropagation();
+            return playableFile
+                ? downloadFile(t.id, playableFile.id, playableFile.name)
+                : showToast("No playable files found.", "error");
         }
 
-        // Inject HTML
-        card.innerHTML = `
-            <div class="relative w-full aspect-[2/3] bg-slate-800 rounded-lg shadow-lg overflow-hidden border border-slate-700/50">
-                <img id="img-${t.id}" src="${vaultData?.poster || ''}" class="absolute inset-0 w-full h-full loading="lazy" object-cover ${vaultData?.poster ? '' : 'hidden'}" draggable="false">
-                <div id="fallback-${t.id}" class="absolute inset-0 flex items-center justify-center p-4 text-center text-slate-500 font-bold text-sm bg-slate-800 ${vaultData?.poster ? 'hidden' : ''}">
-                    ${cleanName}
-                </div>
-                <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3">
-                    <div class="flex justify-between items-center mb-1">
-                        <span class="text-white font-bold text-xs truncate drop-shadow-md">${isShow ? '📺 Series' : '🎬 Movie'}</span>
-                        <div class="flex items-center action-buttons">
-                            ${actionButtonsHTML}
-                        </div>
-                    </div>
-                </div>
-                <div class="absolute top-2 right-2 bg-blue-600/90 text-white text-[10px] font-bold px-2 py-1 rounded backdrop-blur shadow-lg">
-                    ${(t.size / 1073741824).toFixed(1)} GB
-                </div>
-            </div>
-            <p class="text-xs text-slate-300 mt-2 truncate font-semibold pl-1">${cleanName}</p>
-        `;
+        // Handle Card Click (Play/Open)
+        if (appState.clickCooldown) { showToast("Please wait a moment."); return; }
+        appState.clickCooldown = true;
+        setTimeout(() => appState.clickCooldown = false, 2000);
 
-        // Handle Clicks cleanly
-        card.addEventListener('click', (event) => {
-            const btn = event.target.closest('button');
-
-            // Handle Actions
-            if (btn?.dataset.action === 'delete') {
-                event.stopPropagation();
-                return deleteTorrent(t.id, event);
-            }
-            if (btn?.dataset.action === 'download') {
-                event.stopPropagation();
-                const vid = t.files.find(f => f.name.match(/\.(mkv|mp4|avi|mov)$/i)) || t.files[0];
-                downloadFile(t.id, vid.id, vid.name);
-                return;
-            }
-
-            // Handle Card Click (Play/Open)
-            if (appState.clickCooldown) { showToast("Please wait a moment."); return; }
-            appState.clickCooldown = true;
-            setTimeout(() => appState.clickCooldown = false, 2000);
-
-            if (isShow) {
-                openPicker(t);
-            } else {
-                const vid = t.files.find(f => f.name.match(/\.(mkv|mp4|avi|mov)$/i)) || t.files[0];
-                vid ? requestLink(t.id, vid.id, t.name, vid.name) : showToast("No playable files found.", "error");
-            }
-        });
-
-        list.appendChild(card);
-
-        // Queue for fetching if no poster
-        if (!vaultData?.poster) {
-            itemsNeedsFetching.push({
-                t, cleanName, year: mediaInfo.year, id: t.id,
-                imgElement: card.querySelector(`#img-${t.id}`),
-                fallbackElement: card.querySelector(`#fallback-${t.id}`)
-            });
+        if (!item.isSingle) {
+            openPicker(t, item.tmdbId.id);
+        } else {
+            playableFile
+                ? requestLink(t.id, playableFile.id, t.name, playableFile.name)
+                : showToast("No playable files found.", "error");
         }
     });
 
-    // 2. THE BATCH FETCHER
-    if (itemsNeedsFetching.length > 0) {
-        processBatchFetches(itemsNeedsFetching, vault);
-    }
+    document.getElementById('file-list').appendChild(card);
+    return card;
 }
-
-function attemptOpenScheme(schemeUrl, timeout = 500) {
-    return new Promise((resolve) => {
-        let backgrounded = false;
-        const onVisibilityChange = () => {
-            if (document.hidden) backgrounded = true;
-        };
-        document.addEventListener('visibilitychange', onVisibilityChange);
-
-        window.location.href = schemeUrl;
-
-        setTimeout(() => {
-            document.removeEventListener('visibilitychange', onVisibilityChange);
-            resolve(backgrounded);
-        }, timeout);
-    });
-}
-
-async function openWithBrowserFallbackChain(url, shareTitle) {
-    const chromeUrl = url.replace(/^https:\/\//, 'googlechromes://')
-        .replace(/^http:\/\//, 'googlechrome://');
-    const braveUrl = `brave://open-url?url=${encodeURIComponent(url)}`;
-    const firefoxUrl = `firefox://open-url?url=${encodeURIComponent(url)}`;
-
-    if (await attemptOpenScheme(chromeUrl)) return;
-    if (await attemptOpenScheme(braveUrl)) return;
-    if (await attemptOpenScheme(firefoxUrl)) return;
-
-    // None of the three appear installed — fall back to the share sheet
-    if (navigator.share) {
-        try {
-            await navigator.share({ url, title: shareTitle });
-        } catch (shareErr) {
-            showToast("Open this link in Safari to download.", "info");
-        }
-    } else {
-        showToast("Downloads don't work in the installed app — open this site in Safari instead.", "info");
-    }
-}
-
-function isIOS() {
-    const ua = navigator.userAgent;
-    const isIPad = ua.includes('Macintosh') && navigator.maxTouchPoints > 1;
-    return /iPad|iPhone|iPod/.test(ua) || isIPad;
-}
-
-function isStandalonePWA() {
-    return window.matchMedia('(display-mode: standalone)').matches
-        || window.navigator.standalone === true;
-}
-
-async function processBatchFetches(items, vault) {
-    let vaultUpdated = false;
-    const RATE_LIMIT_MS = 50; // 1 request every 50ms = 20 per second
-
-    // Create an array of independent promises
-    const promises = items.map(async (item, index) => {
-
-        // 1. Stagger the start time based on index in the queue
-        await new Promise(resolve => setTimeout(resolve, index * RATE_LIMIT_MS));
-
-        // 2. Fetch TMDB ID
-        const tmdbId = await getTmdbId(item.cleanName, item.year);
-
-        if (tmdbId) {
-            // Fetch the poster
-            const posterUrl = await getPosterForLibrary(tmdbId.id, tmdbId.type);
-
-            if (posterUrl) {
-                // 4. Update UI instantly
-                item.imgElement.src = posterUrl;
-                item.imgElement.classList.remove('hidden');
-                item.fallbackElement.classList.add('hidden');
-
-                // 5. Update Vault Memory
-                vault[item.id] = { id: tmdbId, poster: posterUrl };
-                vaultUpdated = true;
-                return; // Exit this promise successfully
-            }
-        }
-
-        // 6. Negative Caching (If ID or Poster failed)
-        vault[item.id] = { notFound: true };
-        vaultUpdated = true;
-    });
-
-    // Run them all simultaneously. They will automatically pace themselves 50ms apart.
-    await Promise.all(promises);
-
-    // Save to localstorage
-    if (vaultUpdated) {
-        localStorage.setItem('tmdb_vault', JSON.stringify(vault));
-    }
-}
+//#endregion

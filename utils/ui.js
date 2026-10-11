@@ -6,7 +6,7 @@
  */
 
 import { appState, showToast } from '../services/config.js';
-import { renderList } from '../pages/library.js';
+import { searchLibrary } from '../pages/library.js';
 import { stopPlayback } from '../streaming/player.js';
 import { loadDiscover, searchTMDB } from '../user-addons/catalogs.js';
 import { returnToMyProfile } from '../user-data/profile.js';
@@ -129,9 +129,8 @@ export function handleSearch(event) {
         desktopSearch.value = rawValue;
     }
 
-    // Filter TorBox library
-    const filtered = appState.allTorrents.filter(t => t.name.toLowerCase().includes(query));
-    renderList(filtered);
+    // Search library
+    searchLibrary(query);
 
     clearTimeout(searchTimeout);
 

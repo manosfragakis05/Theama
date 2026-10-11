@@ -382,8 +382,10 @@ const renderLine = (lineData) => lineData.map(item => {
     return '';
 }).join('');
 
+//#endregion
 
-// 2. MAIN FUNCTION
+
+//#region Main Card
 function createStreamCard(stream, isRecommended) {
     const raw = stream.rawStream;
     let extractedHash;
@@ -417,7 +419,7 @@ function createStreamCard(stream, isRecommended) {
         buttonHover = "bg-emerald-900/50 text-emerald-400 border border-emerald-500/30 group-hover:bg-emerald-600 group-hover:text-white group-hover:border-transparent";
     }
 
-    // Create the button and assign classes exactly ONCE
+    // Create the button and assign classes ONCE
     const btn = document.createElement('button');
     btn.className = `${baseClasses} ${colorClasses}`;
 

@@ -118,7 +118,7 @@ async function saveMediaToList(mediaData, list) {
             title: mediaData.title,
             poster_path: mediaData.poster,
             base_url: mediaData.baseUrl
-        }, { onConflict: 'media_id' });
+        }, { onConflict: 'media_id', ignoreDuplicates: true });
 
         // Insert the connection into the bridge table
         const { error } = await supabase.from('list_items').insert({

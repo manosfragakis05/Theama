@@ -43,7 +43,6 @@ export async function loadAllAddonsParallel(type, streamId, season = null, episo
     }
 
     // Fire all addons in parallel
-    // Fire all addons in parallel
     userAddons.forEach(addon => {
         fetchSingleAddon(addon, type, pathId)
             .then(streams => {

@@ -26,50 +26,48 @@ export async function getPosterForLibrary(tmdbId, type) {
 }
 
 // Fetch TMDB ID from a string
-export async function getTmdbId(title, year) {
+/**
+ * @param {string} title
+ * @param {number|string} year
+ * @param {string} type
+ * @returns {Promise<number|null>}
+ */
+export async function getTmdbId(title, year, type = 'tv') {
     if (!title) return null;
+    console.log(title, year, type);
+
+    // Replace with your actual TMDB API key or fetch from your config
+    const apiKey = TMDB_KEY;
+    const encodedTitle = encodeURIComponent(title.trim());
+
+    let url = '';
+
+    if (type.toLowerCase() === 'movie') {
+        url = `https://api.themoviedb.org/3/search/movie?api_key=${apiKey}&query=${encodedTitle}`;
+        if (year) url += `&primary_release_year=${year}`;
+    } else {
+        url = `https://api.themoviedb.org/3/search/tv?api_key=${apiKey}&query=${encodedTitle}`;
+        if (year) url += `&first_air_date_year=${year}`;
+    }
 
     try {
-        const encodedTitle = encodeURIComponent(title);
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`TMDB API error: ${response.status}`);
 
-        // No year provided - Search multi
-        if (!year) {
-            const multiUrl = `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_KEY}&query=${encodedTitle}&page=1`;
-            const res = await fetch(multiUrl);
-            const data = await res.json();
-            
-            const valid = data.results?.find(item => item.media_type === 'movie' || item.media_type === 'tv');
-            
-            if (valid) {
-                return { id: valid.id, type: valid.media_type }; 
+        const data = await response.json();
+        
+        // Return the first result's ID
+        if (data.results && data.results.length > 0) {
+            if(data.results.length > 1 && (data.results[1]?.vote_count > data.results[0]?.vote_count)) {
+                return { id: data.results[1].id, officialName: data.results[1].name || data.results[1].title };
+            } else {
+                return { id: data.results[0].id, officialName: data.results[0].name || data.results[0].title };
             }
-            return null;
         }
 
-        // Year provided - Search in movies first
-        const movieUrl = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_KEY}&query=${encodedTitle}&primary_release_year=${year}&page=1`;
-        const movieRes = await fetch(movieUrl);
-        const movieData = await movieRes.json();
-
-        if (movieData.results && movieData.results.length > 0) {
-            return { id: movieData.results[0].id, type: 'movie' };
-        }
-
-        // If no movie was found search in tv
-        const tvUrl = `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_KEY}&query=${encodedTitle}&first_air_date_year=${year}&page=1`;
-        const tvRes = await fetch(tvUrl);
-        const tvData = await tvRes.json();
-
-        if (tvData.results && tvData.results.length > 0) {
-            return { id: tvData.results[0].id, type: 'tv' };
-        }
-
-        // Both failed
-        console.log(`🛑 TMDB returned nothing matching the year ${title} ${year}.`);
-        return null;
-
-    } catch (e) {
-        console.warn("TMDB search failed.", e);
+        return null; // No match found
+    } catch (error) {
+        console.error("Failed to fetch TMDB ID:", error);
         return null;
     }
 }
