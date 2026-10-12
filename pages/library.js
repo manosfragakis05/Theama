@@ -8,7 +8,7 @@
 import { getCurrentUserSettings, getStorage } from '../user-data/user-settings.js';
 import { appState, smartFetch, showToast } from '../services/config.js';
 
-import { parseMediaData } from '../utils/parseMedia.js';
+import { parseFileData, parseMediaData } from '../utils/parseMedia.js';
 import { getPosterForLibrary, getTmdbId } from '../services/metadata.js';
 import { openPicker } from '../streaming/picker.js';
 
@@ -45,7 +45,7 @@ export async function fetchLibrary() {
     if (!key) return;
 
     try {
-        const res = await smartFetch('https://api.torbox.app/v1/api/torrents/mylist?bypass_cache=true', {
+        const res = await smartFetch('https://api.torbox.app/v1/api/torrents/mylist?bypass_cache=false', {
             headers: { 'Authorization': `Bearer ${key}` }
         });
         const data = await res.json();
@@ -252,13 +252,15 @@ async function fetchMainMetadata(items) {
         const vidCount = allFiles.length;
         const isSingle = vidCount == 1;
 
-        // If the first file is has a season or episode tag consider the torrent a series
-        const firstFileTitle = allFiles[0].short_name || allFiles[0].name;
-        const parseFirstFile = firstFileTitle ? parseMediaData(firstFileTitle) : null;
-        const hasSeason = parseFirstFile.episodes.length > 0;    // false if null
-
         // Pass main folder title
         const mediaInfo = parseMediaData(torrent.name);
+        // An opening/trailer may sort before the actual episodes. Inspect file
+        // basenames and ignore bonus numbering when deciding the metadata type.
+        const hasSeason = mediaInfo.seasons.length > 0 || allFiles.some(file => {
+            const parsed = parseFileData(file.short_name || file.name);
+            return !parsed.isExtra && parsed.fileType !== 'MOVIE'
+                && (parsed.episodes.length > 0 || parsed.seasons.length > 0);
+        });
         const cleanName = mediaInfo.title.replace(/(^\w|[\s-]\w)/g, m => m.toUpperCase());
 
         const item = {

@@ -271,7 +271,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (appState.currentUser) {
                 await Promise.all([syncLocalFavouritesToCloud(), updatePublicProfile()]);
             }
-            await Promise.all([handleProfileRouting(), refreshFriendsLists(), initializeSettings(), loadAppLibrary()]);
+            await Promise.all([handleProfileRouting(), refreshFriendsLists(), initializeSettings() /*loadAppLibrary()*/]);
             if (appBooted) {
                 await initCustomAddons();
                 await authenticateTorboxUser();

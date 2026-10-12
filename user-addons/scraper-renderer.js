@@ -1,6 +1,6 @@
 import { addStreamtoTorbox } from "../services/torbox.js";
 import { getCurrentUserSettings } from "../user-data/user-settings.js";
-import { parseFormated } from "../utils/parseMedia";
+import { parseFormated } from "../utils/parseMedia.js";
 import { getScrapingProviders } from "./scrapers.js";
 
 
@@ -37,9 +37,9 @@ export function filterAndSortStreams(streams, addonName) {
 
     parsedStreams.forEach(stream => {
         const res = stream.resolution;
-        if (res === "4K" || res === "4k HDR") {
+        if (res === "2160p" || res === "2160i" || res === "4320p" || res === "4320i" || res === "4K" || res === "4k HDR") {
             bucket4K.push(stream);
-        } else if (res === "1080p" || res === "1440p") {
+        } else if (res === "1080p" || res === "1080i" || res === "1440p") {
             bucket1080p.push(stream);
         } else {
             bucketOther.push(stream);
@@ -294,7 +294,7 @@ function buildStreamBlueprint(stream) {
     let displayTitle = null;
     if (parsed.title) {
         displayTitle = parsed.title
-            .replace(/[^a-zA-Z0-9]+$/, '')
+            .replace(/[^\p{L}\p{N}]+$/u, '')
             .replace(/\b\w/g, char => char.toUpperCase())
             .trim();
     }
@@ -323,14 +323,15 @@ function buildStreamBlueprint(stream) {
 
     const uiData = {
         line1: [
-            { type: 'text', text: `${displayTitle}`, size: 'medium' },
+            { type: 'text', text: displayTitle || 'Unknown title', size: 'medium' },
             stream.isCached ? { type: 'badge', text: '⚡ Cached', color: 'emerald' } : { type: 'badge', text: '⚠️ Uncached', color: 'orange' }
         ].filter(Boolean),
 
         line2: [
             videoSourceText && videoSourceText !== "Unknown" ? { type: 'text', text: `📹 ${videoSourceText}`, size: 'small', color: 'blue', bold: true } : null,
             displayAudio ? { type: 'text', text: `🔊 ${displayAudio}`, size: 'small', color: audioColor, bold: true } : null,
-            parsed.seasonDetails ? { type: 'badge', text: parsed.seasonDetails, size: 'small', color: 'blue', bold: true } : null
+            parsed.seasonDetails ? { type: 'badge', text: parsed.seasonDetails, size: 'small', color: 'blue', bold: true } : null,
+            parsed.fileTypeLabel ? { type: 'badge', text: parsed.fileTypeLabel, size: 'small', color: 'blue', bold: true } : null
         ].filter(Boolean),
 
         line3: [

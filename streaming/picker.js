@@ -20,24 +20,25 @@ import {
 
 
 //#region Data Grouping
-function preProcessEpisodeTorrentData(videoFiles, mainShowTitle) {
+function preProcessEpisodeTorrentData(videoFiles) {
     const franchiseGroups = {};
 
     videoFiles.forEach(file => {
         const fileData = parseFileData(file.name);
-        // READ NEW DATA FOR  LOGAS
+
+        console.log(fileData);
 
         let mergedInfo = {
-            title: fileData.title || mainShowTitle || 'Unknown',
-            episode: fileData.episode || null,
-            season: fileData.season || 1,
+            title: fileData.title,
+            episode: fileData.episode ?? null,
+            season: fileData.season ?? 1,
             year: parseInt(fileData.year || fileData.airDate, 10) || null,
             fileType: fileData.fileType || ''
         };
 
         const sizeInMB = file.size / (1024 * 1024);
         const fileType = mergedInfo.fileType.toUpperCase();
-        let finalFileType = "TV";
+        let finalFileType = fileData.isExtra ? 'Extra' : 'TV';
 
         switch (fileType) {
             case 'MOVIE': finalFileType = 'Movie'; break;
@@ -46,6 +47,7 @@ function preProcessEpisodeTorrentData(videoFiles, mainShowTitle) {
             case 'ODA':
             case 'ONA': finalFileType = 'OVA'; break;
             case 'SPECIAL':
+            case 'RECAP':
             case 'SP': finalFileType = 'Special'; break;
             case 'OP':
             case 'OPENING':
@@ -56,9 +58,11 @@ function preProcessEpisodeTorrentData(videoFiles, mainShowTitle) {
             case 'THEME': finalFileType = 'Theme'; break;
             case 'PV':
             case 'PROMO':
+            case 'TEASER':
+            case 'CM':
             case 'TRAILER': finalFileType = 'Trailer'; break;
             case 'TV':
-            default: finalFileType = 'TV'; break;
+                finalFileType = 'TV'; break;
         }
 
         const cleanTitle = mergedInfo.title.toLowerCase().trim();
@@ -76,6 +80,8 @@ function preProcessEpisodeTorrentData(videoFiles, mainShowTitle) {
             episode: mergedInfo.episode,
             year: mergedInfo.year,
             fileType: finalFileType,
+            fileTypeLabel: fileData.fileTypeLabel,
+            isExtra: fileData.isExtra,
             sizeMB: sizeInMB.toFixed(2)
         });
     });
@@ -107,6 +113,8 @@ export async function openPicker(torrent, tmdbId) {
 
     const videoFiles = torrent.files.filter(f => f.name.match(/\.(mkv|mp4|avi|mov)$/i));
     const baseInfo = parseMediaData(torrent.name);
+
+    console.log(baseInfo);
     const cleanName = baseInfo.title.replace(/(^\w|[\s-]\w)/g, m => m.toUpperCase());
 
     if (!tmdbId) {
@@ -117,15 +125,14 @@ export async function openPicker(torrent, tmdbId) {
     if (tmdbId) {
         try {
             animeIds = await fetchAnimeMapping(tmdbId);
+            console.log(animeIds);
         } catch (e) {
             console.error("API failed to find anime mappings:", e);
         }
     }
 
-    let torrentType = "";
-    if (animeIds) torrentType = "anime";
-
-    const franchiseGroups = await preProcessEpisodeTorrentData(videoFiles, cleanName);
+    const franchiseGroups = await preProcessEpisodeTorrentData(videoFiles);
+    console.log(franchiseGroups);
 
     const titledEpisodes = Object.keys(franchiseGroups).filter(key => {
         const group = franchiseGroups[key];
@@ -160,7 +167,7 @@ export async function openPicker(torrent, tmdbId) {
         }
     });
 
-    if (torrentType === "anime") {
+    if (animeIds) {
         for (const groupKey in franchiseGroups) {
             const group = franchiseGroups[groupKey];
             group.seasonTitles = {};
@@ -179,20 +186,22 @@ export async function openPicker(torrent, tmdbId) {
                 }
 
                 let aniListMatch = await getAnilistIdFromText(searchString);
+                console.log(aniListMatch);
                 let currentEpisodeCount = null;
-
+                
                 if (!aniListMatch) {
                     let polishedString = searchString.replace(/(Movie)\s*\d*\s*-?\s*/gi, '').trim();
                     aniListMatch = await getAnilistIdFromText(polishedString);
                 }
-
+                
                 if (aniListMatch && aniListMatch.title) {
                     group.seasonTitles[season] = aniListMatch.title;
                     currentEpisodeCount = aniListMatch.officialEpisodeCount;
                 }
-
+                
                 let finalAnilistId = aniListMatch?.id;
-                const seasonFiles = group.files.filter(f => f.season === season);
+                console.log(aniListMatch);
+                const seasonFiles = group.files.filter(f => f.season === season && !f.isExtra);
 
                 seasonFiles.forEach(file => {
                     file.displayTitle = null;
@@ -200,11 +209,6 @@ export async function openPicker(torrent, tmdbId) {
                     file.displaySeason = file.season;
                     file.relativeEpisode = null;
                     file.metadataSource = "None";
-
-                    if (file.fileType === 'Theme') {
-                        file.displayTitle = file.originalFile.short_name;
-                        file.metadataSource = "Local";
-                    }
                 });
 
                 if (finalAnilistId) {
@@ -215,9 +219,7 @@ export async function openPicker(torrent, tmdbId) {
                             const epDict = azData.episodes || {};
 
                             seasonFiles.forEach(file => {
-                                if (file.fileType === 'Theme') return;
-
-                                if (file.episode) {
+                                if (file.episode !== null) {
                                     const epInt = parseInt(file.episode, 10);
                                     const epArray = Object.values(epDict);
                                     let matchedEp = null;
@@ -239,8 +241,8 @@ export async function openPicker(torrent, tmdbId) {
                             });
 
                             const otherPart = seasonFiles.filter(f => {
-                                if (f.fileType === 'Theme' || f.displayTitle) return false;
-                                if (!f.episode) return true;
+                                if (f.displayTitle) return false;
+                                if (f.episode === null) return true;
                                 if (f.fileType === 'TV') {
                                     const epInt = parseInt(f.episode, 10);
                                     return currentEpisodeCount && epInt > currentEpisodeCount;
@@ -259,7 +261,7 @@ export async function openPicker(torrent, tmdbId) {
                                             const sequelEpArray = Object.values(sequelAzData.episodes || {});
 
                                             otherPart.forEach(file => {
-                                                if (file.episode) {
+                                                if (file.episode !== null) {
                                                     const localEpInt = parseInt(file.episode, 10);
                                                     const matchedEp = sequelEpArray.find(ep => ep.absoluteEpisodeNumber === localEpInt || ep.episodeNumber === localEpInt);
 
@@ -291,6 +293,8 @@ export async function openPicker(torrent, tmdbId) {
                 }
             }
         }
+    } else {
+
     }
 
     renderPickerUI(torrent, franchiseGroups, title, list, cleanName);
@@ -311,7 +315,7 @@ function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cle
         for (const key of groupKeys) {
             if (key !== mainShowKey && (
                 franchiseGroups[key].files.every(f => f.fileType === 'OVA' || f.fileType === 'Special') ||
-                franchiseGroups[key].files.every(f => f.fileType === 'Theme')
+                franchiseGroups[key].files.every(f => f.isExtra)
             )) {
                 franchiseGroups[mainShowKey].files.push(...franchiseGroups[key].files);
                 delete franchiseGroups[key];
@@ -352,6 +356,8 @@ function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cle
 
         if (seasonFilter === 'themes') {
             filesToRender = showData.files.filter(f => f.fileType === 'Theme');
+        } else if (seasonFilter === 'extras') {
+            filesToRender = showData.files.filter(f => f.fileType === 'Trailer' || f.fileType === 'Extra');
         } else if (seasonFilter === 'ovas') {
             filesToRender = showData.files.filter(f => f.fileType === 'OVA' || f.fileType === 'Special');
         } else {
@@ -376,14 +382,15 @@ function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cle
         }
 
         filesToRender.forEach((fileObj, index) => {
-            const { originalFile, episode, relativeEpisode, displayTitle, displayThumbnail, fileType } = fileObj;
+            const { originalFile, episode, relativeEpisode, displayTitle, displayThumbnail, fileType, fileTypeLabel, isExtra } = fileObj;
 
             let isThemeFile = fileType === 'Theme';
             let isOvaFile = (fileType === 'OVA' || fileType === 'Special');
 
-            let finalCardTitle = displayTitle || originalFile.short_name;
-            let badgeText = isThemeFile ? '🎵 Theme' : (isOvaFile ? '⭐ Special' : `Episode ${relativeEpisode ?? episode ?? (index + 1)}`);
-            let badgeColor = isThemeFile ? 'bg-emerald-600' : (isOvaFile ? 'bg-amber-600' : 'bg-blue-600');
+            let finalCardTitle = displayTitle || originalFile.short_name || originalFile.name.split(/[\\/]/).at(-1);
+            let badgeText = isThemeFile ? `🎵 ${fileTypeLabel || 'Theme'}` : isExtra ? `🎬 ${fileTypeLabel || 'Extra'}`
+                : isOvaFile ? `⭐ ${fileTypeLabel || 'Special'}` : `Episode ${relativeEpisode ?? episode ?? (index + 1)}`;
+            let badgeColor = isExtra ? 'bg-emerald-600' : (isOvaFile ? 'bg-amber-600' : 'bg-blue-600');
 
             const fileSize = (originalFile.size / 1073741824).toFixed(2) + ' GB';
             const fallbackImage = document.getElementById(`img-${torrent.id}`)?.src || '';
@@ -394,7 +401,7 @@ function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cle
 
             card.innerHTML = `
                 <div class="relative aspect-video bg-slate-900 border-b border-slate-700 overflow-hidden">
-                    <img src="${cardImage}" class="w-full h-full object-cover opacity-60 group-hover:opacity-40 transition-opacity">
+                    <img src="${cardImage}" loading="lazy" class="w-full h-full object-cover opacity-60 group-hover:opacity-40 transition-opacity">
                     
                     <div class="absolute inset-0 flex items-center justify-center gap-4 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                         <button data-action="download" class="bg-slate-800/90 hover:bg-slate-700 text-white w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-md transition-colors shadow-xl border border-slate-600" title="Download to Device">
@@ -440,6 +447,7 @@ function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cle
         const showData = franchiseGroups[showKey];
         const hasOvas = showData.files.some(f => f.fileType === 'OVA' || f.fileType === 'Special');
         const hasThemes = showData.files.some(f => f.fileType === 'Theme');
+        const hasExtras = showData.files.some(f => f.fileType === 'Trailer' || f.fileType === 'Extra');
 
         const standardSeasons = [...new Set(showData.files.filter(f => f.fileType === 'TV' || f.fileType === 'Movie').map(f => f.displaySeason || f.season))].sort((a, b) => {
             const numA = parseFloat(a);
@@ -450,8 +458,8 @@ function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cle
             return numA - numB;
         });
 
-        let defaultSelection = standardSeasons.length > 0 ? standardSeasons[0] : (hasOvas ? 'ovas' : 'themes');
-        const totalTabs = standardSeasons.length + (hasOvas ? 1 : 0) + (hasThemes ? 1 : 0);
+        let defaultSelection = standardSeasons.length > 0 ? standardSeasons[0] : hasOvas ? 'ovas' : hasThemes ? 'themes' : 'extras';
+        const totalTabs = standardSeasons.length + (hasOvas ? 1 : 0) + (hasThemes ? 1 : 0) + (hasExtras ? 1 : 0);
 
         if (totalTabs > 1) {
             seasonContainer.innerHTML = `
@@ -462,7 +470,8 @@ function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cle
                 return `<option value="${s}">${displayLabel}</option>`;
             }).join('')}
                     ${hasOvas ? `<option value="ovas">⭐ Specials / OVAs</option>` : ''}
-                    ${hasThemes ? `<option value="themes">🎵 Themes & Extras</option>` : ''}
+                    ${hasThemes ? `<option value="themes">🎵 Openings & Endings</option>` : ''}
+                    ${hasExtras ? `<option value="extras">🎬 Trailers & Extras</option>` : ''}
                 </select>
             `;
 

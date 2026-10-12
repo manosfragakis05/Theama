@@ -9,6 +9,11 @@
  * `episode` are populated only when unambiguous. Use `seasons`, `episodes` and
  * `episodePairs` for packs/multi-episode files. No season 1 is invented for anime.
  * Quality/tier describe filename tags, not measured encoding or audio quality.
+ * `fileType` is an explicit release marker (OVA, OP, TRAILER, etc.), or SPECIAL
+ * for season 0. Mixed releases use `fileTypes` and leave `fileType` null.
+ * `isExtra` identifies credits/promotional/bonus clips, not narrative OVAs.
+ * Numbers on type markers (e.g. NCOP02v2) populate episodes/version without
+ * claiming absolute TV numbering. Parent directory names are never inspected.
  */
 
 const unique = values => [...new Set(values)];
@@ -51,6 +56,7 @@ const TECH_RULES = [
     ['quality', 'DVDRip', 'DVDRip'],
     ['quality', '(?:DVD|BD)SCR', 'Screener'],
     ['quality', 'DVD(?:5|9)?', 'DVD'],
+    ['quality', 'BD', 'BluRay', true],
     ['quality', '(?:HDCAM|CAMRip)', 'CAM'],
     ['quality', '(?:HDTS|TELESYNC)', 'TS'],
     ['quality', '(?:HDTC|TELECINE)', 'TC'],
@@ -108,6 +114,84 @@ function scanTechnical(text) {
     return tags.sort((a, b) => a.start - b.start);
 }
 
+// Specific credit variants precede their shorter aliases. Full words require
+// release-label context so titles like "Opening Night" remain intact.
+const CONTENT_RULES = [
+    ['NCOP', `(?:NC${SEP}OP|(?:creditless|textless|non${SEP}credit(?:ed)?)${SEP}(?:OP|opening))`, 'Creditless Opening'],
+    ['NCED', `(?:NC${SEP}ED|(?:creditless|textless|non${SEP}credit(?:ed)?)${SEP}(?:ED|ending))`, 'Creditless Ending'],
+    ['OVA', 'OVA|OAV', 'OVA'],
+    ['OAD', 'OAD|ODA', 'OAD'],
+    ['ONA', 'ONA', 'ONA'],
+    ['OP', 'OP|opening(?:[ ._-]+(?:theme|credits))?', 'Opening'],
+    ['ED', 'ED|ending(?:[ ._-]+(?:theme|credits))?', 'Ending'],
+    ['SPECIAL', 'SP|specials?', 'Special'],
+    ['PV', 'PV|promotional[ ._-]+video', 'Promotional Video'],
+    ['CM', 'CM|commercials?|TV[ ._-]+spots?', 'Commercial'],
+    ['TRAILER', '(?:official[ ._-]+)?trailers?', 'Trailer'],
+    ['TEASER', '(?:official[ ._-]+)?teasers?', 'Teaser'],
+    ['PROMO', 'promos?', 'Promo'],
+    ['BEHIND_THE_SCENES', 'behind[ ._-]+the[ ._-]+scenes|making[ ._-]+of', 'Behind the Scenes'],
+    ['DELETED_SCENE', 'deleted[ ._-]+scenes?', 'Deleted Scene'],
+    ['FEATURETTE', 'featurettes?', 'Featurette'],
+    ['INTERVIEW', 'interviews?', 'Interview'],
+    ['BLOOPERS', 'bloopers?|outtakes?', 'Bloopers'],
+    ['MUSIC_VIDEO', 'MV|music[ ._-]+video', 'Music Video'],
+    ['THEME', 'theme(?:[ ._-]+song)?', 'Theme'],
+    ['MENU', '(?:(?:BD|DVD)[ ._-]+)?menus?', 'Menu'],
+    ['RECAP', 'recaps?', 'Recap'],
+    ['SAMPLE', 'samples?', 'Sample'],
+    ['EXTRA', 'extras?|bonus(?:[ ._-]+(?:features?|content))?', 'Extra'],
+    ['MOVIE', 'movie|film', 'Movie'],
+];
+const CONTENT_LABELS = Object.fromEntries(CONTENT_RULES.map(([type, , label]) => [type, label]));
+const NARRATIVE_TYPES = new Set(['OVA', 'OAD', 'ONA', 'SPECIAL', 'MOVIE', 'RECAP']);
+const COMPILED_CONTENT_RULES = CONTENT_RULES.map(([type, body]) => ({
+    type,
+    regex: token(`(${body})(?:[ ._-]*(?:No[ .]*|#)?(\\d{1,4})(?:v(\\d+))?)?`),
+}));
+
+function scanContent(text, technical = scanTechnical(text)) {
+    const tags = [];
+    for (const { type, regex } of COMPILED_CONTENT_RULES) {
+        for (const match of text.matchAll(regex)) {
+            const span = at(match);
+            if (tags.some(tag => overlaps(tag, span))) continue;
+            // A label may contain a complete source tag ("DVD Menu"). Do not
+            // match just a fragment of a technical tag, such as an audio codec.
+            if (technical.some(tag => overlaps(tag, span) && !(tag.start >= span.start && tag.end <= span.end))) continue;
+            const before = text.slice(0, span.start);
+            const after = text.slice(span.end);
+            const bracketed = /[\[({][ ._]*$/.test(before) && /^[ ._]*[\])}]/.test(after);
+            const separated = /(?:^|\s)[-–—][ ._]*$/.test(before);
+            const abbreviation = /^(?:NC[ ._-]*(?:OP|ED)|OVA|OAV|OAD|ODA|ONA|OP|ED|SP|PV|CM|MV)$/i.test(match[1]);
+            const nextTag = technical.find(tag => tag.start >= span.end);
+            const tail = text.slice(span.end, nextTag?.start ?? text.length);
+            const atEnd = /^[\s.\-_[\](){}]*$/.test(tail);
+            const hasTitle = /[\p{L}\p{N}]/u.test(before);
+            const followsArticle = /(?:^|[ ._-])(?:a|an|the|of|my|your|happy)[ ._]+$/i.test(before);
+            const followsEpisode = /(?:s\d+[ ._-]*e\d+|\d+x\d+|(?:episode|ep)[ ._-]*\d+| - \d+)\b/i.test(before);
+            // A marker embedded in an episode subtitle is usually ordinary text.
+            // Explicit brackets, a standalone label, or a short numbered code win.
+            const numbered = match[2] !== undefined && !(Number(match[2]) >= 1888 && Number(match[2]) <= 2099);
+            if (!bracketed && !separated) {
+                if (followsArticle || (followsEpisode && !(abbreviation && numbered))) continue;
+                if (!atEnd && !(numbered && hasTitle) && !(abbreviation && hasTitle && match[1] === match[1].toUpperCase())) continue;
+                if (!hasTitle && !atEnd && !abbreviation) continue;
+                // "Movie 43" is a title; [Movie] and "Show - Movie" are labels.
+                if (type === 'MOVIE') continue;
+            }
+            if (!numbered && match[2] !== undefined) span.end = span.start + match[1].length;
+            tags.push({ ...span, type, number: numbered ? Number(match[2]) : null, version: numbered && match[3] ? Number(match[3]) : null });
+        }
+    }
+    return tags.sort((a, b) => a.start - b.start);
+}
+
+function includesMainRelease(text, spans, content) {
+    return content.length > 0 && spans.some(span => span.end <= content[0].start
+        && /[+&]|\b(?:complete|batch|pack)\b/i.test(text.slice(span.end, content[0].start)));
+}
+
 function expandRange(first, last, warnings, kind) {
     if (last < first || last - first + 1 > MAX_RANGE_SIZE) {
         warnings.push(`${kind}-range-${last < first ? 'reversed' : 'too-large'}`);
@@ -137,7 +221,7 @@ function readTail(text, end, first, kind, warnings) {
     return { values: numbers(values), end };
 }
 
-function extractNumbering(text, mode, technical) {
+function extractNumbering(text, mode, technical, content) {
     const warnings = [];
     const spans = [];
     const pairs = [];
@@ -195,6 +279,14 @@ function extractNumbering(text, mode, technical) {
         if (match[2]) version = Number(match[2]);
     }
 
+    // OVA01 / NCOP02 are local sequence numbers. Explicit SxxExx still wins.
+    if (!episodes.length && !(mode === 'torrent' && includesMainRelease(text, spans, content))) {
+        for (const tag of content.filter(tag => tag.number !== null)) {
+            addEpisodes({ index: tag.start }, single(numbers(seasons)), tag.number, tag.end);
+            if (tag.version !== null) version = tag.version;
+        }
+    }
+
     if (!episodes.length) {
         const datePattern = token('(19\\d{2}|20\\d{2})[ ._-](\\d{2})[ ._-](\\d{2})');
         for (const match of text.matchAll(datePattern)) {
@@ -222,13 +314,24 @@ function extractNumbering(text, mode, technical) {
                 if (after.trim() && !/^[ ._]*[-–—]\s*\D/u.test(after) && !(nextTag && /^[\s.\-_[\](){}]*$/.test(gap))) match = null;
             }
         }
+        if (!match && mode === 'file' && !content.length) {
+            // Zero-padded fansub numbering without a dash needs a technical
+            // suffix. Do not turn "Apollo 13" or "Blade Runner 2049" into TV.
+            for (const candidate of text.matchAll(token('(0\\d{1,3})(?:v(\\d+))?'))) {
+                const nextTag = technical.find(tag => tag.start >= at(candidate).end);
+                if (nextTag && /^[\s.\-_[\](){}]*$/.test(text.slice(at(candidate).end, nextTag.start))) {
+                    match = candidate;
+                    break;
+                }
+            }
+        }
         if (match && !technical.some(tag => overlaps(tag, at(match)))) {
             const after = text.slice(at(match).end);
             // Do not mistake a release year or bare trailing sequel number for an episode.
             const number = Number(match[1]);
             const evidence = mode === 'file' || technical.some(tag => tag.start >= at(match).end) || /^\s*[[(]/.test(after);
             if (evidence && !(number >= 1888 && number <= 2099)) {
-                absolute = true;
+                absolute = content.length === 0;
                 addEpisodes(match, single(numbers(seasons)), number);
                 if (match[2]) version = Number(match[2]);
             }
@@ -243,7 +346,7 @@ function extractNumbering(text, mode, technical) {
             const nextTag = technical.find(tag => tag.start >= at(match).end);
             const gap = text.slice(at(match).end, nextTag?.start ?? text.length);
             if (!/^[\s.\-_[\](){}]*(?:END|COMPLETE|BATCH)?[\s.\-_[\](){}]*$/i.test(gap)) continue;
-            absolute = true;
+            absolute = content.length === 0;
             episodes.push(...expandRange(Number(match[1]), Number(match[2]), warnings, 'episode'));
             spans.push({ ...at(match), kind: 'episode' });
             for (const episode of episodes) pairs.push({ season: null, episode });
@@ -349,7 +452,7 @@ function prepareInput(rawString, mode) {
     if (rawString == null) rawString = '';
     if (typeof rawString !== 'string') throw new TypeError('Expected a torrent title or filename string');
     let text = rawString.normalize('NFC').replace(/\u00a0/g, ' ').trim();
-    text = text.split(/\r?\n/).find(line => line.trim())?.trim() ?? '';
+    text = text.split(/\r\n?|\n|\\n/).find(line => line.trim())?.trim() ?? '';
     text = text.replace(/^[\s📁📂📄🎬🎞️]+/u, '');
     if (mode === 'file') text = text.split(/[\\/]/).at(-1);
     // Stream-description footer; never let seeders/size become part of the title.
@@ -364,7 +467,7 @@ function prepareInput(rawString, mode) {
         // Move technical prefix brackets to the metadata tail, preserving their
         // values without letting "[1080p] Movie" produce an empty clean title.
         const language = extractLanguages(match[1]);
-        if (scanTechnical(match[1]).length || language.multi || language.languages.length) prefixMetadata.push(match[1]);
+        if (scanTechnical(match[1]).length || scanContent(`[${match[1]}]`).length || language.multi || language.languages.length) prefixMetadata.push(match[1]);
         else if (!/^(?:REQ|REQUEST|www\.|https?:)/i.test(match[1])) releaseGroup ??= match[1].trim();
         text = text.slice(match[0].length);
     }
@@ -376,9 +479,10 @@ function parseRelease(rawString, mode) {
     const input = prepareInput(rawString, mode);
     const { text } = input;
     const scanned = scanTechnical(text);
-    const numbering = extractNumbering(text, mode, scanned);
-    const yearMatch = findYear(text, numbering, scanned);
-    const structuralStart = Math.min(text.length, yearMatch?.start ?? Infinity, ...numbering.spans.map(s => s.start));
+    const content = scanContent(text, scanned);
+    const numbering = extractNumbering(text, mode, scanned, content);
+    const yearMatch = findYear(text, { spans: [...numbering.spans, ...content] }, scanned);
+    const structuralStart = Math.min(text.length, yearMatch?.start ?? Infinity, ...numbering.spans.map(s => s.start), ...content.map(tag => tag.start));
     const strongStart = Math.min(text.length, ...scanned.filter(tag => !tag.weak && tag.start > 0).map(tag => tag.start));
     const boundary = Math.min(structuralStart, strongStart);
     const technical = scanned.filter(tag => {
@@ -411,7 +515,7 @@ function parseRelease(rawString, mode) {
     }
 
     const titleEnd = Math.min(text.length, yearMatch?.start ?? Infinity,
-        ...numbering.spans.map(s => s.start), ...technical.map(tag => tag.start),
+        ...numbering.spans.map(s => s.start), ...technical.map(tag => tag.start), ...content.map(tag => tag.start),
         ...(mode === 'torrent' ? [completeSeriesMatch?.index ?? Infinity, packMatch?.index ?? Infinity] : []));
     let title = cleanTitle(text.slice(0, titleEnd));
     // Bracketed suffixes after a recognized boundary are intentionally discarded;
@@ -455,13 +559,21 @@ function parseRelease(rawString, mode) {
     if (!releaseGroup && suffix && suffix.index >= titleEnd && !technical.some(tag => overlaps(tag, at(suffix)))) releaseGroup = suffix[1];
     if (videoCodecs.length > 1) warnings.push('multiple-video-codecs');
     if (resolutions.length > 1) warnings.push('multiple-resolutions');
+    const fileTypes = unique(content.map(tag => tag.type));
+    if (!fileTypes.length && season === 0) fileTypes.push('SPECIAL');
+    const mixedContent = mode === 'torrent' && includesMainRelease(text, numbering.spans, content);
+    const fileType = mixedContent ? null : single(fileTypes);
+    const isExtra = !mixedContent && fileTypes.length > 0 && fileTypes.every(type => !NARRATIVE_TYPES.has(type));
+    const isCreditless = fileTypes.some(type => type === 'NCOP' || type === 'NCED')
+        || (fileTypes.some(type => type === 'OP' || type === 'ED') && /\b(?:creditless|textless|non[ ._-]*credit(?:ed)?)\b/i.test(metadataText));
 
     return {
         title, year: yearMatch?.value ?? null, yearRange: yearMatch?.range ?? null,
         season, seasons, episode, episodes, episodePairs: numbering.episodePairs,
         absoluteEpisode: numbering.absolute ? episode : null,
         absoluteEpisodes: numbering.absolute ? [...episodes] : [],
-        date: numbering.date, episodeVersion: numbering.version,
+        date: numbering.date, airDate: numbering.date, episodeVersion: numbering.version,
+        fileType, fileTypes, fileTypeLabel: CONTENT_LABELS[fileType] ?? null, isExtra, isCreditless,
         seasonDetails, isSeasonPack, isEpisodePack, isCompleteSeries, complete,
         resolution: single(resolutions), resolutions,
         quality, qualities, source: { source: remux ? 'Remux' : sourceName ?? 'Unknown', tier: sourceTier },
@@ -493,7 +605,7 @@ export const parseFileData = parseFileTitle;
 export function parseFormated(stream) {
     if (!stream) return;
     const streamName = typeof stream.name === 'string' ? stream.name : '';
-    const streamDesc = stream.description || stream.title || streamName;
+    const streamDesc = [stream.description, stream.title, streamName].find(value => typeof value === 'string' && value.trim()) ?? '';
     const data = parseTorrentTitle(streamDesc);
     const nameTags = scanTechnical(streamName);
     const nameResolution = nameTags.find(tag => tag.kind === 'resolution')?.value;
@@ -501,7 +613,7 @@ export function parseFormated(stream) {
     const seeders = /👤[\s\-:|]*([\d,]+)/u.exec(streamDesc);
     const size = /💾[\s\-:|]*([\d.,]+\s*[KMGT]i?B)/iu.exec(streamDesc);
     // Languages only from the release metadata/footer; never scan the clean title.
-    const footerLanguages = extractLanguages(String(streamDesc).split(/\r?\n/).slice(1).join('\n'));
+    const footerLanguages = extractLanguages(streamDesc.split(/\r\n?|\n|\\n/).filter(line => line.trim()).slice(1).join('\n'));
     const resolution = data.resolution ?? (data.resolutions.length === 0 ? nameResolution : null) ?? null;
     return {
         ...data, isCached,
@@ -512,6 +624,9 @@ export function parseFormated(stream) {
         dynamicRange: data.dynamicRange.length ? data.dynamicRange : unique(nameTags.filter(tag => tag.kind === 'dynamicRange').map(tag => tag.value)),
         languages: unique([...data.languages, ...footerLanguages.languages]),
         multi: footerLanguages.multi ?? data.multi,
+        dualAudio: data.dualAudio || footerLanguages.dualAudio,
+        multiAudio: data.multiAudio || footerLanguages.multiAudio,
+        multiSubs: data.multiSubs || footerLanguages.multiSubs,
     };
 }
 
