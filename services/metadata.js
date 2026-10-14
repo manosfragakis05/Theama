@@ -34,7 +34,6 @@ export async function getPosterForLibrary(tmdbId, type) {
  */
 export async function getTmdbId(title, year, type = 'tv') {
     if (!title) return null;
-    console.log(title, year, type);
 
     // Replace with your actual TMDB API key or fetch from your config
     const apiKey = TMDB_KEY;

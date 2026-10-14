@@ -16,14 +16,14 @@ import { getTmdbSeasonEpisodes, getTmdbShowDetails } from '../services/metadata.
 const SWITCH_WORDS_REGEX = /(?:^|[\s._\-\[\]()])(MOVIE|OVA|OAD|ODA|ONA|SPECIAL|RECAP|SP|OPENING|NCOP|OP|ENDING|NCED|ED|THEME|PROMO|TEASER|TRAILER|PV|CM)(?:S?\d*[a-z]?)?(?=$|[\s._\-\[\]()])/i;
 const EXTENDED_WORDS_REGEX = /(?:^|[\s._\-\[\]()])(EXTEND(?:ED)?(?:[\s._\-]+(?:EDITION|CUT|VERSION|VER))?|DIRECTOR'?S[\s._\-]+(?:EDITION|CUT|VERSION|VER)|UNCUT|UNRATED)(?=$|[\s._\-\[\]()])/i;
 
-function classifyFileType(fileName, fullFileName = '') {
-    const match = fileName.match(SWITCH_WORDS_REGEX) || fullFileName.match(SWITCH_WORDS_REGEX);
+function classifyFileType(fileName) {
+    const match = fileName.match(SWITCH_WORDS_REGEX);
     const matchedWord = match ? match[1].toUpperCase() : 'TV';
     const fileTypeLabel = match
         ? match[0].replace(/^[\s._\-\[\]()]+|[\s._\-\[\]()]+$/g, '').toUpperCase()
         : null;
 
-    const isExtended = EXTENDED_WORDS_REGEX.test(fileName) || EXTENDED_WORDS_REGEX.test(fullFileName);
+    const isExtended = EXTENDED_WORDS_REGEX.test(fileName);
 
     let fileType = 'TV';
 
@@ -88,7 +88,8 @@ function preProcessEpisodeTorrentData(videoFiles, fallbackShowName = 'Season 1')
 
         const rawSeason = parsedFile.seasons?.[0] ?? fullParsed?.seasons?.[0];
         const fileEpisode = parsedFile.episodes?.[0] ?? fullParsed?.episodes?.[0];
-        const { fileType, fileTypeLabel, isExtended } = classifyFileType(fileName, file.name);
+        console.log(parsedFile);
+        const { fileType, fileTypeLabel, isExtended } = classifyFileType(fileName);
 
         // Extract clean season/show name if no season number exists
         let candidateTitle = (parsedFile.title || fullParsed?.title || fallbackShowName).trim();
@@ -239,6 +240,7 @@ function preProcessEpisodeTorrentData(videoFiles, fallbackShowName = 'Season 1')
         group.episodeCount = group.files.length;
     }
 
+    console.log(franchiseGroups);
     return franchiseGroups;
 }
 //#endregion
@@ -256,20 +258,12 @@ export async function openPicker(torrent, tmdbId) {
     const baseInfo = parseMediaData(torrent.name);
     const cleanName = baseInfo.title.replace(/(^\w|[\s-]\w)/g, m => m.toUpperCase());
 
-    console.log(torrent);
-
     const franchiseGroups = preProcessEpisodeTorrentData(videoFiles, cleanName);
 
     // We only process TMDB metadata if we have a valid ID
+    // We only process TMDB metadata if we have a valid ID
     if (tmdbId) {
-        const animeData = await fetchAnimeMapping(tmdbId);
         const showDetails = await getTmdbShowDetails(tmdbId);
-
-        if (animeData) {
-            const isAbsoluteAnime = Object.values(franchiseGroups).some(group =>
-                group.fileType === 'TV' && group.files.some(f => f.tmdbSeason == 1 && parseInt(f.episode) > 30)
-            );
-        }
 
         if (showDetails && showDetails.seasons) {
             const showBackdrop = showDetails.backdrop_path
@@ -277,31 +271,107 @@ export async function openPicker(torrent, tmdbId) {
                 : null;
 
             const seasonCache = {};
+            const aniZipCache = {};
+            let animeData = null; // Only fetched if a season is missing on TMDB
 
             for (const groupKey in franchiseGroups) {
                 const group = franchiseGroups[groupKey];
 
-                for (const file of group.files) {
-                    if (file.fileType !== 'TV') {
+                if (group.fileType !== 'TV') {
+                    for (const file of group.files) {
                         file.displayThumbnail = showBackdrop;
-                        continue;
+                    }
+                    continue;
+                }
+
+                const tmdbSeasonObj = showDetails.seasons.find(
+                    s => s.season_number === group.tmdbSeason && s.episode_count > 0
+                );
+                const tmdbHasSeason = Boolean(tmdbSeasonObj);
+
+                let aniZipData = null;
+
+                // Only ask the proxy + AniZip if TMDB does not have this season
+                if (!tmdbHasSeason) {
+                    if (!animeData) {
+                        animeData = await fetchAnimeMapping(tmdbId);
                     }
 
+                    const matches = animeData?.data?.matches || animeData?.matches || [];
+                    const matchedSeason = matches.find(
+                        m => m.season?.tvdb === group.tmdbSeason || m.season?.tmdb === group.tmdbSeason
+                    ) || matches[group.seasonOrder - 1];
+
+                    const anilistId = matchedSeason?.anilist_id;
+                    if (anilistId) {
+                        if (!aniZipCache[anilistId]) {
+                            const res = await fetch(`https://api.ani.zip/mappings?anilist_id=${anilistId}`);
+                            aniZipCache[anilistId] = await res.json();
+                        }
+                        aniZipData = aniZipCache[anilistId];
+                    }
+                }
+
+                for (const file of group.files) {
                     let fetchSeason = file.tmdbSeason;
                     let targetEp = parseInt(file.episode);
+                    let badgeEp = targetEp;
+                    let isSplitOverflow = false;
+
+                    if (!tmdbHasSeason) {
+                        // CASE 1: Packed Season — TMDB doesn't have this season, use AniZip only
+                        const aniEp = aniZipData?.episodes?.[targetEp];
+                        if (aniEp?.absoluteEpisodeNumber) {
+                            const tmdbMapped = mapAbsoluteToTmdbRelative(
+                                aniEp.absoluteEpisodeNumber,
+                                showDetails.seasons
+                            );
+
+                            if (tmdbMapped) {
+                                fetchSeason = tmdbMapped.targetSeason;
+                                targetEp = tmdbMapped.relativeEp;
+                                badgeEp = aniEp.episodeNumber ?? badgeEp;
+                            }
+                        }
+                    } else if (tmdbSeasonObj && targetEp > tmdbSeasonObj.episode_count) {
+                        // CASE 2: Split Season — TMDB has the season, but split it into later seasons (e.g., HxH)
+                        const startsRelative = group.files.some(f => parseInt(f.episode) === 1);
+                        const priorEpisodesOffset = startsRelative
+                            ? showDetails.seasons
+                                .filter(s => s.season_number > 0 && s.season_number < group.tmdbSeason)
+                                .reduce((sum, s) => sum + s.episode_count, 0)
+                            : 0;
+
+                        const tmdbMapped = mapAbsoluteToTmdbRelative(
+                            priorEpisodesOffset + targetEp,
+                            showDetails.seasons
+                        );
+
+                        if (tmdbMapped) {
+                            fetchSeason = tmdbMapped.targetSeason;
+                            targetEp = tmdbMapped.relativeEp;
+                            isSplitOverflow = true;
+                        }
+                    }
 
                     if (!seasonCache[fetchSeason]) {
                         seasonCache[fetchSeason] = (await getTmdbSeasonEpisodes(tmdbId, fetchSeason)) || [];
                     }
 
-                    const tmdbEpData = seasonCache[fetchSeason].find(ep => ep.episode_number === targetEp);
+                    // Packed & normal seasons match strictly on `targetEp` (e.g. Ep 13);
+                    // only split-season overflows fall back to `badgeEp` (e.g. Ep 63)
+                    const tmdbEpData = seasonCache[fetchSeason].find(ep =>
+                        isSplitOverflow
+                            ? (ep.episode_number === targetEp || ep.episode_number === badgeEp)
+                            : ep.episode_number === targetEp
+                    );
 
                     if (tmdbEpData) {
                         file.displayTitle = tmdbEpData.name;
                         file.displayThumbnail = tmdbEpData.still_path
                             ? `https://image.tmdb.org/t/p/w500${tmdbEpData.still_path}`
                             : showBackdrop;
-                        file.relativeEpisode = targetEp;
+                        file.relativeEpisode = badgeEp;
                     } else if (showBackdrop) {
                         file.displayThumbnail = showBackdrop;
                     }

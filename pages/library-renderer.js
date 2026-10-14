@@ -1,4 +1,4 @@
-export function createLibraryCard( title, poster, isSingle = false, size ) {
+export function createLibraryCard( title, poster, mediaText = "Series", size ) {
     const card = document.getElementById('library-card-template').content.firstElementChild.cloneNode(true);
     const image = card.querySelector('.library-poster');
     const fallback = card.querySelector('.library-fallback');
@@ -7,8 +7,12 @@ export function createLibraryCard( title, poster, isSingle = false, size ) {
     fallback.textContent = title;
     image.alt = title;
 
-    card.querySelector('.library-type').textContent = isSingle ? 'Movie' : 'Series';
-    card.querySelector('[data-action="download"]').classList.toggle('hidden', !isSingle);
+    card.querySelector('.library-type').textContent = mediaText;
+    if(mediaText == "Movie" || mediaText == "Single Episode") {
+        card.querySelector('[data-action="download"]').classList.remove('hidden');
+    } else {
+        card.querySelector('[data-action="download"]').classList.add('hidden');
+    }
 
     image.addEventListener('error', () => {
         image.classList.add('hidden');

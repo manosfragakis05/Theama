@@ -259,8 +259,8 @@ async function fetchMainMetadata(items) {
 
         // Pass main folder title
         const mediaInfo = parseMediaData(torrent.name);
-        // An opening/trailer may sort before the actual episodes. Inspect file
-        // basenames and ignore bonus numbering when deciding the metadata type.
+
+        // Check if its type based on seasons found
         const hasSeason = (mediaInfo.seasons?.length || 0) > 0 || allFiles.some(file => {
             const parsed = parseMediaData(file.short_name || file.name);
             return !parsed.isExtra && parsed.fileType !== 'MOVIE'
@@ -268,10 +268,17 @@ async function fetchMainMetadata(items) {
         });
         const cleanName = mediaInfo.title.replace(/(^\w|[\s-]\w)/g, m => m.toUpperCase());
 
+        let mediaText = "";
+        
+        if(!isSingle && hasSeason) mediaText = "Series";
+        if(isSingle && hasSeason) mediaText = "Single Episode";
+        if(isSingle && !hasSeason) mediaText = "Movie";
+        if(!isSingle && !hasSeason) mediaText = "Collection";
+
         const item = {
             torrent: torrent,
             name: cleanName,
-            isSingle: isSingle,
+            mediaText: mediaText,
             size: torrent.size
         };
 
@@ -343,7 +350,7 @@ function renderItem(item) {
     const card = createLibraryCard(
         item.name,
         item.poster,
-        item.isSingle,
+        item.mediaText,
         item.size
     );
 
@@ -383,12 +390,13 @@ function renderItem(item) {
         appState.clickCooldown = true;
         setTimeout(() => appState.clickCooldown = false, 2000);
 
-        if (!item.isSingle) {
-            openPicker(t, item.tmdbId?.id);
-        } else {
+
+        if (item.mediaText == "Movie" || item.mediaText == "Single Episode") {
             playableFile
                 ? requestLink(t.id, playableFile.id, t.name, playableFile.name)
                 : showToast("No playable files found.", "error");
+        } else {
+            openPicker(t, item.tmdbId?.id);
         }
     });
 
