@@ -83,7 +83,7 @@ export async function loadAppLibrary() {
     try {
         const items = await fetchAppLibraryData();
         if (userId !== appState.currentUser?.id) return;
-        renderAppLibrary(items);
+        //renderAppLibrary(items);
     } catch (error) {
         if (userId !== appState.currentUser?.id) return;
         console.error('App library load failed:', error);

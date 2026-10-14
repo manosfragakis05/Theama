@@ -6,82 +6,110 @@
  */
 
 import { appState, showToast } from '../services/config.js';
-import { parseFileData, parseMediaData } from '../utils/parseMedia.js';
+import { parseMediaData } from '../utils/parseMedia.js';
 import { requestLink } from './player.js';
 import { fetchAnimeMapping } from '../api.js';
 import { downloadFile } from '../pages/library.js';
-
-// Import the "Brain" functions we built in metadata.js
-import {
-    getAnilistIdFromText,
-    getDirectSequel,
-    processKitsuFallback
-} from '../services/metadata.js';
-
+import { getTmdbSeasonEpisodes, getTmdbShowDetails } from '../services/metadata.js';
 
 //#region Data Grouping
+const SWITCH_WORDS_REGEX = /(?:^|[\s._\-\[\]()])(MOVIE|OVA|OAD|ODA|ONA|SPECIAL|RECAP|SP|OPENING|NCOP|OP|ENDING|NCED|ED|THEME|PROMO|TEASER|TRAILER|PV|CM)(?:S?\d*[a-z]?)?(?=$|[\s._\-\[\]()])/i;
+
 function preProcessEpisodeTorrentData(videoFiles) {
     const franchiseGroups = {};
 
+    const groupLabels = {
+        'TV': (s) => `Season ${s}`,
+        'Movie': (s) => `🎥 Season ${s} - Movies`,
+        'OVA': (s) => `⭐ Season ${s} - OVAs`,
+        'Special': (s) => `⭐ Season ${s} - Specials`,
+        'Theme': (s) => `🎵 Season ${s} - Openings & Endings`,
+        'Trailer': (s) => `🎬 Season ${s} - Trailers & Extras`
+    };
+
     videoFiles.forEach(file => {
-        const fileData = parseFileData(file.name);
+        // Short name only has this episode's data
+        const fileName = file.short_name || file.name;
+        const parsedFile = parseMediaData(fileName);
 
-        console.log(fileData);
+        let fileSeason = parsedFile.seasons?.[0];
+        if (fileSeason === undefined && file.name && file.name !== fileName) {
+            fileSeason = parseMediaData(file.name)?.seasons?.[0];
+        }
+        if (fileSeason === undefined) {
+            fileSeason = 1;
+        }
 
-        let mergedInfo = {
-            title: fileData.title,
-            episode: fileData.episode ?? null,
-            season: fileData.season ?? 1,
-            year: parseInt(fileData.year || fileData.airDate, 10) || null,
-            fileType: fileData.fileType || ''
-        };
-
+        let fileEpisode = parsedFile.episodes?.[0];
         const sizeInMB = file.size / (1024 * 1024);
-        const fileType = mergedInfo.fileType.toUpperCase();
-        let finalFileType = fileData.isExtra ? 'Extra' : 'TV';
 
-        switch (fileType) {
-            case 'MOVIE': finalFileType = 'Movie'; break;
+        // Look in fileName (fallback to full file.name) for any of the switch words
+        const match = fileName.match(SWITCH_WORDS_REGEX) || file.name.match(SWITCH_WORDS_REGEX);
+        const matchedWord = match ? match[1].toUpperCase() : 'TV';
+        const fileTypeLabel = match
+            ? match[0].replace(/^[\s._\-\[\]()]+|[\s._\-\[\]()]+$/g, '').toUpperCase()
+            : null;
+
+        let fileType = 'TV';
+
+        switch (matchedWord) {
+            case 'MOVIE':
+                fileType = 'Movie';
+                break;
             case 'OVA':
             case 'OAD':
             case 'ODA':
-            case 'ONA': finalFileType = 'OVA'; break;
+            case 'ONA':
+                fileType = 'OVA';
+                break;
             case 'SPECIAL':
             case 'RECAP':
-            case 'SP': finalFileType = 'Special'; break;
+            case 'SP':
+                fileType = 'Special';
+                break;
             case 'OP':
             case 'OPENING':
             case 'NCOP':
             case 'ED':
             case 'ENDING':
             case 'NCED':
-            case 'THEME': finalFileType = 'Theme'; break;
+            case 'THEME':
+                fileType = 'Theme';
+                break;
             case 'PV':
             case 'PROMO':
             case 'TEASER':
             case 'CM':
-            case 'TRAILER': finalFileType = 'Trailer'; break;
+            case 'TRAILER':
+                fileType = 'Trailer';
+                break;
             case 'TV':
-                finalFileType = 'TV'; break;
+            default:
+                fileType = 'TV';
+                break;
         }
 
-        const cleanTitle = mergedInfo.title.toLowerCase().trim();
+        // Pack all files with the same season and main fileType together
+        const groupKey = `S${fileSeason}_${fileType}`;
 
-        if (!franchiseGroups[cleanTitle]) {
-            franchiseGroups[cleanTitle] = {
-                title: mergedInfo.title,
+        if (!franchiseGroups[groupKey]) {
+            franchiseGroups[groupKey] = {
+                title: groupLabels[fileType] ? groupLabels[fileType](fileSeason) : `Season ${fileSeason} (${fileType})`,
+                season: Number(fileSeason),
+                fileType: fileType,
                 files: []
             };
         }
 
-        franchiseGroups[cleanTitle].files.push({
+        franchiseGroups[groupKey].files.push({
             originalFile: file,
-            season: mergedInfo.season,
-            episode: mergedInfo.episode,
-            year: mergedInfo.year,
-            fileType: finalFileType,
-            fileTypeLabel: fileData.fileTypeLabel,
-            isExtra: fileData.isExtra,
+            fileTitle: parsedFile.title,
+            year: parsedFile.year,
+            season: Number(fileSeason),
+            episode: fileEpisode,
+            fileType: fileType,
+            fileTypeLabel: fileTypeLabel || fileType,
+            isExtra: fileType === 'Trailer',
             sizeMB: sizeInMB.toFixed(2)
         });
     });
@@ -101,203 +129,84 @@ export async function openPicker(torrent, tmdbId) {
     const title = document.getElementById('picker-title');
 
     picker.classList.remove('hidden');
-
-    list.innerHTML = `
-        <div class="col-span-full flex justify-center p-10">
-            <svg class="animate-spin h-8 w-8 text-blue-500" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-        </div>
-    `;
+    list.innerHTML = `<div class="col-span-full flex justify-center p-10">...Loading Spinner...</div>`;
 
     const videoFiles = torrent.files.filter(f => f.name.match(/\.(mkv|mp4|avi|mov)$/i));
     const baseInfo = parseMediaData(torrent.name);
-
-    console.log(baseInfo);
     const cleanName = baseInfo.title.replace(/(^\w|[\s-]\w)/g, m => m.toUpperCase());
 
-    if (!tmdbId) {
-        console.log("Fetched TMDB id from fallback");
-    }
+    const franchiseGroups = preProcessEpisodeTorrentData(videoFiles);
 
-    let animeIds = null;
+    // Process TMDB metadata if we have a valid ID
     if (tmdbId) {
-        try {
-            animeIds = await fetchAnimeMapping(tmdbId);
-            console.log(animeIds);
-        } catch (e) {
-            console.error("API failed to find anime mappings:", e);
-        }
-    }
+        const animeData = await fetchAnimeMapping(tmdbId);
+        const showDetails = await getTmdbShowDetails(tmdbId);
 
-    const franchiseGroups = await preProcessEpisodeTorrentData(videoFiles);
-    console.log(franchiseGroups);
-
-    const titledEpisodes = Object.keys(franchiseGroups).filter(key => {
-        const group = franchiseGroups[key];
-        return group.files.length <= 2 && group.files.some(f => f.fileType === "TV");
-    });
-
-    titledEpisodes.forEach(key => {
-        const group = franchiseGroups[key];
-        const sampleFile = group.files[0];
-        const pathParts = sampleFile.originalFile.name.split('/');
-        const isFlatDirectory = pathParts.length === 1;
-
-        let realTitle = cleanName;
-
-        if (!isFlatDirectory) {
-            const parentFolder = pathParts[pathParts.length - 2];
-            const folderData = parseMediaData(parentFolder);
-            realTitle = folderData.title || cleanName;
+        if (animeData) {
+            const isAbsoluteAnime = Object.values(franchiseGroups).some(group =>
+                group.fileType === 'TV' && group.files.some(f => f.season == 1 && parseInt(f.episode) > 30)
+            );
         }
 
-        const realTitleKey = realTitle.toLowerCase().trim();
+        if (showDetails && showDetails.seasons) {
+            const showBackdrop = showDetails.backdrop_path
+                ? `https://image.tmdb.org/t/p/w500${showDetails.backdrop_path}`
+                : null;
 
-        if (realTitleKey !== key) {
-            if (!franchiseGroups[realTitleKey]) {
-                franchiseGroups[realTitleKey] = {
-                    title: realTitle,
-                    files: []
-                };
-            }
-            franchiseGroups[realTitleKey].files.push(...group.files);
-            delete franchiseGroups[key];
-        }
-    });
+            const seasonCache = {};
 
-    if (animeIds) {
-        for (const groupKey in franchiseGroups) {
-            const group = franchiseGroups[groupKey];
-            group.seasonTitles = {};
+            for (const groupKey in franchiseGroups) {
+                const group = franchiseGroups[groupKey];
 
-            const searchableFiles = group.files.filter(f => f.fileType === 'TV' || f.fileType === 'Movie' || f.fileType === 'OVA');
-            const uniqueSeasons = [...new Set(searchableFiles.map(f => f.season))].sort((a, b) => a - b);
-            const coreSeasons = [...new Set(group.files.filter(f => f.fileType === 'TV' || f.fileType === 'Movie').map(f => f.season))].sort((a, b) => a - b);
-            const isSingleSeasonOne = coreSeasons.length === 1 && (coreSeasons[0] === 1 || coreSeasons[0] === '1');
+                for (const file of group.files) {
+                    if (file.fileType !== 'TV') {
+                        file.displayThumbnail = showBackdrop;
+                        continue;
+                    }
 
-            for (const season of uniqueSeasons) {
-                const targetFile = searchableFiles.find(f => f.season === season);
-                let searchString = group.title;
+                    let fetchSeason = file.season;
+                    let targetEp = parseInt(file.episode);
 
-                if (season > 1 && targetFile.fileType === 'TV') {
-                    searchString += ` Season ${season}`;
-                }
+                    if (!seasonCache[fetchSeason]) {
+                        seasonCache[fetchSeason] = (await getTmdbSeasonEpisodes(tmdbId, fetchSeason)) || [];
+                    }
 
-                let aniListMatch = await getAnilistIdFromText(searchString);
-                console.log(aniListMatch);
-                let currentEpisodeCount = null;
-                
-                if (!aniListMatch) {
-                    let polishedString = searchString.replace(/(Movie)\s*\d*\s*-?\s*/gi, '').trim();
-                    aniListMatch = await getAnilistIdFromText(polishedString);
-                }
-                
-                if (aniListMatch && aniListMatch.title) {
-                    group.seasonTitles[season] = aniListMatch.title;
-                    currentEpisodeCount = aniListMatch.officialEpisodeCount;
-                }
-                
-                let finalAnilistId = aniListMatch?.id;
-                console.log(aniListMatch);
-                const seasonFiles = group.files.filter(f => f.season === season && !f.isExtra);
+                    const tmdbEpData = seasonCache[fetchSeason].find(ep => ep.episode_number === targetEp);
 
-                seasonFiles.forEach(file => {
-                    file.displayTitle = null;
-                    file.displayThumbnail = null;
-                    file.displaySeason = file.season;
-                    file.relativeEpisode = null;
-                    file.metadataSource = "None";
-                });
-
-                if (finalAnilistId) {
-                    try {
-                        const azRes = await fetch(`https://api.ani.zip/mappings?anilist_id=${finalAnilistId}`);
-                        if (azRes.ok) {
-                            const azData = await azRes.json();
-                            const epDict = azData.episodes || {};
-
-                            seasonFiles.forEach(file => {
-                                if (file.episode !== null) {
-                                    const epInt = parseInt(file.episode, 10);
-                                    const epArray = Object.values(epDict);
-                                    let matchedEp = null;
-
-                                    if (isSingleSeasonOne && (file.season === 1)) {
-                                        matchedEp = epDict[epInt];
-                                    } else {
-                                        matchedEp = epArray.find(ep => ep.episodeNumber === epInt) ||
-                                            epArray.find(ep => ep.absoluteEpisodeNumber === epInt) ||
-                                            epArray.find(ep => ep.episode === epInt.toString());
-                                    }
-
-                                    if (matchedEp && matchedEp.seasonNumber == file.season) {
-                                        file.displayTitle = matchedEp.title?.en || matchedEp.title?.xIdx;
-                                        file.displayThumbnail = matchedEp.image;
-                                        file.relativeEpisode = matchedEp.episodeNumber;
-                                    }
-                                }
-                            });
-
-                            const otherPart = seasonFiles.filter(f => {
-                                if (f.displayTitle) return false;
-                                if (f.episode === null) return true;
-                                if (f.fileType === 'TV') {
-                                    const epInt = parseInt(f.episode, 10);
-                                    return currentEpisodeCount && epInt > currentEpisodeCount;
-                                }
-                                return false;
-                            });
-
-                            if (otherPart.length > 0) {
-                                const sequelData = await getDirectSequel(finalAnilistId);
-                                if (sequelData) {
-                                    try {
-                                        const sequelAzRes = await fetch(`https://api.ani.zip/mappings?anilist_id=${sequelData.id}`);
-                                        group.seasonTitles[`${season} (Part 2)`] = sequelData.title;
-                                        if (sequelAzRes.ok) {
-                                            const sequelAzData = await sequelAzRes.json();
-                                            const sequelEpArray = Object.values(sequelAzData.episodes || {});
-
-                                            otherPart.forEach(file => {
-                                                if (file.episode !== null) {
-                                                    const localEpInt = parseInt(file.episode, 10);
-                                                    const matchedEp = sequelEpArray.find(ep => ep.absoluteEpisodeNumber === localEpInt || ep.episodeNumber === localEpInt);
-
-                                                    if (matchedEp) {
-                                                        file.displayTitle = matchedEp.title?.en || matchedEp.title?.xIdx;
-                                                        file.displayThumbnail = matchedEp.image;
-                                                        file.relativeEpisode = matchedEp.episodeNumber;
-                                                        file.displaySeason = `${season} (Part 2)`;
-                                                    }
-                                                } else {
-                                                    file.displaySeason = `${season} (Part 2)`;
-                                                }
-                                            });
-                                        }
-                                    } catch (e) {
-                                        console.warn(`⚠️ AniZip Sequel fetch failed for ID: ${sequelData.id}`);
-                                    }
-                                }
-                            }
-                        }
-                    } catch (e) {
-                        console.warn(`⚠️ AniZip fetch failed for ID: ${finalAnilistId}`);
+                    if (tmdbEpData) {
+                        file.displayTitle = tmdbEpData.name;
+                        file.displayThumbnail = tmdbEpData.still_path
+                            ? `https://image.tmdb.org/t/p/w500${tmdbEpData.still_path}`
+                            : showBackdrop;
+                        file.relativeEpisode = targetEp;
+                        file.displaySeason = fetchSeason;
+                    } else if (showBackdrop) {
+                        file.displayThumbnail = showBackdrop;
                     }
                 }
-
-                const kitsuQueue = seasonFiles.filter(f => !finalAnilistId || !f.displayTitle || !f.displayThumbnail);
-                if (kitsuQueue.length > 0) {
-                    await processKitsuFallback(kitsuQueue, group.title, season, animeIds?.kitsuId);
-                }
             }
         }
-    } else {
-
     }
 
     renderPickerUI(torrent, franchiseGroups, title, list, cleanName);
+}
+
+function mapAbsoluteToTmdbRelative(absoluteEp, tmdbSeasons) {
+    const normalSeasons = tmdbSeasons
+        .filter(s => s.season_number > 0)
+        .sort((a, b) => a.season_number - b.season_number);
+
+    let epCounter = 0;
+    for (const season of normalSeasons) {
+        if (absoluteEp <= epCounter + season.episode_count) {
+            return {
+                targetSeason: season.season_number,
+                relativeEp: absoluteEp - epCounter
+            };
+        }
+        epCounter += season.episode_count;
+    }
+    return null;
 }
 
 export function closePicker() {
@@ -307,33 +216,23 @@ export function closePicker() {
 
 //#region UI Rendering
 function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cleanName) {
-    console.log(cleanName);
-    const groupKeys = Object.keys(franchiseGroups);
-    const mainShowKey = groupKeys[0];
+    const typePriority = {
+        'TV': 1,
+        'Movie': 2,
+        'OVA': 3,
+        'Special': 4,
+        'Theme': 5,
+        'Trailer': 6
+    };
 
-    if (mainShowKey && groupKeys.length > 1) {
-        for (const key of groupKeys) {
-            if (key !== mainShowKey && (
-                franchiseGroups[key].files.every(f => f.fileType === 'OVA' || f.fileType === 'Special') ||
-                franchiseGroups[key].files.every(f => f.isExtra)
-            )) {
-                franchiseGroups[mainShowKey].files.push(...franchiseGroups[key].files);
-                delete franchiseGroups[key];
-            }
-        }
-    }
-
-    const uniqueShows = Object.keys(franchiseGroups);
-    let currentShowKey = uniqueShows[0];
-
-    let showSelectorHTML = '';
-    if (uniqueShows.length > 1) {
-        showSelectorHTML = `
-            <select id="library-show-select" class="bg-slate-800 text-sm font-bold text-blue-400 border border-slate-600 rounded-lg p-1.5 outline-none cursor-pointer shadow-lg">
-                ${uniqueShows.map(key => `<option value="${key}">${franchiseGroups[key].title}</option>`).join('')}
-            </select>
-        `;
-    }
+    // Sort groups so TV seasons appear first in ascending order, followed by Movies, OVAs, Specials, Themes, Trailers
+    const sortedGroupKeys = Object.keys(franchiseGroups).sort((keyA, keyB) => {
+        const groupA = franchiseGroups[keyA];
+        const groupB = franchiseGroups[keyB];
+        const typeDiff = (typePriority[groupA.fileType] || 99) - (typePriority[groupB.fileType] || 99);
+        if (typeDiff !== 0) return typeDiff;
+        return (groupA.season || 0) - (groupB.season || 0);
+    });
 
     titleElement.innerHTML = `
         <div class="flex flex-wrap items-center w-full gap-3 overflow-hidden px-1">
@@ -341,7 +240,6 @@ function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cle
                 ${cleanName}
             </span> 
             <div class="flex flex-wrap items-center gap-2">
-                ${showSelectorHTML}
                 <div id="season-dropdown-container"></div>
             </div>
         </div>
@@ -349,25 +247,16 @@ function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cle
 
     const seasonContainer = document.getElementById('season-dropdown-container');
 
-    const renderSeason = (showKey, seasonFilter) => {
+    const renderGroup = (groupKey) => {
         listElement.replaceChildren();
-        const showData = franchiseGroups[showKey];
-        let filesToRender = [];
+        const groupData = franchiseGroups[groupKey];
 
-        if (seasonFilter === 'themes') {
-            filesToRender = showData.files.filter(f => f.fileType === 'Theme');
-        } else if (seasonFilter === 'extras') {
-            filesToRender = showData.files.filter(f => f.fileType === 'Trailer' || f.fileType === 'Extra');
-        } else if (seasonFilter === 'ovas') {
-            filesToRender = showData.files.filter(f => f.fileType === 'OVA' || f.fileType === 'Special');
-        } else {
-            filesToRender = showData.files.filter(f =>
-                String(f.displaySeason || f.season) === String(seasonFilter) &&
-                (f.fileType === 'TV' || f.fileType === 'Movie')
-            );
+        if (!groupData || groupData.files.length === 0) {
+            listElement.innerHTML = `<div class="col-span-full text-center text-slate-400 py-10">No files found for this category.</div>`;
+            return;
         }
 
-        filesToRender.sort((a, b) => {
+        const filesToRender = [...groupData.files].sort((a, b) => {
             const valA = parseInt(a.episode);
             const valB = parseInt(b.episode);
             if (isNaN(valA) && isNaN(valB)) {
@@ -376,21 +265,31 @@ function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cle
             return (isNaN(valA) ? 9999 : valA) - (isNaN(valB) ? 9999 : valB);
         });
 
-        if (filesToRender.length === 0) {
-            listElement.innerHTML = `<div class="col-span-full text-center text-slate-400 py-10">No files found for this category.</div>`;
-            return;
-        }
-
         filesToRender.forEach((fileObj, index) => {
             const { originalFile, episode, relativeEpisode, displayTitle, displayThumbnail, fileType, fileTypeLabel, isExtra } = fileObj;
 
-            let isThemeFile = fileType === 'Theme';
-            let isOvaFile = (fileType === 'OVA' || fileType === 'Special');
+            const isThemeFile = fileType === 'Theme';
+            const isOvaFile = fileType === 'OVA' || fileType === 'Special';
+            const isMovieFile = fileType === 'Movie';
 
-            let finalCardTitle = displayTitle || originalFile.short_name || originalFile.name.split(/[\\/]/).at(-1);
-            let badgeText = isThemeFile ? `🎵 ${fileTypeLabel || 'Theme'}` : isExtra ? `🎬 ${fileTypeLabel || 'Extra'}`
-                : isOvaFile ? `⭐ ${fileTypeLabel || 'Special'}` : `Episode ${relativeEpisode ?? episode ?? (index + 1)}`;
-            let badgeColor = isExtra ? 'bg-emerald-600' : (isOvaFile ? 'bg-amber-600' : 'bg-blue-600');
+            const finalCardTitle = displayTitle || originalFile.short_name || originalFile.name.split(/[\\/]/).at(-1);
+            const badgeText = isThemeFile
+                ? `🎵 ${fileTypeLabel || 'Theme'}`
+                : isExtra
+                    ? `🎬 ${fileTypeLabel || 'Trailer'}`
+                    : isOvaFile
+                        ? `⭐ ${fileTypeLabel || fileType}`
+                        : isMovieFile
+                            ? `🎥 ${fileTypeLabel || 'Movie'}`
+                            : `Episode ${relativeEpisode ?? episode ?? (index + 1)}`;
+
+            const badgeColor = isExtra
+                ? 'bg-emerald-600'
+                : isOvaFile
+                    ? 'bg-amber-600'
+                    : isThemeFile
+                        ? 'bg-purple-600'
+                        : 'bg-blue-600';
 
             const fileSize = (originalFile.size / 1073741824).toFixed(2) + ' GB';
             const fallbackImage = document.getElementById(`img-${torrent.id}`)?.src || '';
@@ -434,7 +333,8 @@ function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cle
                 if (btn) return;
 
                 if (appState.clickCooldown) return;
-                appState.clickCooldown = true; setTimeout(() => appState.clickCooldown = false, 2000);
+                appState.clickCooldown = true;
+                setTimeout(() => appState.clickCooldown = false, 2000);
                 closePicker();
                 requestLink(torrent.id, originalFile.id, torrent.name, originalFile.name);
             };
@@ -443,55 +343,24 @@ function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cle
         });
     };
 
-    const updateSeasonDropdown = (showKey) => {
-        const showData = franchiseGroups[showKey];
-        const hasOvas = showData.files.some(f => f.fileType === 'OVA' || f.fileType === 'Special');
-        const hasThemes = showData.files.some(f => f.fileType === 'Theme');
-        const hasExtras = showData.files.some(f => f.fileType === 'Trailer' || f.fileType === 'Extra');
+    if (sortedGroupKeys.length > 1) {
+        seasonContainer.innerHTML = `
+            <select id="library-season-select" class="bg-slate-800 text-sm font-bold text-slate-200 border border-slate-600 rounded-lg p-1.5 outline-none cursor-pointer shadow-lg max-w-[220px] md:max-w-xs truncate">
+                ${sortedGroupKeys.map(key => `<option value="${key}">${franchiseGroups[key].title}</option>`).join('')}
+            </select>
+        `;
 
-        const standardSeasons = [...new Set(showData.files.filter(f => f.fileType === 'TV' || f.fileType === 'Movie').map(f => f.displaySeason || f.season))].sort((a, b) => {
-            const numA = parseFloat(a);
-            const numB = parseFloat(b);
-            if (numA === numB) {
-                return a.toString().localeCompare(b.toString());
-            }
-            return numA - numB;
+        document.getElementById('library-season-select').addEventListener('change', (e) => {
+            renderGroup(e.target.value);
         });
-
-        let defaultSelection = standardSeasons.length > 0 ? standardSeasons[0] : hasOvas ? 'ovas' : hasThemes ? 'themes' : 'extras';
-        const totalTabs = standardSeasons.length + (hasOvas ? 1 : 0) + (hasThemes ? 1 : 0) + (hasExtras ? 1 : 0);
-
-        if (totalTabs > 1) {
-            seasonContainer.innerHTML = `
-                <select id="library-season-select" class="bg-slate-800 text-sm font-bold text-slate-200 border border-slate-600 rounded-lg p-1.5 outline-none cursor-pointer shadow-lg max-w-[180px] md:max-w-xs truncate">
-                    ${standardSeasons.map(s => {
-                const customTitle = showData.seasonTitles?.[s];
-                const displayLabel = customTitle ? customTitle : `Season ${s}`;
-                return `<option value="${s}">${displayLabel}</option>`;
-            }).join('')}
-                    ${hasOvas ? `<option value="ovas">⭐ Specials / OVAs</option>` : ''}
-                    ${hasThemes ? `<option value="themes">🎵 Openings & Endings</option>` : ''}
-                    ${hasExtras ? `<option value="extras">🎬 Trailers & Extras</option>` : ''}
-                </select>
-            `;
-
-            document.getElementById('library-season-select').addEventListener('change', (e) => {
-                renderSeason(showKey, e.target.value);
-            });
-        } else {
-            seasonContainer.innerHTML = '';
-        }
-
-        renderSeason(showKey, defaultSelection);
-    };
-
-    if (uniqueShows.length > 1) {
-        document.getElementById('library-show-select').addEventListener('change', (e) => {
-            currentShowKey = e.target.value;
-            updateSeasonDropdown(currentShowKey);
-        });
+    } else {
+        seasonContainer.innerHTML = '';
     }
 
-    updateSeasonDropdown(currentShowKey);
+    if (sortedGroupKeys.length > 0) {
+        renderGroup(sortedGroupKeys[0]);
+    } else {
+        listElement.innerHTML = `<div class="col-span-full text-center text-slate-400 py-10">No video files found.</div>`;
+    }
 }
 //#endregion

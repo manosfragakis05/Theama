@@ -118,8 +118,9 @@ export async function addStreamtoTorbox(finalLink) {
         const createData = await sendMagnetToTorbox(finalLink);
         if (createData) {
             // Edit title
-            await editTorboxInfo(createData?.torrent_id);
-            console.log("Edited magnet");
+            // DONT EDIT YET ONLY AFTER PARSING THE DATA
+            //await editTorboxInfo(createData?.torrent_id);
+            //console.log("Edited magnet");
 
             // Add to app library
             await addToAppLibrary(mediaStore.get());

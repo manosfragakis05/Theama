@@ -8,7 +8,7 @@
 import { getCurrentUserSettings, getStorage } from '../user-data/user-settings.js';
 import { appState, smartFetch, showToast } from '../services/config.js';
 
-import { parseFileData, parseMediaData } from '../utils/parseMedia.js';
+import { parseMediaData } from '../utils/parseMedia.js';
 import { getPosterForLibrary, getTmdbId } from '../services/metadata.js';
 import { openPicker } from '../streaming/picker.js';
 
@@ -82,7 +82,7 @@ export async function fetchLibrary() {
             }
 
             // LAYER 2: CLOUD CACHE
-            const cloudRows = await getMediaFromHash(missingFromLocal);
+            const cloudRows = (await getMediaFromHash(missingFromLocal)).filter(row => row.global_media);
             const cloudHashes = new Set(cloudRows.map(r => r.added_hash));
 
             const cloudItems = cloudRows.map(row => {
@@ -102,7 +102,7 @@ export async function fetchLibrary() {
             const newTmdbItems = needsTmdb.length > 0 ? await fetchMainMetadata(needsTmdb) : [];
 
             // Save new findings (from both Supabase and TMDB) to Local Storage for next time
-            saveToMetaCache([...cloudItems, ...newTmdbItems]);
+            //saveToMetaCache([...cloudItems, ...newTmdbItems]);
 
             // Combine all arrays
             const allItems = [...fullyCachedItems, ...cloudItems, ...newTmdbItems];
@@ -120,7 +120,11 @@ export async function fetchLibrary() {
             showToast("Error: " + data.detail, 'error');
         }
     } catch (e) {
-        showToast("Network Error", 'error');
+        console.error('Cloud library load failed:', e);
+        const libraryText = document.getElementById('library-info-text');
+        libraryText.textContent = 'Could not load your cloud library. Please try again.';
+        libraryText.classList.remove('hidden');
+        showToast("Could not load your cloud library. See the console for details.", 'error');
     }
 }
 
@@ -177,7 +181,8 @@ export async function deleteTorrent(torrentId, event) {
 
 //#region Cach Data
 async function getMediaFromHash(torrents) {
-    if (!torrents || torrents.length === 0) return [];
+    const userId = appState.currentUser?.id;
+    if (!userId || !torrents || torrents.length === 0) return [];
 
     // 1. Extract just the hash strings into an array
     const hashes = torrents.map(t => t.hash);
@@ -190,7 +195,7 @@ async function getMediaFromHash(torrents) {
             added_hash,
             global_media ( media_type, title, poster_path )
         `)
-        .eq('user_id', appState.currentUser.id)
+        .eq('user_id', userId)
         .in('added_hash', hashes);
 
     if (error) {
@@ -198,7 +203,7 @@ async function getMediaFromHash(torrents) {
         return [];
     }
 
-    return data;
+    return [];
 }
 
 const CACHE_KEY = 'theama_meta_cache';
@@ -256,10 +261,10 @@ async function fetchMainMetadata(items) {
         const mediaInfo = parseMediaData(torrent.name);
         // An opening/trailer may sort before the actual episodes. Inspect file
         // basenames and ignore bonus numbering when deciding the metadata type.
-        const hasSeason = mediaInfo.seasons.length > 0 || allFiles.some(file => {
-            const parsed = parseFileData(file.short_name || file.name);
+        const hasSeason = (mediaInfo.seasons?.length || 0) > 0 || allFiles.some(file => {
+            const parsed = parseMediaData(file.short_name || file.name);
             return !parsed.isExtra && parsed.fileType !== 'MOVIE'
-                && (parsed.episodes.length > 0 || parsed.seasons.length > 0);
+                && ((parsed.episodes?.length || 0) > 0 || (parsed.seasons?.length || 0) > 0);
         });
         const cleanName = mediaInfo.title.replace(/(^\w|[\s-]\w)/g, m => m.toUpperCase());
 
@@ -279,6 +284,8 @@ async function fetchMainMetadata(items) {
             const tmdbId = await getTmdbId(cleanName, mediaInfo.year, type);
             const poster = tmdbId ? await getPosterForLibrary(tmdbId.id, type) : null;
 
+            if (!tmdbId) return { ...item, tmdbId: null, poster: null };
+
             const global_media = {
                 id: tmdbId.id,
                 type: type,
@@ -289,12 +296,12 @@ async function fetchMainMetadata(items) {
                 episode: null
             };
 
-            if (tmdbId.officialName && poster) {
+            if (appState.currentUser && tmdbId.officialName && poster) {
                 // 1. Save the media to global_media (ignoring if it exists)
-                await addToAppLibrary(global_media);
+                //await addToAppLibrary(global_media);
 
                 // 2. Link this specific user and hash to the media
-                await linkHashToMedia(global_media, torrent.hash);
+                //await linkHashToMedia(global_media, torrent.hash);
             }
 
             return { ...item, tmdbId, poster };
@@ -329,7 +336,7 @@ export function renderList(items) {
 
 function renderItem(item) {
     const t = item.torrent;
-    const files = t.files;
+    const files = t.files || [];
     const video = files.find(f => /\.(mkv|mp4|avi|mov)$/i.test(f.name));
     const playableFile = video || files[0];
 
@@ -377,7 +384,7 @@ function renderItem(item) {
         setTimeout(() => appState.clickCooldown = false, 2000);
 
         if (!item.isSingle) {
-            openPicker(t, item.tmdbId.id);
+            openPicker(t, item.tmdbId?.id);
         } else {
             playableFile
                 ? requestLink(t.id, playableFile.id, t.name, playableFile.name)

@@ -1,633 +1,353 @@
-/**
- * Dependency-free ES module for release-name metadata (not media inspection).
- *
- * parseTorrentTitle(string): packs, season lists/ranges and single releases.
- * parseFileTitle(string): basename only; explicit or absolute episode numbering.
- * parseMediaData / parseFileData are aliases for existing integrations.
- *
- * Unknown scalar values are null; collections are always arrays. `season` and
- * `episode` are populated only when unambiguous. Use `seasons`, `episodes` and
- * `episodePairs` for packs/multi-episode files. No season 1 is invented for anime.
- * Quality/tier describe filename tags, not measured encoding or audio quality.
- * `fileType` is an explicit release marker (OVA, OP, TRAILER, etc.), or SPECIAL
- * for season 0. Mixed releases use `fileTypes` and leave `fileType` null.
- * `isExtra` identifies credits/promotional/bonus clips, not narrative OVAs.
- * Numbers on type markers (e.g. NCOP02v2) populate episodes/version without
- * claiming absolute TV numbering. Parent directory names are never inspected.
- */
+import { parseTorrentTitle as parseMedia } from "@viren070/parse-torrent-title";
 
-const unique = values => [...new Set(values)];
-const numbers = values => unique(values).sort((a, b) => a - b);
-const single = values => values.length === 1 ? values[0] : null;
-const overlaps = (a, b) => a.start < b.end && b.start < a.end;
-const at = match => ({ start: match.index, end: match.index + match[0].length });
-const SEP = '[ ._-]*';
-const LEFT = '(?<![\\p{L}\\p{N}])';
-const RIGHT = '(?![\\p{L}\\p{N}])';
-const token = (body, flags = 'giu') => new RegExp(`${LEFT}(?:${body})${RIGHT}`, flags);
-const numberToken = (body, nextLabel) => new RegExp(`${LEFT}(?:${body})(?=$|[^\\p{L}\\p{N}]|${nextLabel}\\d)`, 'giu');
-const MAX_RANGE_SIZE = 1000;
-const EXTENSION = /\.(mkv|mp4|m4v|avi|mov|wmv|webm|ts|m2ts|mts|mpg|mpeg|vob|ogm|ogv|flv|iso|srt|ass|ssa|vtt|sub|torrent)$/i;
-
-// The order matters: consume specific codecs before their shorter aliases.
-const TECH_RULES = [
-    ['resolution', '(?:4320|2160|1440|1080|720|576|540|480|360)[pi]', m => m[0].toLowerCase()],
-    ['resolution', '(?:8|4)k', m => m[0][0] === '8' ? '4320p' : '2160p'],
-    ['resolution', '(?:7680|3840|1920|1280|720)[x×](?:4320|2160|1080|720|576|480)', m => `${m[0].split(/[x×]/i)[1]}p`],
-    ['videoCodec', `(?:[hx]${SEP}265|HEVC)`, 'H.265'],
-    ['videoCodec', `(?:[hx]${SEP}264|AVC)`, 'H.264'],
-    ['videoCodec', 'AV1', 'AV1'],
-    ['videoCodec', `(?:[hx]${SEP}266|VVC)`, 'H.266'],
-    ['videoCodec', `VP${SEP}9`, 'VP9'],
-    ['videoCodec', 'XviD', 'XviD'],
-    ['videoCodec', 'DivX', 'DivX'],
-    ['videoCodec', `MPEG${SEP}2`, 'MPEG-2'],
-    ['videoCodec', `VC${SEP}1`, 'VC-1'],
-    ['quality', '(?:BD|UHD|4K)?REMUX', 'REMUX'],
-    ['quality', `(?:Blu${SEP}Ray|BDMV|BDISO)`, 'BluRay'],
-    ['quality', 'BDRip', 'BDRip'],
-    ['quality', 'BRRip', 'BRRip'],
-    ['quality', `WEB${SEP}DL`, 'WEB-DL'],
-    ['quality', `WEB${SEP}Rip`, 'WEBRip'],
-    ['quality', 'HDTV', 'HDTV'],
-    ['quality', 'PDTV', 'PDTV'],
-    ['quality', 'TVRip', 'TVRip'],
-    ['quality', 'HDRip', 'HDRip'],
-    ['quality', 'DVDRip', 'DVDRip'],
-    ['quality', '(?:DVD|BD)SCR', 'Screener'],
-    ['quality', 'DVD(?:5|9)?', 'DVD'],
-    ['quality', 'BD', 'BluRay', true],
-    ['quality', '(?:HDCAM|CAMRip)', 'CAM'],
-    ['quality', '(?:HDTS|TELESYNC)', 'TS'],
-    ['quality', '(?:HDTC|TELECINE)', 'TC'],
-    ['quality', 'WEB', 'WEB', true],
-    ['quality', 'CAM', 'CAM', true],
-    ['quality', 'TS', 'TS', true],
-    ['quality', 'TC', 'TC', true],
-    ['audioCodec', `DTS${SEP}HD${SEP}(?:MA|Master${SEP}Audio)`, 'DTS-HD MA'],
-    ['audioCodec', `DTS${SEP}HD${SEP}(?:HRA|HR)`, 'DTS-HD HRA'],
-    ['audioCodec', `DTS${SEP}HD`, 'DTS-HD'],
-    ['audioCodec', 'DTS[ ._:-]*X', 'DTS:X'],
-    ['audioCodec', `(?:True${SEP}HD|Dolby${SEP}TrueHD)`, 'TrueHD'],
-    ['audioCodec', `(?:DDP|DD[+]|E${SEP}AC${SEP}3|Dolby${SEP}Digital${SEP}Plus)`, 'E-AC-3'],
-    ['audioCodec', `(?:AC${SEP}3|Dolby${SEP}Digital)`, 'AC-3'],
-    ['audioCodec', 'DD', 'AC-3', true],
-    ['audioCodec', 'DTS', 'DTS'],
-    ['audioCodec', `(?:HE${SEP}AAC|AAC(?:${SEP}LC)?)`, 'AAC'],
-    ['audioCodec', 'FLAC', 'FLAC'],
-    ['audioCodec', '(?:LPCM|PCM)', 'PCM'],
-    ['audioCodec', 'ALAC', 'ALAC'],
-    ['audioCodec', 'OPUS', 'Opus'],
-    ['audioCodec', 'MP3', 'MP3'],
-    ['audioFeature', `(?:Dolby${SEP})?Atmos`, 'Dolby Atmos'],
-    ['dynamicRange', `(?:Dolby${SEP}Vision|DoVi)`, 'Dolby Vision'],
-    ['dynamicRange', 'DV', 'Dolby Vision', true],
-    ['dynamicRange', 'HDR10(?:[+]|Plus)', 'HDR10+'],
-    ['dynamicRange', 'HDR10', 'HDR10'],
-    ['dynamicRange', 'HDR', 'HDR'],
-    ['dynamicRange', 'HLG', 'HLG'],
-    ['dynamicRange', 'SDR', 'SDR', true],
-    ['bitDepth', `(?:8|10|12)${SEP}bit|Hi10P`, m => /^Hi/i.test(m[0]) ? 10 : parseInt(m[0], 10)],
-    ['other', 'UHD', 'UHD', true],
-    ['other', '(?:REPACK|PROPER|RERIP|INTERNAL|READNFO|UNCUT|REMASTERED|EXTENDED|IMAX)', m => m[0].toUpperCase(), true],
-    ['other', `(?:Director'?s|Theatrical|Extended)${SEP}(?:Cut|Edition)`, m => m[0], true],
-    ['other', '(?:AMZN|NF|NETFLIX|ATVP|DSNP|HMAX|HULU|PCOK|PMTP|CR)', m => m[0].toUpperCase(), true],
-];
-
-const COMPILED_TECH_RULES = TECH_RULES.map(([kind, body, value, weak = false]) => {
-    // Audio channels can be attached directly: DDP2.0, AAC5.1, TrueHD7.1.
-    const right = kind === 'audioCodec'
-        ? '(?=$|[^\\p{L}\\p{N}]|[1-8][ ._][01](?!\\d))' : RIGHT;
-    return { kind, value, weak, regex: new RegExp(`${LEFT}(?:${body})${right}`, 'giu') };
-});
-
-function scanTechnical(text) {
-    const tags = [];
-    for (const { kind, value, weak, regex } of COMPILED_TECH_RULES) {
-        for (const match of text.matchAll(regex)) {
-            const span = at(match);
-            if (tags.some(tag => overlaps(tag, span))) continue;
-            const attachedChannels = kind === 'audioCodec' && /^[1-8][ ._][01](?!\d)/.test(text.slice(span.end));
-            tags.push({ ...span, kind, value: typeof value === 'function' ? value(match) : value, weak: weak && !attachedChannels });
-        }
-    }
-    return tags.sort((a, b) => a.start - b.start);
-}
-
-// Specific credit variants precede their shorter aliases. Full words require
-// release-label context so titles like "Opening Night" remain intact.
-const CONTENT_RULES = [
-    ['NCOP', `(?:NC${SEP}OP|(?:creditless|textless|non${SEP}credit(?:ed)?)${SEP}(?:OP|opening))`, 'Creditless Opening'],
-    ['NCED', `(?:NC${SEP}ED|(?:creditless|textless|non${SEP}credit(?:ed)?)${SEP}(?:ED|ending))`, 'Creditless Ending'],
-    ['OVA', 'OVA|OAV', 'OVA'],
-    ['OAD', 'OAD|ODA', 'OAD'],
-    ['ONA', 'ONA', 'ONA'],
-    ['OP', 'OP|opening(?:[ ._-]+(?:theme|credits))?', 'Opening'],
-    ['ED', 'ED|ending(?:[ ._-]+(?:theme|credits))?', 'Ending'],
-    ['SPECIAL', 'SP|specials?', 'Special'],
-    ['PV', 'PV|promotional[ ._-]+video', 'Promotional Video'],
-    ['CM', 'CM|commercials?|TV[ ._-]+spots?', 'Commercial'],
-    ['TRAILER', '(?:official[ ._-]+)?trailers?', 'Trailer'],
-    ['TEASER', '(?:official[ ._-]+)?teasers?', 'Teaser'],
-    ['PROMO', 'promos?', 'Promo'],
-    ['BEHIND_THE_SCENES', 'behind[ ._-]+the[ ._-]+scenes|making[ ._-]+of', 'Behind the Scenes'],
-    ['DELETED_SCENE', 'deleted[ ._-]+scenes?', 'Deleted Scene'],
-    ['FEATURETTE', 'featurettes?', 'Featurette'],
-    ['INTERVIEW', 'interviews?', 'Interview'],
-    ['BLOOPERS', 'bloopers?|outtakes?', 'Bloopers'],
-    ['MUSIC_VIDEO', 'MV|music[ ._-]+video', 'Music Video'],
-    ['THEME', 'theme(?:[ ._-]+song)?', 'Theme'],
-    ['MENU', '(?:(?:BD|DVD)[ ._-]+)?menus?', 'Menu'],
-    ['RECAP', 'recaps?', 'Recap'],
-    ['SAMPLE', 'samples?', 'Sample'],
-    ['EXTRA', 'extras?|bonus(?:[ ._-]+(?:features?|content))?', 'Extra'],
-    ['MOVIE', 'movie|film', 'Movie'],
-];
-const CONTENT_LABELS = Object.fromEntries(CONTENT_RULES.map(([type, , label]) => [type, label]));
-const NARRATIVE_TYPES = new Set(['OVA', 'OAD', 'ONA', 'SPECIAL', 'MOVIE', 'RECAP']);
-const COMPILED_CONTENT_RULES = CONTENT_RULES.map(([type, body]) => ({
-    type,
-    regex: token(`(${body})(?:[ ._-]*(?:No[ .]*|#)?(\\d{1,4})(?:v(\\d+))?)?`),
-}));
-
-function scanContent(text, technical = scanTechnical(text)) {
-    const tags = [];
-    for (const { type, regex } of COMPILED_CONTENT_RULES) {
-        for (const match of text.matchAll(regex)) {
-            const span = at(match);
-            if (tags.some(tag => overlaps(tag, span))) continue;
-            // A label may contain a complete source tag ("DVD Menu"). Do not
-            // match just a fragment of a technical tag, such as an audio codec.
-            if (technical.some(tag => overlaps(tag, span) && !(tag.start >= span.start && tag.end <= span.end))) continue;
-            const before = text.slice(0, span.start);
-            const after = text.slice(span.end);
-            const bracketed = /[\[({][ ._]*$/.test(before) && /^[ ._]*[\])}]/.test(after);
-            const separated = /(?:^|\s)[-–—][ ._]*$/.test(before);
-            const abbreviation = /^(?:NC[ ._-]*(?:OP|ED)|OVA|OAV|OAD|ODA|ONA|OP|ED|SP|PV|CM|MV)$/i.test(match[1]);
-            const nextTag = technical.find(tag => tag.start >= span.end);
-            const tail = text.slice(span.end, nextTag?.start ?? text.length);
-            const atEnd = /^[\s.\-_[\](){}]*$/.test(tail);
-            const hasTitle = /[\p{L}\p{N}]/u.test(before);
-            const followsArticle = /(?:^|[ ._-])(?:a|an|the|of|my|your|happy)[ ._]+$/i.test(before);
-            const followsEpisode = /(?:s\d+[ ._-]*e\d+|\d+x\d+|(?:episode|ep)[ ._-]*\d+| - \d+)\b/i.test(before);
-            // A marker embedded in an episode subtitle is usually ordinary text.
-            // Explicit brackets, a standalone label, or a short numbered code win.
-            const numbered = match[2] !== undefined && !(Number(match[2]) >= 1888 && Number(match[2]) <= 2099);
-            if (!bracketed && !separated) {
-                if (followsArticle || (followsEpisode && !(abbreviation && numbered))) continue;
-                if (!atEnd && !(numbered && hasTitle) && !(abbreviation && hasTitle && match[1] === match[1].toUpperCase())) continue;
-                if (!hasTitle && !atEnd && !abbreviation) continue;
-                // "Movie 43" is a title; [Movie] and "Show - Movie" are labels.
-                if (type === 'MOVIE') continue;
-            }
-            if (!numbered && match[2] !== undefined) span.end = span.start + match[1].length;
-            tags.push({ ...span, type, number: numbered ? Number(match[2]) : null, version: numbered && match[3] ? Number(match[3]) : null });
-        }
-    }
-    return tags.sort((a, b) => a.start - b.start);
-}
-
-function includesMainRelease(text, spans, content) {
-    return content.length > 0 && spans.some(span => span.end <= content[0].start
-        && /[+&]|\b(?:complete|batch|pack)\b/i.test(text.slice(span.end, content[0].start)));
-}
-
-function expandRange(first, last, warnings, kind) {
-    if (last < first || last - first + 1 > MAX_RANGE_SIZE) {
-        warnings.push(`${kind}-range-${last < first ? 'reversed' : 'too-large'}`);
-        return numbers([first, last]);
-    }
-    return Array.from({ length: last - first + 1 }, (_, i) => first + i);
-}
-
-// A dash expands a range; commas, ampersands, + and repeated E/S markers are lists.
-function readTail(text, end, first, kind, warnings) {
-    const label = kind === 'season' ? '(?:seasons?|s)' : '(?:episodes?|eps?|e)';
-    const digits = kind === 'season' ? 2 : 4;
-    const delimiter = '(?:([-~–—]|to)|([,&+]|and))';
-    const endNumber = `(?=$|[^\\p{L}\\p{N}]|${label}\\d)`;
-    const next = new RegExp(`^[ ._]*${delimiter}[ ._]*(?:${label}[ ._-]*)?(\\d{1,${digits}})${endNumber}`, 'iu');
-    const repeated = new RegExp(`^[ ._]*${label}[ ._-]*(\\d{1,${digits}})${endNumber}`, 'iu');
-    const values = [first];
-    let previous = first;
-    let match;
-    while ((match = next.exec(text.slice(end))) || (match = repeated.exec(text.slice(end)))) {
-        const value = Number(match[3] ?? match[1]);
-        if (match[3] !== undefined && match[1]) values.push(...expandRange(previous, value, warnings, kind));
-        else values.push(value);
-        previous = value;
-        end += match[0].length;
-    }
-    return { values: numbers(values), end };
-}
-
-function extractNumbering(text, mode, technical, content) {
-    const warnings = [];
-    const spans = [];
-    const pairs = [];
-    const seasons = [];
-    const episodes = [];
-    let absolute = false;
-    let version = null;
-    let date = null;
-    const addEpisodes = (match, season, first, end = at(match).end) => {
-        const tail = readTail(text, end, first, 'episode', warnings);
-        spans.push({ start: match.index, end: tail.end, kind: 'episode' });
-        if (season !== null) seasons.push(season);
-        episodes.push(...tail.values);
-        for (const episode of tail.values) pairs.push({ season, episode });
-    };
-
-    // Explicit season/episode pairs have priority over every bare-number heuristic.
-    const pairPatterns = [
-        numberToken(`s(?:eason)?[ ._-]*(\\d{1,2})[ ._-]*e(?:pisodes?|ps?)?[ ._-]*(\\d{1,4})(?:v(\\d+))?`, 'e'),
-        token('(\\d{1,2})x(\\d{1,4})(?:v(\\d+))?'),
-    ];
-    for (const pattern of pairPatterns) {
-        for (const match of text.matchAll(pattern)) {
-            if (spans.some(span => overlaps(span, at(match)))) continue;
-            addEpisodes(match, Number(match[1]), Number(match[2]));
-            if (match[3]) version = Number(match[3]);
-        }
-    }
-    // Fully repeated endpoints: S01E01-S01E03. Cross-season endpoints are not expanded.
-    const pairedSpans = [...spans].sort((a, b) => a.start - b.start);
-    for (let i = 1; i < pairedSpans.length; i++) {
-        const left = pairedSpans[i - 1], right = pairedSpans[i];
-        if (!/^[ ._]*[-~–—][ ._]*$/.test(text.slice(left.end, right.start))) continue;
-        const a = text.slice(left.start, left.end).match(/(?:s(?:eason)?[ ._-]*|^)(\d{1,2})(?:[ ._-]*e(?:pisodes?|ps?)?[ ._-]*|x)(\d{1,4})/i);
-        const b = text.slice(right.start, right.end).match(/(?:s(?:eason)?[ ._-]*|^)(\d{1,2})(?:[ ._-]*e(?:pisodes?|ps?)?[ ._-]*|x)(\d{1,4})/i);
-        if (a && b && Number(a[1]) === Number(b[1])) {
-            for (const episode of expandRange(Number(a[2]), Number(b[2]), warnings, 'episode')) {
-                episodes.push(episode);
-                pairs.push({ season: Number(a[1]), episode });
-            }
-        } else warnings.push('cross-season-episode-range');
-    }
-
-    // Season collections belong to torrents. For files we detect the ambiguity
-    // but never describe a filename as a complete season/series.
-    for (const match of text.matchAll(numberToken('(?:seasons?|s)[ ._-]*(\\d{1,2})', 's'))) {
-        if (spans.some(span => overlaps(span, at(match)))) continue;
-        const tail = readTail(text, at(match).end, Number(match[1]), 'season', warnings);
-        seasons.push(...tail.values);
-        spans.push({ start: match.index, end: tail.end, kind: 'season' });
-    }
-    for (const match of text.matchAll(numberToken('(?:episodes?|eps?|e)[ ._-]*(\\d{1,4})(?:v(\\d+))?', 'e'))) {
-        if (spans.some(span => overlaps(span, at(match)))) continue;
-        addEpisodes(match, single(numbers(seasons)), Number(match[1]));
-        if (match[2]) version = Number(match[2]);
-    }
-
-    // OVA01 / NCOP02 are local sequence numbers. Explicit SxxExx still wins.
-    if (!episodes.length && !(mode === 'torrent' && includesMainRelease(text, spans, content))) {
-        for (const tag of content.filter(tag => tag.number !== null)) {
-            addEpisodes({ index: tag.start }, single(numbers(seasons)), tag.number, tag.end);
-            if (tag.version !== null) version = tag.version;
-        }
-    }
-
-    if (!episodes.length) {
-        const datePattern = token('(19\\d{2}|20\\d{2})[ ._-](\\d{2})[ ._-](\\d{2})');
-        for (const match of text.matchAll(datePattern)) {
-            const [year, month, day] = match.slice(1).map(Number);
-            const value = new Date(Date.UTC(year, month - 1, day));
-            if (value.getUTCFullYear() !== year || value.getUTCMonth() !== month - 1 || value.getUTCDate() !== day) continue;
-            date = `${match[1]}-${match[2]}-${match[3]}`;
-            spans.push({ ...at(match), kind: 'date' });
-            break;
-        }
-    }
-    if (!episodes.length && !date) {
-        // Fansub form: "Anime - 012v2 [1080p]". A naked "1917" remains a title.
-        const anime = /(?:^|\s)[-–—]\s+(\d{1,4})(?:v(\d+))?(?=$|[\s[(_-])/iu;
-        let match = anime.exec(text);
-        if (match && spans.some(span => overlaps(span, at(match)))) match = null;
-        if (!match && mode === 'file') {
-            // Filename-only "03 - Episode name.mkv" / "001.mkv".
-            match = /^(\d{1,3})(?:v(\d+))?(?=$|[ ._-])/iu.exec(text);
-            if (match) {
-                const after = text.slice(at(match).end);
-                const nextTag = technical.find(tag => tag.start >= at(match).end);
-                const gap = text.slice(at(match).end, nextTag?.start ?? text.length);
-                // "300 (2006)" / "12 Monkeys" are movies, not episodes 300 / 12.
-                if (after.trim() && !/^[ ._]*[-–—]\s*\D/u.test(after) && !(nextTag && /^[\s.\-_[\](){}]*$/.test(gap))) match = null;
-            }
-        }
-        if (!match && mode === 'file' && !content.length) {
-            // Zero-padded fansub numbering without a dash needs a technical
-            // suffix. Do not turn "Apollo 13" or "Blade Runner 2049" into TV.
-            for (const candidate of text.matchAll(token('(0\\d{1,3})(?:v(\\d+))?'))) {
-                const nextTag = technical.find(tag => tag.start >= at(candidate).end);
-                if (nextTag && /^[\s.\-_[\](){}]*$/.test(text.slice(at(candidate).end, nextTag.start))) {
-                    match = candidate;
-                    break;
-                }
-            }
-        }
-        if (match && !technical.some(tag => overlaps(tag, at(match)))) {
-            const after = text.slice(at(match).end);
-            // Do not mistake a release year or bare trailing sequel number for an episode.
-            const number = Number(match[1]);
-            const evidence = mode === 'file' || technical.some(tag => tag.start >= at(match).end) || /^\s*[[(]/.test(after);
-            if (evidence && !(number >= 1888 && number <= 2099)) {
-                absolute = content.length === 0;
-                addEpisodes(match, single(numbers(seasons)), number);
-                if (match[2]) version = Number(match[2]);
-            }
-        }
-    }
-
-    // "Anime 01-12 [1080p]" is a batch only at the end of the title portion.
-    if (mode === 'torrent' && !episodes.length && !seasons.length && !date) {
-        const batch = /(?<![\p{L}\p{N}])(\d{1,3})\s*[-~–—]\s*(\d{1,3})(?=$|[\s[(_])/giu;
-        for (const match of text.matchAll(batch)) {
-            if (technical.some(tag => overlaps(tag, at(match)))) continue;
-            const nextTag = technical.find(tag => tag.start >= at(match).end);
-            const gap = text.slice(at(match).end, nextTag?.start ?? text.length);
-            if (!/^[\s.\-_[\](){}]*(?:END|COMPLETE|BATCH)?[\s.\-_[\](){}]*$/i.test(gap)) continue;
-            absolute = content.length === 0;
-            episodes.push(...expandRange(Number(match[1]), Number(match[2]), warnings, 'episode'));
-            spans.push({ ...at(match), kind: 'episode' });
-            for (const episode of episodes) pairs.push({ season: null, episode });
-            break;
-        }
-    }
-    const seasonValues = numbers(seasons);
-    if (mode === 'file' && seasonValues.length > 1) warnings.push('multiple-seasons-in-file');
-    return {
-        seasons: seasonValues, episodes: numbers(episodes), spans,
-        episodePairs: [...new Map(pairs.map(pair => [`${pair.season}:${pair.episode}`, pair])).values()]
-            .sort((a, b) => (a.season ?? -1) - (b.season ?? -1) || a.episode - b.episode),
-        absolute, date, version, warnings,
-    };
-}
-
-function findYear(text, numbering, technical) {
-    const limit = Math.min(text.length, ...numbering.spans.map(s => s.start), ...technical.filter(t => !t.weak && t.start > 0).map(t => t.start));
-    const yearBody = '(?:18[89]\\d|19\\d{2}|20\\d{2})';
-    for (const match of text.matchAll(token(`(${yearBody})[ ._]*[-–—~][ ._]*(${yearBody})`))) {
-        const first = Number(match[1]), last = Number(match[2]);
-        const before = text.slice(0, match.index).replace(/[\s._([{-]+$/g, '');
-        const after = text.slice(at(match).end, limit);
-        if (before && last >= first && at(match).end <= limit && !/[\p{L}]/u.test(after)) {
-            return { ...at(match), value: first, range: [first, last] };
-        }
-    }
-    const candidates = [...text.matchAll(token('(?:18[89]\\d|19\\d{2}|20\\d{2})'))].filter(match => {
-        if (match.index >= limit || numbering.spans.some(span => overlaps(span, at(match)))) return false;
-        const before = text.slice(0, match.index).replace(/[\s._([{-]+$/g, '');
-        if (!before) return false; // 1917, 1923, 2001: A Space Odyssey.
-        if (/\b(?:of|in|since|from|to)\s*$/i.test(before)) return false;
-        // Unbracketed numbers followed by title words are part of the title.
-        const yearEnd = at(match).end;
-        let after = text.slice(yearEnd, limit);
-        const bracketed = /[[(]\s*$/.test(text.slice(0, match.index)) && /^\s*[)\]]/.test(after);
-        for (const tag of technical.filter(tag => tag.start >= yearEnd && tag.end <= limit).sort((a, b) => b.start - a.start)) {
-            after = after.slice(0, tag.start - yearEnd) + ' '.repeat(tag.end - tag.start) + after.slice(tag.end - yearEnd);
-        }
-        for (const [, body] of LANGUAGE_RULES) after = after.replace(token(body), '');
-        after = after.replace(/\b(?:COMPLETE|SERIES|COLLECTION|FULL|BATCH|MULTI|DUAL|AUDIO|SUBS?|SUBBED|DUBBED|UNRATED)\b/gi, '');
-        return bracketed || !/[\p{L}]/u.test(after);
-    });
-    const match = candidates.at(-1);
-    return match ? { ...at(match), value: Number(match[0]) } : null;
-}
-
-function cleanTitle(text) {
-    return text.replace(/[._]+/g, ' ')
-        .replace(/\s*[[(]\s*$/g, '')
-        .replace(/\(\s*\)|\[\s*\]/g, '')
-        .replace(/\s+/g, ' ')
-        .replace(/^[\s\-–—|,;:]+|[\s\-–—|,;:]+$/g, '').trim();
-}
-
-function formatNumbers(values) {
-    if (!values.length) return '';
-    const parts = [];
-    let start = values[0], end = start;
-    for (let i = 1; i <= values.length; i++) {
-        if (values[i] === end + 1) { end = values[i]; continue; }
-        parts.push(start === end ? `${start}` : `${start}-${end}`);
-        start = end = values[i];
-    }
-    return parts.join(', ');
-}
-
-const LANGUAGE_RULES = [
-    ['English', 'English|ENG|EN', ['🇬🇧', '🇺🇸']],
-    ['French', 'French|FRE|FRA|FR|VFF|VFQ|TRUEFRENCH', ['🇫🇷']],
-    ['Spanish', 'Spanish|SPA|ESP|Castellano|Latino', ['🇪🇸', '🇲🇽']],
-    ['Italian', 'Italian|ITA', ['🇮🇹']],
-    ['Russian', 'Russian|RUS', ['🇷🇺']],
-    ['German', 'German|GER|DEU', ['🇩🇪']],
-    ['Portuguese', 'Portuguese|POR|PT[ ._-]?BR', ['🇵🇹', '🇧🇷']],
-    ['Japanese', 'Japanese|JPN|JAP', ['🇯🇵']],
-    ['Korean', 'Korean|KOR', ['🇰🇷']],
-    ['Hindi', 'Hindi|HIN', ['🇮🇳']],
-    ['Tamil', 'Tamil|TAM', []], ['Telugu', 'Telugu|TEL', []],
-    ['Chinese', 'Chinese|CHI|ZHO|Mandarin|Cantonese', ['🇨🇳', '🇹🇼', '🇭🇰']],
-    ['Dutch', 'Dutch|DUT|NLD', ['🇳🇱']], ['Polish', 'Polish|POL', ['🇵🇱']],
-    ['Romanian', 'Romanian|RON|RUM', ['🇷🇴']], ['Greek', 'Greek|GRE|ELL', ['🇬🇷']],
-    ['Danish', 'Danish|DAN', ['🇩🇰']], ['Finnish', 'Finnish|FIN', ['🇫🇮']],
-    ['Swedish', 'Swedish|SWE', ['🇸🇪']], ['Norwegian', 'Norwegian|NOR', ['🇳🇴']],
-    ['Turkish', 'Turkish|TUR', ['🇹🇷']], ['Arabic', 'Arabic|ARA', ['🇸🇦']],
-    ['Hebrew', 'Hebrew|HEB', ['🇮🇱']], ['Indonesian', 'Indonesian|IND', ['🇮🇩']],
-    ['Thai', 'Thai|THA', ['🇹🇭']], ['Ukrainian', 'Ukrainian|UKR', ['🇺🇦']],
-];
-
-function extractLanguages(text) {
-    const languages = LANGUAGE_RULES.filter(([, body, flags]) =>
-        token(body, 'iu').test(text) || flags.some(flag => text.includes(flag))).map(([name]) => name);
-    const multiSubs = /\bmulti[ ._-]*subs?\b/i.test(text);
-    const dualAudio = /\bdual(?:[ ._-]*audio)?\b/i.test(text);
-    const multiAudio = /\bmulti[ ._-]*(?:audio|dub(?:bed)?)\b/i.test(text);
-    const plainMulti = /\bmulti\b(?![ ._-]*subs?\b)/i.test(text);
-    const multi = multiAudio || plainMulti ? 'Multi' : dualAudio ? 'Dual'
-        : /\bdubbed\b/i.test(text) ? 'Dubbed' : /\b(?:subbed|subtitles|multi[ ._-]*subs?)\b/i.test(text) ? 'Subbed' : null;
-    return { languages, multi, multiAudio, dualAudio, multiSubs };
-}
-
-function prepareInput(rawString, mode) {
-    if (rawString == null) rawString = '';
-    if (typeof rawString !== 'string') throw new TypeError('Expected a torrent title or filename string');
-    let text = rawString.normalize('NFC').replace(/\u00a0/g, ' ').trim();
-    text = text.split(/\r\n?|\n|\\n/).find(line => line.trim())?.trim() ?? '';
-    text = text.replace(/^[\s📁📂📄🎬🎞️]+/u, '');
-    if (mode === 'file') text = text.split(/[\\/]/).at(-1);
-    // Stream-description footer; never let seeders/size become part of the title.
-    text = text.split(/[👤💾⚙️]/u)[0].trim();
-    const extension = text.match(EXTENSION)?.[1].toLowerCase() ?? null;
-    text = text.replace(EXTENSION, '').trim();
-    let releaseGroup = null;
-    const prefixMetadata = [];
-    while (/^\[[^\]]+\]\s*\S/.test(text)) {
-        const match = /^\[([^\]]+)\][ ._-]*/.exec(text);
-        if (!match) break;
-        // Move technical prefix brackets to the metadata tail, preserving their
-        // values without letting "[1080p] Movie" produce an empty clean title.
-        const language = extractLanguages(match[1]);
-        if (scanTechnical(match[1]).length || scanContent(`[${match[1]}]`).length || language.multi || language.languages.length) prefixMetadata.push(match[1]);
-        else if (!/^(?:REQ|REQUEST|www\.|https?:)/i.test(match[1])) releaseGroup ??= match[1].trim();
-        text = text.slice(match[0].length);
-    }
-    if (prefixMetadata.length) text += ` [${prefixMetadata.join('] [')}]`;
-    return { text, extension, releaseGroup };
-}
-
-function parseRelease(rawString, mode) {
-    const input = prepareInput(rawString, mode);
-    const { text } = input;
-    const scanned = scanTechnical(text);
-    const content = scanContent(text, scanned);
-    const numbering = extractNumbering(text, mode, scanned, content);
-    const yearMatch = findYear(text, { spans: [...numbering.spans, ...content] }, scanned);
-    const structuralStart = Math.min(text.length, yearMatch?.start ?? Infinity, ...numbering.spans.map(s => s.start), ...content.map(tag => tag.start));
-    const strongStart = Math.min(text.length, ...scanned.filter(tag => !tag.weak && tag.start > 0).map(tag => tag.start));
-    const boundary = Math.min(structuralStart, strongStart);
-    const technical = scanned.filter(tag => {
-        if (!tag.weak) return true;
-        // Don't call "The French Connection" French or "CAM (2018)" a CAM rip.
-        if (structuralStart < text.length) return tag.start >= structuralStart;
-        const gap = text.slice(tag.end, boundary);
-        return boundary < text.length && /^[\s.\-_[\](){}]*$/.test(gap);
-    });
-    const values = kind => unique(technical.filter(tag => tag.kind === kind).map(tag => tag.value));
-    const seasons = numbering.seasons;
-    const episodes = numbering.episodes;
-    const season = single(seasons);
-    const episode = single(episodes);
-    const warnings = [...numbering.warnings];
-
-    const completeSeriesMatch = /\b(?:the[ ._-]+)?(?:complete[ ._-]+(?:series|collection)|full[ ._-]+series)\b/i.exec(text);
-    const packMatch = /\b(?:complete[ ._-]+season|season[ ._-]+pack|batch)\b/i.exec(text);
-    const isCompleteSeries = mode === 'torrent' && Boolean(completeSeriesMatch);
-    const isSeasonPack = mode === 'torrent' && (isCompleteSeries || Boolean(packMatch) || (seasons.length > 0 && episodes.length === 0));
-    const isEpisodePack = mode === 'torrent' && episodes.length > 1;
-    const complete = mode === 'torrent' && (isCompleteSeries || ((isSeasonPack || isEpisodePack) && /\bcomplete\b/i.test(text)));
-    let seasonDetails = null;
-    if (mode === 'torrent') {
-        if (isCompleteSeries) seasonDetails = 'COMPLETE SERIES';
-        else if (seasons.length > 1) seasonDetails = `SEASONS ${formatNumbers(seasons)}`;
-        else if (isSeasonPack && season !== null) seasonDetails = `${complete ? 'FULL SEASON' : 'SEASON'} ${season}`;
-        else if (isEpisodePack) seasonDetails = `EPISODES ${formatNumbers(episodes)}`;
-        else if (isSeasonPack) seasonDetails = 'SEASON PACK';
-    }
-
-    const titleEnd = Math.min(text.length, yearMatch?.start ?? Infinity,
-        ...numbering.spans.map(s => s.start), ...technical.map(tag => tag.start), ...content.map(tag => tag.start),
-        ...(mode === 'torrent' ? [completeSeriesMatch?.index ?? Infinity, packMatch?.index ?? Infinity] : []));
-    let title = cleanTitle(text.slice(0, titleEnd));
-    // Bracketed suffixes after a recognized boundary are intentionally discarded;
-    // parentheses within the actual title (e.g. "It (US)") are retained.
-    title = title.replace(/\s*\[[a-f\d]{8}\]\s*$/i, '').trim();
-
-    const metadataText = text.slice(titleEnd);
-    const languageData = extractLanguages(metadataText);
-    const resolutionValues = values('resolution');
-    // Explicit heights override marketing aliases like 4K when they disagree.
-    const heights = unique(technical.filter(t => t.kind === 'resolution' && /^\d+[pi]$/i.test(text.slice(t.start, t.end))).map(t => t.value));
-    const resolutions = heights.length ? heights : resolutionValues;
-    if (resolutionValues.some(value => !resolutions.includes(value))) warnings.push('conflicting-resolution-tags');
-    const videoCodecs = values('videoCodec');
-    const videoCodec = single(videoCodecs);
-    const audioCodecs = values('audioCodec');
-    const audioFeatures = values('audioFeature');
-    if (audioCodecs.includes('DTS:X')) audioFeatures.push('DTS:X');
-    const audioChannels = [];
-    const channelRegex = /(?<!\d)([1-8])[ ._]([01])(?:[ ._]([2-6]))?(?![\p{L}\p{N}])/gu;
-    for (const match of text.matchAll(channelRegex)) {
-        if (match.index < titleEnd || numbering.spans.some(span => overlaps(span, at(match))) || technical.some(tag => tag.kind !== 'audioCodec' && overlaps(tag, at(match)))) continue;
-        const nearby = technical.some(tag => ['audioCodec', 'audioFeature'].includes(tag.kind) && tag.end <= match.index && /^[\s.\-_[\](){}]*$/.test(text.slice(tag.end, match.index)));
-        const dotted = match[0].includes('.') || match[0].includes('_');
-        if (nearby || (dotted && !/[\p{L}\p{N}]/u.test(text[match.index - 1] ?? ''))) audioChannels.push(match.slice(1).filter(Boolean).join('.'));
-    }
-    let dynamicRange = values('dynamicRange');
-    if (dynamicRange.includes('HDR10') || dynamicRange.includes('HDR10+')) dynamicRange = dynamicRange.filter(tag => tag !== 'HDR');
-    const qualities = values('quality');
-    const remux = qualities.includes('REMUX');
-    const sources = qualities.filter(quality => quality !== 'REMUX');
-    const sourceName = single(sources);
-    const quality = remux ? `${sourceName ? `${sourceName} ` : ''}REMUX` : sourceName;
-    if (sources.length > 1) warnings.push('multiple-source-tags');
-    const sourceTier = remux || ['BluRay', 'WEB-DL'].includes(sourceName) ? 'Premium' : 'Standard';
-    const lossless = ['TrueHD', 'DTS-HD MA', 'FLAC', 'PCM', 'ALAC'];
-    const audioTier = audioCodecs.some(codec => lossless.includes(codec)) ? 'Lossless'
-        : audioCodecs.length || audioFeatures.length ? 'Premium' : 'Standard';
-    let releaseGroup = input.releaseGroup;
-    const suffix = /-([\p{L}\d][\p{L}\d._]{1,39})(?:\s*\[[a-f\d]{8}\])?$/iu.exec(text);
-    if (!releaseGroup && suffix && suffix.index >= titleEnd && !technical.some(tag => overlaps(tag, at(suffix)))) releaseGroup = suffix[1];
-    if (videoCodecs.length > 1) warnings.push('multiple-video-codecs');
-    if (resolutions.length > 1) warnings.push('multiple-resolutions');
-    const fileTypes = unique(content.map(tag => tag.type));
-    if (!fileTypes.length && season === 0) fileTypes.push('SPECIAL');
-    const mixedContent = mode === 'torrent' && includesMainRelease(text, numbering.spans, content);
-    const fileType = mixedContent ? null : single(fileTypes);
-    const isExtra = !mixedContent && fileTypes.length > 0 && fileTypes.every(type => !NARRATIVE_TYPES.has(type));
-    const isCreditless = fileTypes.some(type => type === 'NCOP' || type === 'NCED')
-        || (fileTypes.some(type => type === 'OP' || type === 'ED') && /\b(?:creditless|textless|non[ ._-]*credit(?:ed)?)\b/i.test(metadataText));
-
-    return {
-        title, year: yearMatch?.value ?? null, yearRange: yearMatch?.range ?? null,
-        season, seasons, episode, episodes, episodePairs: numbering.episodePairs,
-        absoluteEpisode: numbering.absolute ? episode : null,
-        absoluteEpisodes: numbering.absolute ? [...episodes] : [],
-        date: numbering.date, airDate: numbering.date, episodeVersion: numbering.version,
-        fileType, fileTypes, fileTypeLabel: CONTENT_LABELS[fileType] ?? null, isExtra, isCreditless,
-        seasonDetails, isSeasonPack, isEpisodePack, isCompleteSeries, complete,
-        resolution: single(resolutions), resolutions,
-        quality, qualities, source: { source: remux ? 'Remux' : sourceName ?? 'Unknown', tier: sourceTier },
-        videoCodec, videoCodecs,
-        videoType: videoCodec === 'H.265' ? 'HEVC/x265' : videoCodec === 'H.264' ? 'x264' : videoCodec,
-        audioType: { codecs: unique([...audioCodecs, ...audioFeatures]), tier: audioTier },
-        audioCodecs, audioFeatures: unique(audioFeatures), audioChannels: unique(audioChannels),
-        dynamicRange, bitDepth: single(values('bitDepth')),
-        ...languageData, releaseGroup, extension: input.extension,
-        warnings: unique(warnings),
-    };
-}
-
-// Parse main folders name (including multi-season / episode packs).
-export function parseTorrentTitle(rawString) {
-    return parseRelease(rawString, 'torrent');
-}
-
-// Parse one file's name/path. Parent folders are never used as metadata.
-export function parseFileTitle(rawString) {
-    return parseRelease(rawString, 'file');
-}
-
-// Compatibility with existing imports; both still accept one string.
-export const parseMediaData = parseTorrentTitle;
-export const parseFileData = parseFileTitle;
-
-/** Preserve the existing stream API, including its original misspelling. */
+// Detect and parse full stream data
 export function parseFormated(stream) {
+
     if (!stream) return;
-    const streamName = typeof stream.name === 'string' ? stream.name : '';
-    const streamDesc = [stream.description, stream.title, streamName].find(value => typeof value === 'string' && value.trim()) ?? '';
-    const data = parseTorrentTitle(streamDesc);
-    const nameTags = scanTechnical(streamName);
-    const nameResolution = nameTags.find(tag => tag.kind === 'resolution')?.value;
-    const isCached = /(?:torbox|tb)\s*(?:\+|⚡)/i.test(streamName);
-    const seeders = /👤[\s\-:|]*([\d,]+)/u.exec(streamDesc);
-    const size = /💾[\s\-:|]*([\d.,]+\s*[KMGT]i?B)/iu.exec(streamDesc);
-    // Languages only from the release metadata/footer; never scan the clean title.
-    const footerLanguages = extractLanguages(streamDesc.split(/\r\n?|\n|\\n/).filter(line => line.trim()).slice(1).join('\n'));
-    const resolution = data.resolution ?? (data.resolutions.length === 0 ? nameResolution : null) ?? null;
+
+    const streamName = (stream.name || "").toLowerCase();
+    const streamDesc = stream.description || stream.title || stream.name || "";
+
+    const isCached =
+        streamName.includes('torbox+') ||
+        streamName.includes('tb+') ||
+        streamName.includes('torbox⚡') ||
+        streamName.includes('tb⚡');
+
+
+    const pttData = parseMedia(streamDesc);
+
+    let finalResolution = "";
+
+    if (streamName) {
+        if (streamName.includes('4k hdr') || streamName.includes('4k hdr10') || streamName.includes('4k hdr10+') || streamName.includes('4khdr') || streamName.includes('4khdr10') || streamName.includes('4khdr10+')) {
+            finalResolution = "4k HDR";
+        } else if (streamName.includes('4k') || streamName.includes('2160p')) {
+            finalResolution = "4K";
+        } else if (streamName.includes('1080p')) {
+            finalResolution = "1080p";
+        } else if (streamName.includes('720p')) {
+            finalResolution = "720p";
+        } else if (streamName.includes('480p') || streamName.includes('sd')) {
+            finalResolution = "SD";
+        } else if (streamName.includes('unknown')) {
+            finalResolution = "Unknown";
+        }
+    }
+
+    const streamData = {
+        isCached: isCached,
+        seeders: 0,
+        resolution: finalResolution,
+        size: null,
+        languages: [],
+        multi: null
+    };
+
+    // Seeders
+    const seederMatch = streamDesc.match(/👤[\s\-:|]*([\d,]+)/u);
+    if (seederMatch) {
+        streamData.seeders = parseInt(seederMatch[1].replace(/,/g, ''), 10);
+    } else {
+        streamData.seeders = pttData.seeders || 0;
+    }
+
+    // Size
+    const sizeMatch = streamDesc.match(/💾[\s\-:|]*([\d.]+\s*[KMGT]i?B)/ui);
+    if (sizeMatch) {
+        streamData.size = sizeMatch[1].trim();
+    } else {
+        streamData.size = pttData.size || null;
+    }
+
+    // Languages
+    const lineLanguages = extractLanguage(streamDesc);
+
+    if (lineLanguages.languages) {
+        streamData.languages = lineLanguages.languages;
+    }
+
+    if (lineLanguages.multi) {
+        streamData.multi = lineLanguages.multi;
+    }
+
+    if (!streamData.languages || streamData.languages.length === 0) {
+        streamData.languages = pttData.languages || null;
+    }
+
+    const fullData = { ...pttData, ...streamData };
+
+    return fullData;
+}
+
+// Parse single strings
+export function parseMediaData(rawString) {
+    let cleanName = rawString.toLowerCase();
+
+    const parsed = parseMedia(rawString);
+
+    return parsed;
+
+    // Seasons and Episodes
+    let finalSeasons = null;
+    let finalEpisodes = null;
+    
+    //if(parsed.se)
+    
+    let fallbackSeason = null;
+    let fallbackEpisode = null;
+    const seMatch = rawString.match(/[sS](\d{1,2})[\.\-\s]?[eE](\d{1,4})/);
+    if (seMatch) {
+        fallbackSeason = parseInt(seMatch[1], 10);
+        fallbackEpisode = parseInt(seMatch[2], 10);
+    }
+
+    // Use PTT library
+
+    let finalTitle = parsed.title || rawString;
+
+    // Season packs
+    let seasonText = null;
+
+    if (/\b(?:complete series|complete collection|the complete series|full series)\b/i.test(cleanName)) {
+        seasonText = "COMPLETE SERIES";
+    }
+    if (!seasonText) {
+        const seasonRangeMatch = cleanName.match(/(?:s|season[s]?\s*)0*(\d{1,2})\s*(?:-|~)\s*(?:s|season[s]?\s*)?0*(\d{1,2})/i);
+        if (seasonRangeMatch) {
+            seasonText = `SEASONS ${seasonRangeMatch[1]}-${seasonRangeMatch[2]}`;
+        }
+    }
+    if (!seasonText && Array.isArray(parsed.season) && parsed.season.length > 1) {
+        const min = Math.min(...parsed.season);
+        const max = Math.max(...parsed.season);
+        seasonText = `SEASONS ${min}-${max}`;
+    }
+    if (!seasonText) {
+        const epRangeMatch = rawString.match(/(?:^|\s|-\s)0*(\d{1,3})\s*(?:~|\s-\s)\s*0*(\d{1,3})(?:\s|$|\[|\()/);
+        if (epRangeMatch) {
+            seasonText = `EPISODES ${epRangeMatch[1]}-${epRangeMatch[2]}`;
+        }
+    }
+    if (!seasonText) {
+        const activeSeason = parsed.season !== undefined ? parsed.season : fallbackSeason;
+        const activeEpisode = parsed.episode !== undefined ? parsed.episode : fallbackEpisode;
+
+        if (activeSeason !== undefined && activeSeason !== null && !Array.isArray(activeSeason)) {
+            const hasPackKeywords = /\b(?:season pack|complete season|season \d+ complete)\b/i.test(cleanName);
+            if (hasPackKeywords || (activeEpisode === undefined || activeEpisode === null)) {
+                seasonText = `FULL SEASON ${activeSeason}`;
+            }
+        }
+    }
+    if (!seasonText && /\bseason pack\b/i.test(cleanName)) {
+        seasonText = "SEASON PACK";
+    }
+
+    // Video codec
+    let videoFormat = "";
+    if (parsed.codec) {
+        videoFormat = (parsed.codec).toUpperCase();
+
+        if (videoFormat === 'H264' || videoFormat === 'X264') {
+            videoFormat = 'x264';
+        } else if (videoFormat === 'H265' || videoFormat === 'X265' || videoFormat === 'HEVC') {
+            videoFormat = 'HEVC/x265';
+        }
+    }
+
+    // Video Source (Blueray/WebRip...)
+    const customVideo = extractVideoCodec(cleanName);
+    const finalVideoSource = customVideo.source || parsed.source || "Unknown";
+    const finalVideoTier = customVideo.tier || "Standard";
+    const videoData = { source: finalVideoSource, tier: finalVideoTier };
+
+    // Audio Codec
+    const customAudio = extractAudioCodec(cleanName);
+    
+    const finalAudioCodecs = customAudio.codecs || (parsed.audio ? [parsed.audio] : []);
+    const finalAudioTier = customAudio.tier || "Standard";
+    const audioData = { codecs: finalAudioCodecs, tier: finalAudioTier };
+
+    finalTitle = finalTitle.replace(/^\[.*?\]\s*/, '');
+    finalTitle = finalTitle.replace(/\s*\[.*?\]$/, '');
+
+    finalTitle = finalTitle.replace(/[._]/g, ' ');
+    finalTitle = finalTitle.split(/\(|\bseason\b|\bepisode\b/i)[0];
+    finalTitle = finalTitle.replace(/\b[sS]\d{1,2}[eE]\d{1,4}\b/g, '');
+
+    if (parsed.year) {
+        const yearRegex = new RegExp(`\\s?\\[?${parsed.year}\\]?`, 'g');
+        finalTitle = finalTitle.replace(yearRegex, '');
+    } else {
+        finalTitle = finalTitle.replace(/\s\d{4}$/, '');
+    }
+
+    // 7. Clean up emojis, leftover hyphens, and normalize multiple spaces
+    finalTitle = finalTitle.replace(/[\p{Extended_Pictographic}]/gu, '');
+    finalTitle = finalTitle.replace(/\s+/g, ' ').trim();
+    finalTitle = finalTitle.replace(/^[-–—\s]+|[-–—\s]+$/g, '');
+
+    const pttData = {
+        title: finalTitle,
+        year: parsed.year,
+        season: parsed.season !== undefined ? parsed.season : fallbackSeason,
+        episode: parsed.episode !== undefined ? parsed.episode : fallbackEpisode,
+        seasonDetails: seasonText,
+        audioType: audioData,
+        languages: parsed.languages,
+        videoType: parsed.codec || videoFormat,
+        resolution: parsed.resolution,
+        source: videoData
+    };
+
+    return pttData;
+}
+
+// Ensure these are defined at the top of your file
+const emojiToLanguage = {
+    '🇬🇧': 'English', '🇺🇸': 'English', 'EN': 'English',
+    '🇫🇷': 'French',
+    '🇪🇸': 'Spanish', '🇲🇽': 'Spanish',
+    '🇮🇹': 'Italian',
+    '🇷🇺': 'Russian',
+    '🇩🇪': 'German',
+    '🇵🇹': 'Portuguese', '🇧🇷': 'Portuguese',
+    '🇯🇵': 'Japanese',
+    '🇰🇷': 'Korean',
+    '🇮🇳': 'Hindi',
+    '🇨🇳': 'Chinese', '🇹🇼': 'Chinese', '🇭🇰': 'Chinese',
+    '🇳🇱': 'Dutch',
+    '🇵🇱': 'Polish',
+    '🇷🇴': 'Romanian',
+    '🇬🇷': 'Greek',
+    '🇩🇰': 'Danish',
+    '🇫🇮': 'Finnish',
+    '🇸🇪': 'Swedish',
+    '🇳🇴': 'Norwegian',
+    '🇹🇷': 'Turkish',
+    '🇸🇦': 'Arabic',
+    '🇮🇱': 'Hebrew',
+    '🇮🇩': 'Indonesian',
+    '🇹🇭': 'Thai'
+};
+
+//#region Extractors
+function extractLanguage(rawString) {
+    const foundLanguages = new Set();
+
+    let multiStatus = null;
+
+    if (/\bmulti\b/i.test(rawString)) {
+        multiStatus = "Multi";
+    } else if (/\bdual\b/i.test(rawString)) {
+        multiStatus = "Dual";
+    } else if (/\bdubbed\b/i.test(rawString)) {
+        multiStatus = "Dubbed";
+    } else if (/\bsub\b/i.test(rawString)) {
+        multiStatus = "Subbed";
+    }
+
+    // 2. Language Extraction
+    Object.entries(emojiToLanguage).forEach(([key, langName]) => {
+        const isText = /^[a-zA-Z]+$/.test(key);
+
+        if (isText) {
+            const langRegex = new RegExp(`\\b${key}\\b`, 'i');
+            if (langRegex.test(rawString)) {
+                foundLanguages.add(langName);
+            }
+        } else {
+            if (rawString.includes(key)) {
+                foundLanguages.add(langName);
+            }
+        }
+    });
+
     return {
-        ...data, isCached,
-        seeders: seeders ? Number(seeders[1].replace(/,/g, '')) : 0,
-        size: size?.[1].trim() ?? null,
-        resolution,
-        resolutions: data.resolutions.length ? data.resolutions : resolution ? [resolution] : [],
-        dynamicRange: data.dynamicRange.length ? data.dynamicRange : unique(nameTags.filter(tag => tag.kind === 'dynamicRange').map(tag => tag.value)),
-        languages: unique([...data.languages, ...footerLanguages.languages]),
-        multi: footerLanguages.multi ?? data.multi,
-        dualAudio: data.dualAudio || footerLanguages.dualAudio,
-        multiAudio: data.multiAudio || footerLanguages.multiAudio,
-        multiSubs: data.multiSubs || footerLanguages.multiSubs,
+        languages: foundLanguages.size > 0 ? Array.from(foundLanguages) : null,
+        multi: multiStatus
     };
 }
 
-export const parseFormatted = parseFormated;
+// Video formats
+const videoQualities = [
+    // 1. Remux
+    { source: "Remux", tier: "Premium", patterns: ['remux', 'bdremux', 'uhdremux', '4kremux'] },
+    { source: "BluRay", tier: "Premium", patterns: ['bluray', 'blu-ray', 'bdrip', 'brrip', 'bdmv', 'bdr'] },
+    { source: "WEB-DL", tier: "Premium", patterns: ['web-dl', 'webdl', 'web.dl', 'web dl'] },
+
+    { source: "WEBRip", tier: "Standard", patterns: ['web-rip', 'webrip', 'web.rip', 'web rip'] },
+    { source: "HDTV", tier: "Standard", patterns: ['hdtv', 'tvrip'] },
+    { source: "HDRip", tier: "Standard", patterns: ['hdrip'] },
+    { source: "WEB", tier: "Standard", patterns: ['web'] },
+    { source: "DVD", tier: "Standard", patterns: ['dvdrip', 'dvd', 'dvdscr'] },
+    { source: "CAM", tier: "Standard", patterns: ['cam', 'camrip', 'hdcam', 'ts', 'hdts', 'telesync', 'tc', 'telecine', 'scr', 'screener'] }
+];
+
+function extractVideoCodec(rawString) {
+    const cleanName = rawString.toLowerCase();
+
+    for (const quality of videoQualities) {
+        for (const pattern of quality.patterns) {
+            // Escapes special characters and ensures we match the exact alias
+            const escapedPattern = pattern.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+            const regex = new RegExp(`(?:^|\\W|_)${escapedPattern}(?:$|\\W|_)`, 'i');
+
+            if (regex.test(cleanName)) {
+                return {
+                    source: quality.source,
+                    tier: quality.tier
+                };
+            }
+        }
+    }
+
+    // Default fallback if absolutely nothing is found
+    return { source: null, tier: "Standard" };
+}
+
+// Audio categorization
+const losslessAudio = [
+    'atmos', 'truehd', 'dts-hd', 'dts:x', 'lossless'
+];
+
+const premiumAudio = [
+    'flac', 'aac', 'dts', 'dd5.1', 'ac3', 'eac3', 'e-ac3', 'dd+', 'dolby digital', '5.1', '7.1'
+];
+
+// Master list for the regex scanner
+const allAudioTypes = [...losslessAudio, ...premiumAudio];
+
+function extractAudioCodec(rawString) {
+    const foundAudio = new Set();
+    let highestTier = "Standard";
+
+    allAudioTypes.forEach(audio => {
+        // Escape special characters like + or . in the audio name
+        const escapedAudio = audio.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+
+        // This regex ensures we match exactly the audio string and not partial words
+        const audioRegex = new RegExp(`(?:^|\\W|_)${escapedAudio}(?:$|\\W|_)`, 'i');
+
+        if (audioRegex.test(rawString)) {
+            foundAudio.add(audio);
+        }
+    });
+
+    const codecsArray = foundAudio.size > 0 ? Array.from(foundAudio) : null;
+
+    // Evaluate the tier if codecs were found
+    if (codecsArray) {
+        if (codecsArray.some(c => losslessAudio.includes(c))) {
+            highestTier = "Lossless";
+        } else if (codecsArray.some(c => premiumAudio.includes(c))) {
+            highestTier = "Premium";
+        }
+    }
+
+    return {
+        codecs: codecsArray,
+        tier: highestTier
+    };
+}
