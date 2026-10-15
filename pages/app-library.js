@@ -11,7 +11,8 @@ import { getCurrentUserSettings } from '../user-data/user-settings.js';
 import { requestLink } from '../streaming/player.js';
 import { downloadFile } from '../streaming/download.js';
 import { createLibraryCard } from './library-renderer.js';
-import { parseMediaData } from '../utils/parseMedia.js';
+import { getMediaText } from './library.js';
+import { openPicker } from '../metadata/picker.js';
 
 
 //#region Manage Library
@@ -29,26 +30,35 @@ export async function addToAppLibrary(mediaData) {
         }, { onConflict: 'media_id', ignoreDuplicates: true });
 
         console.log("Successfully linked Torbox source to App Library.");
-        await loadAppLibrary();
     } catch (err) {
         console.error("Database linking failed:", err.message);
     }
 }
 
-export async function linkHashToMedia(mediaData, torboxHash) {
+export async function linkHashToMedia(mediaData, torboxHash, addedViaApp = false) {
     if (!appState.currentUser) return;
+    const userId = appState.currentUser.id;
     // Link the Torbox Hash to the Media ID
     const { error } = await supabase.from('added_sources').insert({
-        user_id: appState.currentUser.id,
+        user_id: userId,
         media_id: mediaData.id,
         added_hash: torboxHash,
+        added_via_app: addedViaApp
     });
 
     if (error && error.code === '23505') {
-        console.log("This specific source is already mapped to this user.");
+        if (addedViaApp) {
+            const { error: updateError } = await supabase.from('added_sources')
+                .update({ added_via_app: true })
+                .eq('user_id', userId)
+                .eq('added_hash', torboxHash);
+            if (updateError) throw updateError;
+        }
     } else if (error) {
         throw error;
     }
+
+    if (addedViaApp) await loadAppLibrary();
 }
 
 async function removeFromAppLibrary(mediaId) {
@@ -76,11 +86,11 @@ export async function loadAppLibrary() {
     if (!list || !info) return;
 
     list.replaceChildren();
-    info.textContent = userId ? 'Not ready yet...' : 'Sign in to view your library.';
+    info.textContent = userId ? 'Loading your library...' : 'Sign in to view your library.';
     info.classList.remove('hidden');
     if (!userId) return;
 
-    /*try {
+    try {
         const items = await fetchAppLibraryData();
         if (userId !== appState.currentUser?.id) return;
         renderAppLibrary(items);
@@ -88,13 +98,13 @@ export async function loadAppLibrary() {
         if (userId !== appState.currentUser?.id) return;
         console.error('App library load failed:', error);
         info.textContent = 'Could not load your library. Select Library to try again.';
-    }*/
+    }
 }
 
 async function fetchAppLibraryData() {
     if (!appState.currentUser) return [];
 
-    // 1. Fetch all sources joined with global_media
+    // 1. Fetch sources added through the app, joined with global_media
     const { data, error } = await supabase
         .from('added_sources')
         .select(`
@@ -102,7 +112,8 @@ async function fetchAppLibraryData() {
             added_hash,
             global_media ( media_type, title, poster_path, base_url )
         `)
-        .eq('user_id', appState.currentUser.id);
+        .eq('user_id', appState.currentUser.id)
+        .eq('added_via_app', true);
 
     if (error) throw error;
 
@@ -117,9 +128,7 @@ async function fetchAppLibraryData() {
             });
         }
         groupedLibrary.get(row.media_id).sources.push({
-            hash: row.added_hash,
-            season: row.season_number,
-            episode: row.episode_number
+            hash: row.added_hash
         });
     }
 
@@ -135,28 +144,10 @@ export function renderAppLibrary(items) {
 
     for (const media of items) {
         const torrent = appState.allTorrents.find(t => media.sources.some(source => source.hash === t.hash));
-        const allFiles = (torrent.files || []).filter(f => /\.(mkv|mp4|avi|mov)$/i.test(f.name));
-
-        const vidCount = allFiles.length;
-        const isSingle = vidCount == 1;
-
-        // Pass main folder title
-        const mediaInfo = parseMediaData(torrent.name);
-
-        // Check if its type based on seasons found
-        const hasSeason = (mediaInfo.seasons?.length || 0) > 0 || allFiles.some(file => {
-            const parsed = parseMediaData(file.short_name || file.name);
-            return !parsed.isExtra && parsed.fileType !== 'MOVIE'
-                && ((parsed.episodes?.length || 0) > 0 || (parsed.seasons?.length || 0) > 0);
-        });
-        const cleanName = mediaInfo.title.replace(/(^\w|[\s-]\w)/g, m => m.toUpperCase());
-
-        let mediaText = "";
-
-        if (!isSingle && hasSeason) mediaText = "Series";
-        if (isSingle && hasSeason) mediaText = "Single Episode";
-        if (isSingle && !hasSeason) mediaText = "Movie";
-        if (!isSingle && !hasSeason) mediaText = "Collection";
+        const isPacked = new Set(media.sources.map(source => source.hash).filter(Boolean)).size > 1;
+        const mediaText = isPacked
+            ? media.media_type === 'tv' ? 'Series' : 'Collection'
+            : torrent ? getMediaText(torrent) : media.media_type === 'tv' ? 'Series' : 'Movie';
 
         const card = createLibraryCard(
             media.title || 'Untitled movie',
@@ -164,6 +155,12 @@ export function renderAppLibrary(items) {
             mediaText,
             torrent?.size,
         );
+
+        if (isPacked) {
+            const badge = card.querySelector('.library-size');
+            badge.textContent = 'PACKED TORRENT';
+            badge.classList.remove('hidden');
+        }
 
         let busy = false;
         card.addEventListener('click', async event => {
@@ -186,11 +183,23 @@ export function renderAppLibrary(items) {
             busy = true;
             card.style.opacity = '0.5';
             try {
-                const { torrentId, fileId, fileName } = await resolveMovieSource(media.sources);
-                if (action === 'download') await downloadFile(torrentId, fileId, fileName);
-                else await requestLink(torrentId, fileId, media.title, fileName);
+                const sourceTorrents = await resolveLibraryTorrents(media.sources);
+                const sourceTorrent = sourceTorrents[0];
+                const files = sourceTorrent.files || [];
+                const playableFile = files.find(file => /\.(mkv|mp4|avi|mov)$/i.test(file.name)) || files[0];
+                const sourceMediaText = getMediaText(sourceTorrent);
+
+                if (action === 'download') {
+                    if (playableFile) await downloadFile(sourceTorrent.id, playableFile.id, playableFile.name);
+                    else showToast('No playable files found.', 'error');
+                } else if (sourceTorrents.length === 1 && (sourceMediaText === 'Movie' || sourceMediaText === 'Single Episode')) {
+                    if (playableFile) await requestLink(sourceTorrent.id, playableFile.id, sourceTorrent.name, playableFile.name);
+                    else showToast('No playable files found.', 'error');
+                } else {
+                    await openPicker(sourceTorrents, media.id, media.title);
+                }
             } catch (error) {
-                showToast(error.message || 'Could not open this movie.', 'error');
+                showToast(error.message || 'Could not open this media.', 'error');
             } finally {
                 busy = false;
                 card.style.opacity = '1';
@@ -200,9 +209,13 @@ export function renderAppLibrary(items) {
     }
 }
 
-async function resolveMovieSource(sources) {
+async function resolveLibraryTorrents(sources) {
+    const hashes = new Set(sources.map(source => source.hash).filter(Boolean));
+    const cachedTorrents = appState.allTorrents.filter(torrent => hashes.has(torrent.hash) && torrent.download_finished);
+    if (cachedTorrents.length === hashes.size && cachedTorrents.length > 0) return cachedTorrents;
+
     const tbKey = getCurrentUserSettings().user_preferences.torboxApiKey;
-    if (!tbKey) throw new Error('Link TorBox in settings to play or download this movie.');
+    if (!tbKey) throw new Error('Link TorBox in settings to play or download this media.');
 
     // 1. Fetch the user's active Torbox library
     const res = await smartFetch('https://api.torbox.app/v1/api/torrents/mylist', {
@@ -213,25 +226,15 @@ async function resolveMovieSource(sources) {
         throw new Error(result.detail || 'Could not load your TorBox files.');
     }
 
-    // 2. Find the torrent that matches your Supabase hash
-    const matchingTorrents = sources.flatMap(source => result.data.filter(t => t.hash === source.hash));
+    // 2. Resolve all linked hashes in one request.
+    const matchingTorrents = result.data.filter(torrent => hashes.has(torrent.hash));
 
     if (matchingTorrents.length === 0) {
         throw new Error("Torrent not found in Torbox. Did you delete it?");
     }
 
-    // Every library entry plays as a movie, even if its source has multiple videos.
-    for (const torrent of matchingTorrents) {
-        if (!torrent.download_finished) continue;
-        const videoFiles = (torrent.files || []).filter(file =>
-            /\.(mp4|mkv|avi|mov)$/i.test(file.name) && !/(^|[\s._/\\-])sample([\s._/\\-]|$)/i.test(file.name)
-        );
-        const targetFile = videoFiles.reduce((largest, file) =>
-            !largest || Number(file.size) > Number(largest.size) ? file : largest, null);
-        if (targetFile) {
-            return { torrentId: torrent.id, fileId: targetFile.id, fileName: targetFile.name };
-        }
-    }
-    throw new Error('No playable movie file is ready yet. Check its download in TorBox.');
+    const readyTorrents = matchingTorrents.filter(torrent => torrent.download_finished);
+    if (readyTorrents.length > 0) return readyTorrents;
+    throw new Error('No source is ready yet. Check its download in TorBox.');
 }
 //#endregion

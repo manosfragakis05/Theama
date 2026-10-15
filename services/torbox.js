@@ -124,7 +124,7 @@ export async function addStreamtoTorbox(finalLink) {
 
             // Add to app library
             await addToAppLibrary(mediaStore.get());
-            await linkHashToMedia(mediaStore.get(), createData?.hash);
+            await linkHashToMedia(mediaStore.get(), createData?.hash, true);
         }
     }
 }

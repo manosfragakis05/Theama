@@ -32,6 +32,7 @@ export function initializeLibraryTabs() {
             document.getElementById(tab.dataset.libraryTab).classList.toggle('hidden', !selected);
         });
         if (selectedTab.dataset.libraryTab === 'library-panel') loadAppLibrary();
+        if (selectedTab.dataset.libraryTab === 'cloud-panel') fetchLibrary();
     }
 
     tabs.forEach(tab => {
