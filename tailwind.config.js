@@ -2,6 +2,7 @@
 export default {
   content: ["./*.{html,js}",
     "./services/**/*.{html,js}",
+    "./metadata/**/*.js",
     "./user-data/**/*.js",
     "./user-addons/**/*.js",
     "./streaming/**/*.{html,js}"],

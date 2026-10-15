@@ -45,6 +45,11 @@ select::picker-icon {
     display: none;
 }
 
+#library-season-select:open .season-dropdown-icon,
+#playback-queue-toggle[aria-expanded="true"] .queue-dropdown-icon {
+    transform: rotate(180deg);
+}
+
 /* 2. Style the popup menu box */
 ::picker(select) {
     background-color: #0f172a;
@@ -116,6 +121,13 @@ option:hover {
     width: 100%;
     overflow: hidden;
     background: #000;
+}
+
+/* The shared drag track hides vertical overflow; this queue stacks on small screens. */
+@media (max-width: 1023px) {
+    #playback-queue-items.draggable-row {
+        overflow-y: auto;
+    }
 }
 
 .page-view {

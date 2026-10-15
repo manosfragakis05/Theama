@@ -9,8 +9,8 @@ import { getCurrentUserSettings, getStorage } from '../user-data/user-settings.j
 import { appState, smartFetch, showToast } from '../services/config.js';
 
 import { parseMediaData } from '../utils/parseMedia.js';
-import { getPosterForLibrary, getTmdbId } from '../services/metadata.js';
-import { openPicker } from '../streaming/picker.js';
+import { getPosterForLibrary, getTmdbId } from '../metadata/metadata.js';
+import { openPicker } from '../metadata/picker.js';
 
 import { requestLink } from '../streaming/player.js';
 import { downloadFile } from '../streaming/download.js';
@@ -45,7 +45,7 @@ export async function fetchLibrary() {
     if (!key) return;
 
     try {
-        const res = await smartFetch('https://api.torbox.app/v1/api/torrents/mylist?bypass_cache=false', {
+        const res = await smartFetch('https://api.torbox.app/v1/api/torrents/mylist?bypass_cache=true', {
             headers: { 'Authorization': `Bearer ${key}` }
         });
         const data = await res.json();
@@ -102,7 +102,7 @@ export async function fetchLibrary() {
             const newTmdbItems = needsTmdb.length > 0 ? await fetchMainMetadata(needsTmdb) : [];
 
             // Save new findings (from both Supabase and TMDB) to Local Storage for next time
-            //saveToMetaCache([...cloudItems, ...newTmdbItems]);
+            saveToMetaCache([...cloudItems, ...newTmdbItems]);
 
             // Combine all arrays
             const allItems = [...fullyCachedItems, ...cloudItems, ...newTmdbItems];
@@ -203,7 +203,7 @@ async function getMediaFromHash(torrents) {
         return [];
     }
 
-    return [];
+    return  data || [];
 }
 
 const CACHE_KEY = 'theama_meta_cache';
@@ -305,10 +305,10 @@ async function fetchMainMetadata(items) {
 
             if (appState.currentUser && tmdbId.officialName && poster) {
                 // 1. Save the media to global_media (ignoring if it exists)
-                //await addToAppLibrary(global_media);
+                await addToAppLibrary(global_media);
 
                 // 2. Link this specific user and hash to the media
-                //await linkHashToMedia(global_media, torrent.hash);
+                await linkHashToMedia(global_media, torrent.hash);
             }
 
             return { ...item, tmdbId, poster };

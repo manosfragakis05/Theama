@@ -6,7 +6,7 @@
  */
 
 // We need your TMDB key from your existing api.js file
-import { TMDB_KEY } from './config.js';
+import { TMDB_KEY } from '../services/config.js';
 
 //#region TMDB Logic
 export async function getPosterForLibrary(tmdbId, type) {

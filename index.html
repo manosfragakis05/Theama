@@ -62,6 +62,12 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
         </symbol>
 
+        <!-- Shuffle Icon -->
+        <symbol id="icon-shuffle" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M16 3h5v5M21 3 3 21M21 16v5h-5M15 15l6 6M3 3l6 6"></path>
+        </symbol>
+
         <!-- Share Icon -->
         <symbol id="icon-share" viewBox="0 0 24 24">
             <g stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -243,12 +249,53 @@
                         <div class="artplayer-app w-full aspect-video"></div>
                         <button id="close-player-btn" type="button" aria-label="Close player" title="Close player"
                             class="hidden absolute top-3 right-3 z-40 flex h-11 w-11 items-center justify-center text-white drop-shadow-md transition-colors hover:text-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
-                            <svg class="h-6 w-6" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18 18 6M6 6l12 12"></path>
+                            <svg class="h-6 w-6" aria-hidden="true" fill="none" stroke="currentColor"
+                                viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M6 18 18 6M6 6l12 12"></path>
                             </svg>
                         </button>
                     </div>
                 </div>
+
+                <section id="playback-queue" aria-labelledby="playback-queue-heading"
+                    class="hidden flex-none min-w-0 mx-4 mt-4 mb-8 rounded-2xl border border-slate-700/60 bg-slate-800/20 p-4 shadow-lg shadow-black/10 sm:p-5">
+                    <div id="playback-queue-header" class="mb-4 flex items-start gap-3">
+                        <div class="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+                            <h2 id="playback-queue-heading" class="text-lg font-bold text-white">Queue</h2>
+
+                            <div id="playback-queue-controls" class="flex flex-wrap items-center gap-3">
+                                <button id="playback-queue-shuffle" type="button" aria-pressed="false" title="Shuffle Queue"
+                                    class="flex items-center gap-1.5 rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700 cursor-pointer transition-colors">
+                                    <svg class="w-4 h-4 shrink-0" aria-hidden="true" focusable="false" fill="none"
+                                        stroke="currentColor">
+                                        <use href="#icon-shuffle"></use>
+                                    </svg>
+                                    Shuffle
+                                </button>
+
+                                <button id="playback-queue-clear" type="button" title="Clear Queue"
+                                    class="flex items-center gap-1.5 rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-semibold text-slate-300 hover:bg-rose-600 hover:text-white cursor-pointer transition-colors">
+                                    Clear
+                                </button>
+
+                                <span id="playback-queue-count"
+                                    class="rounded-full border border-slate-700/50 bg-slate-900/50 px-3 py-1 text-xs font-medium text-slate-400"></span>
+                            </div>
+                        </div>
+                        <button id="playback-queue-toggle" type="button" aria-expanded="true"
+                            aria-controls="playback-queue-controls playback-queue-items" aria-label="Collapse queue" title="Collapse queue"
+                            class="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-700/50 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
+                            <svg class="queue-dropdown-icon w-4 h-4 transition-transform duration-200" aria-hidden="true" focusable="false" fill="none" stroke="currentColor">
+                                <use href="#icon-arrow"></use>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <ol id="playback-queue-items" tabindex="0" aria-label="Playback queue in play order"
+                        class="draggable-row flex max-h-80 flex-col gap-3 overflow-y-auto custom-scrollbar lg:max-h-none lg:flex-row lg:overflow-x-auto lg:overflow-y-hidden lg:pb-2">
+                    </ol>
+                </section>
 
                 <div id="library-page" class="page-view min-h-[50vh]">
                     <div aria-label="Library sections" class="flex gap-2 mb-6 border-b border-slate-800 pb-3">
@@ -257,8 +304,8 @@
                             class="px-5 py-2 rounded-lg font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition-colors aria-selected:bg-blue-600 aria-selected:text-white">
                             Library
                         </button>
-                        <button id="cloud-tab" type="button" aria-selected="true"
-                            aria-controls="cloud-panel" data-library-tab="cloud-panel"
+                        <button id="cloud-tab" type="button" aria-selected="true" aria-controls="cloud-panel"
+                            data-library-tab="cloud-panel"
                             class="px-5 py-2 rounded-lg font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition-colors aria-selected:bg-blue-600 aria-selected:text-white">
                             Cloud
                         </button>
@@ -273,7 +320,8 @@
                         <div
                             class="mt-8 pt-12 pb-24 border-t border-slate-800 flex flex-col items-center justify-center text-center">
                             <h2 class="text-xl font-bold text-white flex items-center justify-center gap-2 mb-2">
-                                <svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                         d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z">
                                     </path>
@@ -283,7 +331,8 @@
                                 </svg>
                                 Play Local File
                             </h2>
-                            <p class="text-sm text-slate-400 mb-6">Select a video from your device to play it instantly.</p>
+                            <p class="text-sm text-slate-400 mb-6">Select a video from your device to play it instantly.
+                            </p>
 
                             <input type="file" id="local-file-input" class="hidden"
                                 accept="video/mp4,video/x-matroska,.mkv,.mp4">
@@ -296,7 +345,8 @@
                     </div>
 
                     <div id="library-panel" aria-labelledby="library-tab" tabindex="0" class="hidden">
-                        <div id="app-library-info-text" class="text-center text-slate-500 mt-10">Loading your library...</div>
+                        <div id="app-library-info-text" class="text-center text-slate-500 mt-10">Loading your library...
+                        </div>
                         <div id="app-library-list" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4"></div>
                     </div>
                 </div>
@@ -444,22 +494,29 @@
                         </div>
                     </div>
 
-                    <section id="profile-friends-section" class="flex md:hidden flex-col gap-6" aria-labelledby="profile-friends-heading">
+                    <section id="profile-friends-section" class="flex md:hidden flex-col gap-6"
+                        aria-labelledby="profile-friends-heading">
                         <div class="flex items-center justify-between px-2">
-                            <h2 id="profile-friends-heading" class="text-2xl font-bold text-white flex items-center gap-3">
-                                <span class="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-500 border border-blue-500/20 shadow-inner">
-                                    <svg class="w-5 h-5" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <h2 id="profile-friends-heading"
+                                class="text-2xl font-bold text-white flex items-center gap-3">
+                                <span
+                                    class="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-500 border border-blue-500/20 shadow-inner">
+                                    <svg class="w-5 h-5" aria-hidden="true" fill="none" stroke="currentColor"
+                                        viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m20 0v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                                            d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m20 0v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M13 7a4 4 0 11-8 0 4 4 0 018 0z">
+                                        </path>
                                     </svg>
                                 </span>
                                 My Friends
                             </h2>
                         </div>
 
-                        <div class="bg-slate-800/30 backdrop-blur border border-slate-700/50 rounded-3xl p-4 sm:p-8 shadow-lg">
+                        <div
+                            class="bg-slate-800/30 backdrop-blur border border-slate-700/50 rounded-3xl p-4 sm:p-8 shadow-lg">
                             <div id="profile-friends-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                <div id="profile-friends-empty" class="col-span-full text-center py-10 px-4 bg-slate-900/50 border border-dashed border-slate-700/50 rounded-2xl">
+                                <div id="profile-friends-empty"
+                                    class="col-span-full text-center py-10 px-4 bg-slate-900/50 border border-dashed border-slate-700/50 rounded-2xl">
                                     <p class="text-slate-400 font-medium">No friends yet.</p>
                                     <p class="text-slate-500 text-sm mt-1">People you follow will appear here.</p>
                                 </div>
@@ -778,15 +835,18 @@
                             </label>
 
                             <div class="flex items-center justify-between gap-3 py-3">
-                                <span id="default-player-label" class="text-gray-900 dark:text-white font-medium text-base">
+                                <span id="default-player-label"
+                                    class="text-gray-900 dark:text-white font-medium text-base">
                                     Default Player
                                 </span>
                                 <button id="select-player-btn" type="button"
                                     aria-labelledby="default-player-label select-player-label"
                                     class="inline-flex min-h-11 min-w-0 max-w-[60%] items-center justify-between gap-3 rounded-xl border border-blue-500/30 bg-blue-500/10 px-3.5 py-2.5 text-sm font-semibold text-blue-600 dark:text-blue-300 shadow-sm transition-colors hover:border-blue-500/60 hover:bg-blue-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900">
                                     <span id="select-player-label" class="truncate">Internal</span>
-                                    <svg class="h-4 w-4 shrink-0" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m6 9 6 6 6-6"></path>
+                                    <svg class="h-4 w-4 shrink-0" aria-hidden="true" fill="none" stroke="currentColor"
+                                        viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="m6 9 6 6 6-6"></path>
                                     </svg>
                                 </button>
                             </div>
@@ -1182,13 +1242,15 @@
             </div>
 
             <!-- Full-width metadata on small screens -->
-            <div class="col-span-2 sm:col-span-1 sm:col-start-2 sm:row-start-2 min-w-0 flex flex-wrap items-center gap-1.5">
+            <div
+                class="col-span-2 sm:col-span-1 sm:col-start-2 sm:row-start-2 min-w-0 flex flex-wrap items-center gap-1.5">
                 <div class="addon-capabilities flex flex-wrap gap-1.5"></div>
                 <div class="addon-types flex flex-wrap gap-1.5"></div>
             </div>
 
             <!-- Action Buttons -->
-            <div class="col-span-2 sm:col-span-1 sm:col-start-3 sm:row-start-1 sm:row-span-2 flex items-center justify-end gap-2 shrink-0">
+            <div
+                class="col-span-2 sm:col-span-1 sm:col-start-3 sm:row-start-1 sm:row-span-2 flex items-center justify-end gap-2 shrink-0">
 
                 <button
                     class="addon-share-btn hidden p-2.5 bg-slate-800 hover:bg-blue-600 text-slate-300 hover:text-white rounded-xl transition-all shadow-sm"
@@ -1364,25 +1426,71 @@
         </div>
     </div>
 
+    <template id="queue-item-template">
+        <li
+            class="relative w-full shrink-0 overflow-hidden rounded-xl border border-slate-700/50 bg-slate-800/40 aria-[current=true]:border-blue-500/70 aria-[current=true]:bg-blue-500/10 lg:w-56">
+            <button type="button"
+                class="queue-item-play flex h-full w-full cursor-pointer select-none text-left transition-colors hover:bg-slate-700/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400 lg:flex-col">
+                <div class="relative w-28 shrink-0 self-stretch overflow-hidden bg-slate-900 lg:aspect-video lg:w-full lg:self-start">
+                    <span
+                        class="queue-item-fallback absolute inset-0 flex items-center justify-center overflow-hidden p-2 text-center text-xs text-slate-500"
+                        aria-hidden="true"></span>
+                    <img class="queue-item-thumbnail hidden absolute inset-0 h-full w-full object-cover" alt=""
+                        loading="lazy" draggable="false">
+                </div>
+                <div class="min-w-0 flex-1 px-3 py-2 lg:p-3">
+                    <p class="queue-item-status mb-1 text-[10px] font-bold uppercase tracking-wide text-blue-400"></p>
+                    <p class="queue-item-title text-xs font-medium leading-tight text-slate-200 line-clamp-2"></p>
+                    <p class="queue-item-meta mt-1 truncate text-[10px] text-slate-400"></p>
+                </div>
+            </button>
+            <div class="pointer-events-none absolute top-0 left-0 aspect-video w-28 lg:w-full">
+                <button type="button" title="Remove from queue" aria-label="Remove from queue"
+                    class="queue-remove-item pointer-events-auto absolute top-1.5 right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-white shadow-sm transition-colors hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+                    <svg class="w-3.5 h-3.5" aria-hidden="true" focusable="false" fill="none" stroke="currentColor">
+                        <use href="#icon-close"></use>
+                    </svg>
+                </button>
+            </div>
+        </li>
+    </template>
+
     <template id="library-card-template">
         <div class="relative flex-col cursor-pointer transition-transform hover:scale-105 select-none group">
-            <div class="relative w-full aspect-[2/3] bg-slate-800 rounded-lg shadow-lg overflow-hidden border border-slate-700/50">
-                <img class="library-poster absolute inset-0 w-full h-full object-cover hidden" loading="lazy" draggable="false" alt="Poster">
-                <div class="library-fallback absolute inset-0 flex items-center justify-center p-4 text-center text-slate-500 font-bold text-sm bg-slate-800"></div>
-                <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3">
+            <div
+                class="relative w-full aspect-[2/3] bg-slate-800 rounded-lg shadow-lg overflow-hidden border border-slate-700/50">
+                <img class="library-poster absolute inset-0 w-full h-full object-cover hidden" loading="lazy"
+                    draggable="false" alt="Poster">
+                <div
+                    class="library-fallback absolute inset-0 flex items-center justify-center p-4 text-center text-slate-500 font-bold text-sm bg-slate-800">
+                </div>
+                <div
+                    class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3">
                     <div class="flex justify-between items-center mb-1">
                         <span class="library-type text-white font-bold text-xs truncate drop-shadow-md"></span>
                         <div class="flex items-center action-buttons">
-                            <button data-action="download" class="text-blue-400 hover:text-blue-300 p-1 bg-black/50 rounded-full transition z-10 w-8 h-8 flex items-center justify-center backdrop-blur-sm mr-2" title="Download">
-                                <svg style="width:22px;height:22px;margin-top:2px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            <button data-action="download"
+                                class="text-blue-400 hover:text-blue-300 p-1 bg-black/50 rounded-full transition z-10 w-8 h-8 flex items-center justify-center backdrop-blur-sm mr-2"
+                                title="Download">
+                                <svg style="width:22px;height:22px;margin-top:2px;" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                </svg>
                             </button>
-                            <button data-action="delete" class="text-red-500 hover:text-red-400 p-1 bg-black/50 rounded-full transition z-10 w-8 h-8 flex items-center justify-center backdrop-blur-sm" title="Delete from library">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor"><use href="#icon-delete"></use></svg>
+                            <button data-action="delete"
+                                class="text-red-500 hover:text-red-400 p-1 bg-black/50 rounded-full transition z-10 w-8 h-8 flex items-center justify-center backdrop-blur-sm"
+                                title="Delete from library">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor">
+                                    <use href="#icon-delete"></use>
+                                </svg>
                             </button>
                         </div>
                     </div>
                 </div>
-                <div class="library-size absolute top-2 right-2 bg-blue-600/90 text-white text-[10px] font-bold px-2 py-1 rounded backdrop-blur shadow-lg hidden"></div>
+                <div
+                    class="library-size absolute top-2 right-2 bg-blue-600/90 text-white text-[10px] font-bold px-2 py-1 rounded backdrop-blur shadow-lg hidden">
+                </div>
             </div>
             <p class="library-title text-xs text-slate-300 mt-2 truncate font-semibold pl-1"></p>
         </div>
@@ -1452,7 +1560,8 @@
         <button type="button" data-friend-id=""
             class="profile-friend-btn w-full min-w-0 min-h-11 flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-left text-slate-400 transition-colors hover:bg-slate-800/50 hover:text-white group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
             <span class="profile-friend-name min-w-0 font-medium text-sm truncate"></span>
-            <svg class="w-3.5 h-3.5 shrink-0 text-slate-600 -rotate-90 group-hover:text-slate-400" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="w-3.5 h-3.5 shrink-0 text-slate-600 -rotate-90 group-hover:text-slate-400" aria-hidden="true"
+                fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <use href="#icon-arrow"></use>
             </svg>
         </button>

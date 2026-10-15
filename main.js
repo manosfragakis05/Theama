@@ -24,8 +24,9 @@ import { goHome, toggleProfile, switchTab, handleSearch, toggleSidebar, updatePr
 import { deleteTorrent, initializeLibraryTabs } from './pages/library.js';
 import { loadAppLibrary } from './pages/app-library.js';
 
-import { closePicker } from './streaming/picker.js';
+import { closePicker } from './metadata/picker.js';
 import { playDirect, stopPlayback } from './streaming/player.js';
+import { initializeQueueRenderer } from './streaming/playlist-renderer.js';
 
 import { updatePublicProfile, fetchPublicProfile, fetchFriendsList, handleFollowToggle } from './user-data/network.js';
 import { initializeSettings } from './user-data/user-settings.js';
@@ -51,6 +52,7 @@ import { triggerLocalFilePicker, processLocalFile } from './services/offline.js'
 // Setup Static Event Listeners
 function setupStaticEventListeners() {
     initializeLibraryTabs();
+    initializeQueueRenderer();
     document.getElementById('close-player-btn')?.addEventListener('click', stopPlayback);
 
     // 1. Forms
@@ -271,7 +273,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (appState.currentUser) {
                 await Promise.all([syncLocalFavouritesToCloud(), updatePublicProfile()]);
             }
-            await Promise.all([handleProfileRouting(), refreshFriendsLists(), initializeSettings(), loadAppLibrary()]);
+            await Promise.all([handleProfileRouting(), refreshFriendsLists(), initializeSettings(), /*loadAppLibrary()*/]);
             if (appBooted) {
                 await initCustomAddons();
                 await authenticateTorboxUser();

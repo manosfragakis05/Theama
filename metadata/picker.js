@@ -5,12 +5,21 @@
  * ==========================================
  */
 
-import { appState, showToast } from '../services/config.js';
+import { showToast } from '../services/config.js';
 import { parseMediaData } from '../utils/parseMedia.js';
-import { requestLink } from './player.js';
+
+import { requestLink } from '../streaming/player.js';
+import {
+    buildSeriesQueue,
+    startQueueFromEpisode,
+    startShuffledQueue,
+    addToQueue,
+    queueStagedSeries
+} from '../streaming/playlist.js';
+
 import { fetchAnimeMapping } from '../api.js';
 import { downloadFile } from '../pages/library.js';
-import { getTmdbSeasonEpisodes, getTmdbShowDetails } from '../services/metadata.js';
+import { getTmdbSeasonEpisodes, getTmdbShowDetails } from './metadata.js';
 
 //#region Data Grouping
 const SWITCH_WORDS_REGEX = /(?:^|[\s._\-\[\]()])(MOVIE|OVA|OAD|ODA|ONA|SPECIAL|RECAP|SP|OPENING|NCOP|OP|ENDING|NCED|ED|THEME|PROMO|TEASER|TRAILER|PV|CM)(?:S?\d*[a-z]?)?(?=$|[\s._\-\[\]()])/i;
@@ -88,7 +97,6 @@ function preProcessEpisodeTorrentData(videoFiles, fallbackShowName = 'Season 1')
 
         const rawSeason = parsedFile.seasons?.[0] ?? fullParsed?.seasons?.[0];
         const fileEpisode = parsedFile.episodes?.[0] ?? fullParsed?.episodes?.[0];
-        console.log(parsedFile);
         const { fileType, fileTypeLabel, isExtended } = classifyFileType(fileName);
 
         // Extract clean season/show name if no season number exists
@@ -240,7 +248,6 @@ function preProcessEpisodeTorrentData(videoFiles, fallbackShowName = 'Season 1')
         group.episodeCount = group.files.length;
     }
 
-    console.log(franchiseGroups);
     return franchiseGroups;
 }
 //#endregion
@@ -249,7 +256,6 @@ function preProcessEpisodeTorrentData(videoFiles, fallbackShowName = 'Season 1')
 export async function openPicker(torrent, tmdbId) {
     const picker = document.getElementById('file-picker');
     const list = document.getElementById('picker-list');
-    const title = document.getElementById('picker-title');
 
     picker.classList.remove('hidden');
     list.innerHTML = `<div class="col-span-full flex justify-center p-10">...Loading Spinner...</div>`;
@@ -260,7 +266,6 @@ export async function openPicker(torrent, tmdbId) {
 
     const franchiseGroups = preProcessEpisodeTorrentData(videoFiles, cleanName);
 
-    // We only process TMDB metadata if we have a valid ID
     // We only process TMDB metadata if we have a valid ID
     if (tmdbId) {
         const showDetails = await getTmdbShowDetails(tmdbId);
@@ -380,7 +385,7 @@ export async function openPicker(torrent, tmdbId) {
         }
     }
 
-    renderPickerUI(torrent, franchiseGroups, title, list, cleanName);
+    renderPickerUI(torrent, franchiseGroups, list, cleanName);
 }
 
 function mapAbsoluteToTmdbRelative(absoluteEp, tmdbSeasons) {
@@ -407,7 +412,9 @@ export function closePicker() {
 //#endregion
 
 //#region UI Rendering
-function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cleanName) {
+function renderPickerUI(torrent, franchiseGroups, listElement, cleanName) {
+    const titleElement = document.getElementById('picker-title');
+
     const typePriority = {
         'TV': 1,
         'Movie': 2,
@@ -426,29 +433,13 @@ function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cle
         return (groupA.seasonOrder || 0) - (groupB.seasonOrder || 0);
     });
 
-    titleElement.innerHTML = `
-        <div class="flex flex-wrap items-center w-full gap-3 overflow-hidden px-1">
-            <span class="font-bold text-slate-200 text-lg truncate"> 
-                ${cleanName}
-            </span> 
-            <div class="flex flex-wrap items-center gap-2">
-                <div id="season-dropdown-container"></div>
-            </div>
-        </div>
-    `;
+    const fallbackImage = document.getElementById(`img-${torrent.id}`)?.src || '';
 
-    const seasonContainer = document.getElementById('season-dropdown-container');
-
-    const renderGroup = (groupKey) => {
-        listElement.replaceChildren();
-        const groupData = franchiseGroups[groupKey];
-
-        if (!groupData || groupData.files.length === 0) {
-            listElement.innerHTML = `<div class="col-span-full text-center text-slate-400 py-10">No files found for this category.</div>`;
-            return;
-        }
-
-        const filesToRender = [...groupData.files].sort((a, b) => {
+    // Pre-sort files and build queue items for EVERY season/group up front
+    const preparedGroups = {};
+    sortedGroupKeys.forEach(key => {
+        const groupData = franchiseGroups[key];
+        const sortedFiles = [...(groupData?.files || [])].sort((a, b) => {
             const valA = parseInt(a.episode);
             const valB = parseInt(b.episode);
             if (isNaN(valA) && isNaN(valB)) {
@@ -457,9 +448,8 @@ function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cle
             return (isNaN(valA) ? 9999 : valA) - (isNaN(valB) ? 9999 : valB);
         });
 
-        filesToRender.forEach((fileObj, index) => {
-            const { originalFile, episode, relativeEpisode, displayTitle, displayThumbnail, fileType, fileTypeLabel, isExtended, isExtra } = fileObj;
-
+        const queueItems = sortedFiles.map((fileObj, index) => {
+            const { originalFile, episode, relativeEpisode, displayTitle, displayThumbnail, fileType, fileTypeLabel, isExtra } = fileObj;
             const isThemeFile = fileType === 'Theme';
             const isOvaFile = fileType === 'OVA' || fileType === 'Special';
             const isMovieFile = fileType === 'Movie';
@@ -475,6 +465,132 @@ function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cle
                             ? `🎥 ${fileTypeLabel || 'Movie'}`
                             : `Episode ${relativeEpisode ?? episode ?? (index + 1)}`;
 
+            const fileSize = (originalFile.size / 1073741824).toFixed(2) + ' GB';
+            const cardImage = displayThumbnail || fallbackImage;
+
+            return {
+                tid: torrent.id,
+                fid: originalFile.id,
+                seriesTitle: cleanName,
+                season: groupData.title,
+                fileType: groupData.fileType,
+                episodeNumber: relativeEpisode ?? episode ?? (index + 1),
+                badge: badgeText,
+                title: finalCardTitle,
+                fileName: originalFile.name,
+                torrentName: torrent.name,
+                thumbnail: cardImage,
+                size: fileSize
+            };
+        });
+
+        preparedGroups[key] = {
+            groupData,
+            sortedFiles,
+            queueItems
+        };
+    });
+
+    /**
+     * Builds a continuous queue starting at `startGroupKey` and chaining
+     * all subsequent seasons in `sortedGroupKeys` of the same fileType (e.g. all TV seasons).
+     */
+    const getChainedMultiSeasonQueue = (startGroupKey) => {
+        const startGroupIdx = sortedGroupKeys.indexOf(startGroupKey);
+        if (startGroupIdx === -1) return [];
+
+        const startType = franchiseGroups[startGroupKey].fileType;
+        const chainedQueue = [];
+
+        for (let i = startGroupIdx; i < sortedGroupKeys.length; i++) {
+            const key = sortedGroupKeys[i];
+            const group = franchiseGroups[key];
+
+            // If starting on a TV season, chain all following TV seasons (skip Themes/Trailers)
+            if (group.fileType === startType) {
+                chainedQueue.push(...preparedGroups[key].queueItems);
+            }
+        }
+        return chainedQueue;
+    };
+
+    titleElement.innerHTML = `
+        <div class="flex items-center justify-between w-full gap-3 overflow-hidden">
+        <span class="min-w-0 flex-1 font-bold text-slate-100 text-xl truncate"> 
+            ${cleanName}
+        </span> 
+        <div class="flex items-center shrink-0 gap-3">
+            <div id="season-dropdown-container" class="relative inline-flex items-center"></div>
+                <button id="picker-play-btn" class="flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 shadow-lg shadow-black/10 hover:bg-slate-700 cursor-pointer">
+                    Play
+                </button>
+                <button id="picker-shuffle-btn" class="flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 shadow-lg shadow-black/10 hover:bg-slate-700 cursor-pointer">
+                    <svg class="w-5 h-5 shrink-0" aria-hidden="true" focusable="false" fill="none" stroke="currentColor">
+                        <use href="#icon-shuffle"></use>
+                    </svg>
+                    Play Shuffled
+                </button>
+                <button id="picker-queue-btn" title="Add Series to Queue" class="flex min-h-12 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 shadow-lg shadow-black/10 hover:bg-slate-700 cursor-pointer">
+                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                    </svg>
+                    Queue
+                </button>
+            </div>
+        </div>
+    `;
+
+    document.getElementById('picker-queue-btn')?.addEventListener('click', () => {
+        const count = queueStagedSeries();
+        if (count > 0) {
+            showToast(`Added ${count} episodes to queue`, 'success');
+        }
+    });
+
+    const seasonContainer = document.getElementById('season-dropdown-container');
+
+    // Opening the picker can leave the library's click cooldown active.
+    // Guard playback within this picker instead so the first episode click works.
+    let playbackRequested = false;
+    const playEpisode = (index = 0, shuffled = false) => {
+        if (playbackRequested) return;
+        const episode = shuffled ? startShuffledQueue() : startQueueFromEpisode(index);
+        if (!episode) return;
+        playbackRequested = true;
+        closePicker();
+        requestLink(episode.tid, episode.fid, episode.torrentName, episode.fileName);
+    };
+
+    // Wire up Header "Play" Button (Starts from Episode 1 of current season + queues future seasons)
+    document.getElementById('picker-play-btn')?.addEventListener('click', () => {
+        playEpisode();
+    });
+
+    // Wire up Header "Shuffle" Button (Picks a random episode across chained seasons + shuffles the rest)
+    document.getElementById('picker-shuffle-btn')?.addEventListener('click', () => {
+        playEpisode(0, true);
+    });
+
+    const renderGroup = (groupKey) => {
+        listElement.replaceChildren();
+        const prepared = preparedGroups[groupKey];
+
+        if (!prepared || prepared.sortedFiles.length === 0) {
+            listElement.innerHTML = `<div class="col-span-full text-center text-slate-400 py-10">No files found for this category.</div>`;
+            return;
+        }
+
+        // Stage the multi-season queue starting from this season onward
+        const multiSeasonQueue = getChainedMultiSeasonQueue(groupKey);
+        buildSeriesQueue(cleanName, prepared.groupData.title, multiSeasonQueue);
+
+        prepared.sortedFiles.forEach((fileObj, index) => {
+            const { originalFile, fileType, isExtended, isExtra } = fileObj;
+            const queueItem = prepared.queueItems[index];
+
+            const isThemeFile = fileType === 'Theme';
+            const isOvaFile = fileType === 'OVA' || fileType === 'Special';
+
             const badgeColor = isExtra
                 ? 'bg-emerald-600'
                 : isOvaFile
@@ -487,36 +603,30 @@ function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cle
                 ? `<span class="text-[10px] font-bold text-white px-2 py-0.5 rounded w-max bg-rose-600">Extended</span>`
                 : '';
 
-            const fileSize = (originalFile.size / 1073741824).toFixed(2) + ' GB';
-            const fallbackImage = document.getElementById(`img-${torrent.id}`)?.src || '';
-            const cardImage = displayThumbnail || fallbackImage;
-
             const card = document.createElement('div');
             card.className = "relative flex flex-col w-full rounded-xl border-2 border-slate-700 bg-slate-800 overflow-hidden cursor-pointer hover:border-blue-500 transition-all group select-none";
 
             card.innerHTML = `
                 <div class="relative aspect-video bg-slate-900 border-b border-slate-700 overflow-hidden">
-                    <img src="${cardImage}" loading="lazy" class="w-full h-full object-cover opacity-60 group-hover:opacity-40 transition-opacity">
+                    <img src="${queueItem.thumbnail}" loading="lazy" class="w-full h-full object-cover opacity-60 group-hover:opacity-40 transition-opacity">
                     
-                    <div class="absolute inset-0 flex items-center justify-center gap-4 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                        <button data-action="download" class="bg-slate-800/90 hover:bg-slate-700 text-white w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-md transition-colors shadow-xl border border-slate-600" title="Download to Device">
+                    <div class="absolute inset-0 flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                        <button type="button" data-action="download" class="bg-slate-800/90 hover:bg-slate-700 text-white w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-md transition-colors shadow-xl border border-slate-600" title="Download to Device">
                             <svg style="width:22px;height:22px;margin-top:2px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                         </button>
-                        <div class="bg-blue-600/90 text-white w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-md shadow-xl border border-blue-500 pointer-events-none">
-                            <svg class="w-5 h-5 -rotate-90" fill="currentColor" stroke="currentColor" viewBox="0 0 24 24">
-                                <use href="#icon-arrow"></use>
-                            </svg>
-                        </div>
+                        <button type="button" data-action="queue" class="bg-slate-800/90 hover:bg-slate-700 text-white w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-md transition-colors shadow-xl border border-slate-600" title="Add to Queue">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                        </button>
                     </div>
 
-                    <div class="absolute bottom-2 right-2 bg-black/80 px-2 py-1 rounded text-[11px] text-white font-bold pointer-events-none">${fileSize}</div>
+                    <div class="absolute bottom-2 right-2 bg-black/80 px-2 py-1 rounded text-[11px] text-white font-bold pointer-events-none">${queueItem.size}</div>
                 </div>
                 <div class="p-3 flex flex-col gap-1 pointer-events-none">
                     <div class="flex flex-wrap items-center gap-1.5">
-                        <span class="text-[10px] font-bold text-white px-2 py-0.5 rounded w-max ${badgeColor}">${badgeText}</span>
+                        <span class="text-[10px] font-bold text-white px-2 py-0.5 rounded w-max ${badgeColor}">${queueItem.badge}</span>
                         ${extendedBadgeHTML}
                     </div>
-                    <p class="text-xs text-slate-300 line-clamp-2 mt-1 group-hover:text-white">${finalCardTitle}</p>
+                    <p class="text-xs text-slate-300 line-clamp-2 mt-1 group-hover:text-white">${queueItem.title}</p>
                 </div>
             `;
 
@@ -529,13 +639,17 @@ function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cle
                     return;
                 }
 
+                if (btn?.dataset.action === 'queue') {
+                    e.stopPropagation();
+                    addToQueue(queueItem);
+                    showToast(`Queued: ${queueItem.title}`, 'success');
+                    return;
+                }
+
                 if (btn) return;
 
-                if (appState.clickCooldown) return;
-                appState.clickCooldown = true;
-                setTimeout(() => appState.clickCooldown = false, 2000);
-                closePicker();
-                requestLink(torrent.id, originalFile.id, torrent.name, originalFile.name);
+                // Start from the clicked episode; all remaining episodes in this season + next seasons are queued!
+                playEpisode(index);
             };
 
             listElement.appendChild(card);
@@ -544,7 +658,13 @@ function renderPickerUI(torrent, franchiseGroups, titleElement, listElement, cle
 
     if (sortedGroupKeys.length > 1) {
         seasonContainer.innerHTML = `
-            <select id="library-season-select" class="bg-slate-800 text-sm font-bold text-slate-200 border border-slate-600 rounded-lg p-1.5 outline-none cursor-pointer shadow-lg max-w-[240px] md:max-w-xs truncate">
+            <select id="library-season-select" aria-label="Season" class="min-h-12 rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 shadow-lg shadow-black/10 hover:bg-slate-700 cursor-pointer outline-none">
+                <button type="button" class="flex w-full items-center justify-between gap-3 text-left">
+                    <selectedcontent class="min-w-0 truncate"></selectedcontent>
+                    <svg class="season-dropdown-icon w-4 h-4 shrink-0 text-slate-400 transition-transform duration-200" aria-hidden="true" focusable="false" fill="none" stroke="currentColor">
+                        <use href="#icon-arrow"></use>
+                    </svg>
+                </button>
                 ${sortedGroupKeys.map(key => `<option value="${key}">${franchiseGroups[key].title}</option>`).join('')}
             </select>
         `;

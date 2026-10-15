@@ -1,6 +1,8 @@
 import { MKVPlayer } from '../engine/mkv_lib.js';
 import { smartFetch, showToast } from '../services/config.js';
 import { getCurrentUserSettings } from '../user-data/user-settings.js';
+
+import { advanceToNextItem, retreatToPreviousItem, getQueueState } from './playlist.js';
 import { openExternalPlayer } from './external-players.js';
 
 export let art = null;
@@ -94,6 +96,34 @@ export function startPlayer(url, name, localFileObject = null) {
 
         controls: [
             {
+                position: 'left',
+                index: 5,
+                html: '<svg style="width:24px;height:24px;" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>',
+                tooltip: 'Previous',
+                click: function () {
+                    const prev = retreatToPreviousItem();
+                    if (prev) {
+                        requestLink(prev.tid, prev.fid, prev.torrentName, prev.fileName);
+                    } else {
+                        showToast('No previous episode in queue', 'info');
+                    }
+                },
+            },
+            {
+                position: 'left',
+                index: 15,
+                html: '<svg style="width:24px;height:24px;" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>',
+                tooltip: 'Next in Queue',
+                click: function () {
+                    const next = advanceToNextItem();
+                    if (next) {
+                        requestLink(next.tid, next.fid, next.torrentName, next.fileName);
+                    } else {
+                        showToast('End of queue reached', 'info');
+                    }
+                },
+            },
+            {
                 position: 'right',
                 html: '<svg style="width:22px;height:22px;margin-top:2px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>',
                 tooltip: 'Open in External Player',
@@ -153,6 +183,16 @@ export function startPlayer(url, name, localFileObject = null) {
     };
     playerArt.on('control', syncCloseButton);
     syncCloseButton();
+
+    // Auto skip when video ends
+    playerArt.on('video:ended', () => {
+        if (art !== playerArt || generation !== playbackGeneration) return;
+        const next = advanceToNextItem();
+        if (next) {
+            showToast(`Playing Next: ${next.title}`, 'info');
+            requestLink(next.tid, next.fid, next.torrentName, next.fileName);
+        }
+    });
 
     playerArt.on('video:error', () => {
         if (art !== playerArt || generation !== playbackGeneration) return;

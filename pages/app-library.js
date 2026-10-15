@@ -11,6 +11,7 @@ import { getCurrentUserSettings } from '../user-data/user-settings.js';
 import { requestLink } from '../streaming/player.js';
 import { downloadFile } from '../streaming/download.js';
 import { createLibraryCard } from './library-renderer.js';
+import { parseMediaData } from '../utils/parseMedia.js';
 
 
 //#region Manage Library
@@ -35,6 +36,7 @@ export async function addToAppLibrary(mediaData) {
 }
 
 export async function linkHashToMedia(mediaData, torboxHash) {
+    if (!appState.currentUser) return;
     // Link the Torbox Hash to the Media ID
     const { error } = await supabase.from('added_sources').insert({
         user_id: appState.currentUser.id,
@@ -83,7 +85,7 @@ export async function loadAppLibrary() {
     try {
         const items = await fetchAppLibraryData();
         if (userId !== appState.currentUser?.id) return;
-        //renderAppLibrary(items);
+        renderAppLibrary(items);
     } catch (error) {
         if (userId !== appState.currentUser?.id) return;
         console.error('App library load failed:', error);
@@ -142,10 +144,28 @@ export function renderAppLibrary(items) {
         const vidCount = allFiles.length;
         const isSingle = vidCount == 1;
 
+        // Pass main folder title
+        const mediaInfo = parseMediaData(torrent.name);
+
+        // Check if its type based on seasons found
+        const hasSeason = (mediaInfo.seasons?.length || 0) > 0 || allFiles.some(file => {
+            const parsed = parseMediaData(file.short_name || file.name);
+            return !parsed.isExtra && parsed.fileType !== 'MOVIE'
+                && ((parsed.episodes?.length || 0) > 0 || (parsed.seasons?.length || 0) > 0);
+        });
+        const cleanName = mediaInfo.title.replace(/(^\w|[\s-]\w)/g, m => m.toUpperCase());
+
+        let mediaText = "";
+
+        if (!isSingle && hasSeason) mediaText = "Series";
+        if (isSingle && hasSeason) mediaText = "Single Episode";
+        if (isSingle && !hasSeason) mediaText = "Movie";
+        if (!isSingle && !hasSeason) mediaText = "Collection";
+
         const card = createLibraryCard(
             media.title || 'Untitled movie',
             media.poster_path,
-            isSingle,
+            mediaText,
             torrent?.size,
         );
 

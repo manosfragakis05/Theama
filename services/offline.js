@@ -7,7 +7,7 @@
 
 import { appState, showToast } from './config.js';
 import { parseFormated } from '../utils/parseMedia.js';
-import { getPosterForLibrary } from './metadata.js';
+import { getPosterForLibrary } from '../metadata/metadata.js';
 import { getTorboxLink, startPlayer } from '../streaming/player.js';
 
 let expectedLocalFile = null;
