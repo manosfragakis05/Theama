@@ -15,7 +15,7 @@ function createQueueCard(item, status, isCurrent = false) {
     button.addEventListener('click', () => {
         if (isDragging) return;
         const selected = selectQueueItem(item.uid);
-        if (selected) requestLink(selected.tid, selected.fid, selected.torrentName, selected.fileName);
+        if (selected) requestLink(selected.tid, selected.fid, selected.torrentName, selected.fileName, selected.uid);
     });
 
     if (isCurrent) card.setAttribute('aria-current', 'true');
@@ -56,14 +56,13 @@ export function renderQueue(state = getQueueState()) {
     if (!section || !list) return;
 
     const fragment = document.createDocumentFragment();
-    const currentIndex = state.current
-        ? state.entries.findIndex(entry => entry.item.uid === state.current.uid)
-        : -1;
+    const previousUids = new Set(state.history.map(item => item.uid));
+    const currentStatus = { loading: 'Loading', playing: 'Now playing', failed: 'Playback failed', idle: 'Selected' };
 
-    state.entries.forEach(({ item, listType }, index) => {
+    state.entries.forEach(({ item, listType }) => {
         const isCurrent = Boolean(state.current && item.uid === state.current.uid);
-        const status = isCurrent ? 'Now playing'
-            : (currentIndex !== -1 && index < currentIndex) ? 'Previous'
+        const status = isCurrent ? currentStatus[state.playbackStatus]
+            : previousUids.has(item.uid) ? 'Previous'
                 : listType === 'priority' ? 'Queued' : 'Up next';
         fragment.appendChild(createQueueCard(item, status, isCurrent));
     });

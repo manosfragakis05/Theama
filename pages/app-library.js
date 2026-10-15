@@ -42,8 +42,6 @@ export async function linkHashToMedia(mediaData, torboxHash) {
         user_id: appState.currentUser.id,
         media_id: mediaData.id,
         added_hash: torboxHash,
-        season_number: mediaData.season || null,
-        episode_number: mediaData.episode || null
     });
 
     if (error && error.code === '23505') {
@@ -78,11 +76,11 @@ export async function loadAppLibrary() {
     if (!list || !info) return;
 
     list.replaceChildren();
-    info.textContent = userId ? 'Loading your library...' : 'Sign in to view your library.';
+    info.textContent = userId ? 'Not ready yet...' : 'Sign in to view your library.';
     info.classList.remove('hidden');
     if (!userId) return;
 
-    try {
+    /*try {
         const items = await fetchAppLibraryData();
         if (userId !== appState.currentUser?.id) return;
         renderAppLibrary(items);
@@ -90,7 +88,7 @@ export async function loadAppLibrary() {
         if (userId !== appState.currentUser?.id) return;
         console.error('App library load failed:', error);
         info.textContent = 'Could not load your library. Select Library to try again.';
-    }
+    }*/
 }
 
 async function fetchAppLibraryData() {
@@ -102,8 +100,6 @@ async function fetchAppLibraryData() {
         .select(`
             media_id,
             added_hash,
-            season_number,
-            episode_number,
             global_media ( media_type, title, poster_path, base_url )
         `)
         .eq('user_id', appState.currentUser.id);

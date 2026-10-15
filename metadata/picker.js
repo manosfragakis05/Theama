@@ -516,9 +516,7 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName) {
 
     titleElement.innerHTML = `
         <div class="flex items-center justify-between w-full gap-3 overflow-hidden">
-        <span class="min-w-0 flex-1 font-bold text-slate-100 text-xl truncate"> 
-            ${cleanName}
-        </span> 
+        <span id="picker-series-title" class="min-w-0 flex-1 font-bold text-slate-100 text-xl truncate"></span>
         <div class="flex items-center shrink-0 gap-3">
             <div id="season-dropdown-container" class="relative inline-flex items-center"></div>
                 <button id="picker-play-btn" class="flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 shadow-lg shadow-black/10 hover:bg-slate-700 cursor-pointer">
@@ -539,6 +537,7 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName) {
             </div>
         </div>
     `;
+    document.getElementById('picker-series-title').textContent = cleanName;
 
     document.getElementById('picker-queue-btn')?.addEventListener('click', () => {
         const count = queueStagedSeries();
@@ -558,7 +557,7 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName) {
         if (!episode) return;
         playbackRequested = true;
         closePicker();
-        requestLink(episode.tid, episode.fid, episode.torrentName, episode.fileName);
+        requestLink(episode.tid, episode.fid, episode.torrentName, episode.fileName, episode.uid);
     };
 
     // Wire up Header "Play" Button (Starts from Episode 1 of current season + queues future seasons)
@@ -576,13 +575,14 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName) {
         const prepared = preparedGroups[groupKey];
 
         if (!prepared || prepared.sortedFiles.length === 0) {
+            buildSeriesQueue([]);
             listElement.innerHTML = `<div class="col-span-full text-center text-slate-400 py-10">No files found for this category.</div>`;
             return;
         }
 
         // Stage the multi-season queue starting from this season onward
         const multiSeasonQueue = getChainedMultiSeasonQueue(groupKey);
-        buildSeriesQueue(cleanName, prepared.groupData.title, multiSeasonQueue);
+        buildSeriesQueue(multiSeasonQueue);
 
         prepared.sortedFiles.forEach((fileObj, index) => {
             const { originalFile, fileType, isExtended, isExtra } = fileObj;
@@ -608,7 +608,7 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName) {
 
             card.innerHTML = `
                 <div class="relative aspect-video bg-slate-900 border-b border-slate-700 overflow-hidden">
-                    <img src="${queueItem.thumbnail}" loading="lazy" class="w-full h-full object-cover opacity-60 group-hover:opacity-40 transition-opacity">
+                    <img loading="lazy" class="w-full h-full object-cover opacity-60 group-hover:opacity-40 transition-opacity" alt="">
                     
                     <div class="absolute inset-0 flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                         <button type="button" data-action="download" class="bg-slate-800/90 hover:bg-slate-700 text-white w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-md transition-colors shadow-xl border border-slate-600" title="Download to Device">
@@ -619,16 +619,20 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName) {
                         </button>
                     </div>
 
-                    <div class="absolute bottom-2 right-2 bg-black/80 px-2 py-1 rounded text-[11px] text-white font-bold pointer-events-none">${queueItem.size}</div>
+                    <div class="picker-episode-size absolute bottom-2 right-2 bg-black/80 px-2 py-1 rounded text-[11px] text-white font-bold pointer-events-none"></div>
                 </div>
                 <div class="p-3 flex flex-col gap-1 pointer-events-none">
                     <div class="flex flex-wrap items-center gap-1.5">
-                        <span class="text-[10px] font-bold text-white px-2 py-0.5 rounded w-max ${badgeColor}">${queueItem.badge}</span>
+                        <span class="picker-episode-badge text-[10px] font-bold text-white px-2 py-0.5 rounded w-max ${badgeColor}"></span>
                         ${extendedBadgeHTML}
                     </div>
-                    <p class="text-xs text-slate-300 line-clamp-2 mt-1 group-hover:text-white">${queueItem.title}</p>
+                    <p class="picker-episode-title text-xs text-slate-300 line-clamp-2 mt-1 group-hover:text-white"></p>
                 </div>
             `;
+            card.querySelector('.picker-episode-size').textContent = queueItem.size;
+            card.querySelector('.picker-episode-badge').textContent = queueItem.badge;
+            card.querySelector('.picker-episode-title').textContent = queueItem.title;
+            if (queueItem.thumbnail) card.querySelector('img').src = queueItem.thumbnail;
 
             card.onclick = (e) => {
                 const btn = e.target.closest('button');
@@ -665,11 +669,17 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName) {
                         <use href="#icon-arrow"></use>
                     </svg>
                 </button>
-                ${sortedGroupKeys.map(key => `<option value="${key}">${franchiseGroups[key].title}</option>`).join('')}
             </select>
         `;
 
-        document.getElementById('library-season-select').addEventListener('change', (e) => {
+        const seasonSelect = document.getElementById('library-season-select');
+        sortedGroupKeys.forEach(key => {
+            const option = document.createElement('option');
+            option.value = key;
+            option.textContent = franchiseGroups[key].title;
+            seasonSelect.appendChild(option);
+        });
+        seasonSelect.addEventListener('change', (e) => {
             renderGroup(e.target.value);
         });
     } else {
@@ -679,6 +689,7 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName) {
     if (sortedGroupKeys.length > 0) {
         renderGroup(sortedGroupKeys[0]);
     } else {
+        buildSeriesQueue([]);
         listElement.innerHTML = `<div class="col-span-full text-center text-slate-400 py-10">No video files found.</div>`;
     }
 }

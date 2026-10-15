@@ -67,6 +67,7 @@ export async function fetchLibrary() {
                     fullyCachedItems.push({
                         torrent: t,
                         name: cachedMeta.name,
+                        mediaText: getMediaText(t),
                         isSingle: (t.files || []).filter(f => /\.(mkv|mp4|avi|mov)$/i.test(f.name)).length === 1,
                         size: t.size,
                         tmdbId: cachedMeta.tmdbId,
@@ -90,6 +91,7 @@ export async function fetchLibrary() {
                 return {
                     torrent: t,
                     name: row.global_media.title,
+                    mediaText: getMediaText(t),
                     isSingle: (t.files || []).filter(f => /\.(mkv|mp4|avi|mov)$/i.test(f.name)).length === 1,
                     size: t.size,
                     tmdbId: { id: row.media_id },
@@ -240,6 +242,20 @@ function saveToMetaCache(itemsToCache) {
 
 //#region Metadata
 
+// Derive the label from current torrent files, regardless of metadata source.
+export function getMediaText(torrent, mediaInfo = parseMediaData(torrent.name)) {
+    const videoFiles = (torrent.files || []).filter(f => /\.(mkv|mp4|avi|mov)$/i.test(f.name));
+    const isSingle = videoFiles.length === 1;
+    const hasSeason = (mediaInfo.seasons?.length || 0) > 0 || videoFiles.some(file => {
+        const parsed = parseMediaData(file.short_name || file.name);
+        return !parsed.isExtra && parsed.fileType !== 'MOVIE'
+            && ((parsed.episodes?.length || 0) > 0 || (parsed.seasons?.length || 0) > 0);
+    });
+
+    if (hasSeason) return isSingle ? 'Single Episode' : 'Series';
+    return isSingle ? 'Movie' : 'Collection';
+}
+
 export async function searchLibrary(searchString) {
     const filtered = appState.allTorrents.filter(t => t.name.toLowerCase().includes(searchString));
 
@@ -252,28 +268,10 @@ async function fetchMainMetadata(items) {
     const RATE_LIMIT_MS = 50;
 
     const promises = items.map(async (torrent, index) => {
-        const allFiles = (torrent.files || []).filter(f => /\.(mkv|mp4|avi|mov)$/i.test(f.name));
-
-        const vidCount = allFiles.length;
-        const isSingle = vidCount == 1;
-
         // Pass main folder title
         const mediaInfo = parseMediaData(torrent.name);
-
-        // Check if its type based on seasons found
-        const hasSeason = (mediaInfo.seasons?.length || 0) > 0 || allFiles.some(file => {
-            const parsed = parseMediaData(file.short_name || file.name);
-            return !parsed.isExtra && parsed.fileType !== 'MOVIE'
-                && ((parsed.episodes?.length || 0) > 0 || (parsed.seasons?.length || 0) > 0);
-        });
         const cleanName = mediaInfo.title.replace(/(^\w|[\s-]\w)/g, m => m.toUpperCase());
-
-        let mediaText = "";
-        
-        if(!isSingle && hasSeason) mediaText = "Series";
-        if(isSingle && hasSeason) mediaText = "Single Episode";
-        if(isSingle && !hasSeason) mediaText = "Movie";
-        if(!isSingle && !hasSeason) mediaText = "Collection";
+        const mediaText = getMediaText(torrent, mediaInfo);
 
         const item = {
             torrent: torrent,
@@ -282,7 +280,7 @@ async function fetchMainMetadata(items) {
             size: torrent.size
         };
 
-        const type = hasSeason ? 'tv' : 'movie'
+        const type = mediaText === 'Series' || mediaText === 'Single Episode' ? 'tv' : 'movie';
 
         // Stagger metadata lookups by 50ms and fetch fresh data for every item.
         await new Promise(resolve => setTimeout(resolve, index * RATE_LIMIT_MS));

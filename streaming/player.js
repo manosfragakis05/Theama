@@ -2,11 +2,16 @@ import { MKVPlayer } from '../engine/mkv_lib.js';
 import { smartFetch, showToast } from '../services/config.js';
 import { getCurrentUserSettings } from '../user-data/user-settings.js';
 
-import { advanceToNextItem, retreatToPreviousItem, getQueueState } from './playlist.js';
+import { advanceToNextItem, retreatToPreviousItem, getQueueState, setQueuePlaybackStatus } from './playlist.js';
 import { openExternalPlayer } from './external-players.js';
 
 export let art = null;
 let playbackGeneration = 0;
+let queuePlaybackUid = null;
+
+window.addEventListener('queue:updated', ({ detail }) => {
+    if (queuePlaybackUid && detail.current?.uid !== queuePlaybackUid) stopPlayback();
+});
 
 // LINK FETCHER
 export async function getTorboxLink(tid, fid) {
@@ -30,34 +35,49 @@ export async function getTorboxLink(tid, fid) {
     }
 }
 
-export async function requestLink(tid, fid, torrentName, fileName) {
+export async function requestLink(tid, fid, torrentName, fileName, queueUid = null) {
+    if (queueUid && getQueueState().current?.uid !== queueUid) return;
     const generation = stopPlayback();
+    queuePlaybackUid = queueUid;
+    if (queueUid) setQueuePlaybackStatus(queueUid, 'loading');
 
     await new Promise(r => setTimeout(r, 150));
     if (generation !== playbackGeneration) return;
 
     const list = document.getElementById('file-list');
-    if (list) list.style.opacity = '0.5';
+    while (generation === playbackGeneration) {
+        if (list) list.style.opacity = '0.5';
+        const streamUrl = await getTorboxLink(tid, fid);
+        if (generation !== playbackGeneration) return;
+        if (list) list.style.opacity = '1';
+        if (streamUrl) {
+            startPlayer(streamUrl, fileName || torrentName || 'Untitled', null, queueUid);
+            return;
+        }
+        if (!queueUid) return;
+        setQueuePlaybackStatus(queueUid, 'failed');
+        const state = getQueueState();
+        if (state.priority.length + state.context.length === 0) return;
 
-    // Call our detached fetcher
-    const streamUrl = await getTorboxLink(tid, fid);
-
-    if (list) list.style.opacity = '1';
-
-    // If the fetch failed, or the user clicked another movie while we were waiting, abort.
-    if (!streamUrl || generation !== playbackGeneration) return;
-
-    startPlayer(streamUrl, fileName || torrentName);
+        // Advancing intentionally changes the selected item within this request.
+        queuePlaybackUid = null;
+        const next = advanceToNextItem();
+        ({ tid, fid, torrentName, fileName, uid: queueUid } = next);
+        queuePlaybackUid = queueUid;
+        setQueuePlaybackStatus(queueUid, 'loading');
+    }
 }
 
 //#region Player
-export function startPlayer(url, name, localFileObject = null) {
+export function startPlayer(url, name, localFileObject = null, queueUid = null) {
     stopPlayback();
+    queuePlaybackUid = queueUid;
     const defaultPlayer = getCurrentUserSettings().user_preferences.defaultPlayer || 'Internal';
     if (defaultPlayer !== 'Internal') {
         openExternalPlayer(url, name, localFileObject, defaultPlayer);
         return;
     }
+    if (queueUid) setQueuePlaybackStatus(queueUid, 'loading');
 
     const generation = playbackGeneration;
 
@@ -95,34 +115,38 @@ export function startPlayer(url, name, localFileObject = null) {
         playbackRate: false,
 
         controls: [
-            {
-                position: 'left',
-                index: 5,
-                html: '<svg style="width:24px;height:24px;" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>',
-                tooltip: 'Previous',
-                click: function () {
-                    const prev = retreatToPreviousItem();
-                    if (prev) {
-                        requestLink(prev.tid, prev.fid, prev.torrentName, prev.fileName);
-                    } else {
-                        showToast('No previous episode in queue', 'info');
-                    }
+            ...(queueUid ? [
+                {
+                    position: 'left',
+                    index: 5,
+                    html: '<svg style="width:24px;height:24px;" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>',
+                    tooltip: 'Previous',
+                    click: function () {
+                        if (generation !== playbackGeneration || getQueueState().current?.uid !== queueUid) return;
+                        const prev = retreatToPreviousItem();
+                        if (prev) {
+                            requestLink(prev.tid, prev.fid, prev.torrentName, prev.fileName, prev.uid);
+                        } else {
+                            showToast('No previous episode in queue', 'info');
+                        }
+                    },
                 },
-            },
-            {
-                position: 'left',
-                index: 15,
-                html: '<svg style="width:24px;height:24px;" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>',
-                tooltip: 'Next in Queue',
-                click: function () {
-                    const next = advanceToNextItem();
-                    if (next) {
-                        requestLink(next.tid, next.fid, next.torrentName, next.fileName);
-                    } else {
-                        showToast('End of queue reached', 'info');
-                    }
+                {
+                    position: 'left',
+                    index: 15,
+                    html: '<svg style="width:24px;height:24px;" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>',
+                    tooltip: 'Next in Queue',
+                    click: function () {
+                        if (generation !== playbackGeneration || getQueueState().current?.uid !== queueUid) return;
+                        const next = advanceToNextItem();
+                        if (next) {
+                            requestLink(next.tid, next.fid, next.torrentName, next.fileName, next.uid);
+                        } else {
+                            showToast('End of queue reached', 'info');
+                        }
+                    },
                 },
-            },
+            ] : []),
             {
                 position: 'right',
                 html: '<svg style="width:22px;height:22px;margin-top:2px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>',
@@ -187,10 +211,11 @@ export function startPlayer(url, name, localFileObject = null) {
     // Auto skip when video ends
     playerArt.on('video:ended', () => {
         if (art !== playerArt || generation !== playbackGeneration) return;
+        if (!queueUid || getQueueState().current?.uid !== queueUid) return;
         const next = advanceToNextItem();
         if (next) {
             showToast(`Playing Next: ${next.title}`, 'info');
-            requestLink(next.tid, next.fid, next.torrentName, next.fileName);
+            requestLink(next.tid, next.fid, next.torrentName, next.fileName, next.uid);
         }
     });
 
@@ -212,6 +237,7 @@ export function startPlayer(url, name, localFileObject = null) {
     let scoutSent = false;
     playerArt.on('video:playing', async () => {
         if (art !== playerArt || generation !== playbackGeneration) return;
+        if (queueUid) setQueuePlaybackStatus(queueUid, 'playing');
         if (isMkv && !scoutSent && playerArt.mkvEngine) {
 
             scoutSent = true;
@@ -377,7 +403,10 @@ export function startPlayer(url, name, localFileObject = null) {
 export function stopPlayback() {
     const generation = ++playbackGeneration;
     const instance = art;
+    const stoppedQueueUid = queuePlaybackUid;
+    queuePlaybackUid = null;
     art = null;
+    if (stoppedQueueUid) setQueuePlaybackStatus(stoppedQueueUid, 'idle');
 
     if (instance) {
         // A load that is still in progress destroys itself when it settles.
@@ -397,13 +426,24 @@ export function stopPlayback() {
 
     const wrapper = document.getElementById('player-wrapper');
     if (wrapper) wrapper.classList.add('hidden');
+    const list = document.getElementById('file-list');
+    if (list) list.style.opacity = '1';
     return generation;
 }
 
 export function handlePlaybackFailure(reason) {
     if (!art) return;
+    const failedQueueUid = queuePlaybackUid;
     stopPlayback();
     showToast(`Playback Failed: ${reason}`, 'error');
+    if (failedQueueUid && getQueueState().current?.uid === failedQueueUid) {
+        setQueuePlaybackStatus(failedQueueUid, 'failed');
+        const state = getQueueState();
+        if (state.priority.length + state.context.length > 0) {
+            const next = advanceToNextItem();
+            requestLink(next.tid, next.fid, next.torrentName, next.fileName, next.uid);
+        }
+    }
 }
 
 export function playDirect() {
@@ -423,8 +463,4 @@ export function playDirect() {
     document.getElementById('auth-screen').classList.add('hidden');
     const cleanName = url.split('/').pop().split('?')[0] || "Direct Stream";
     startPlayer(url, decodeURIComponent(cleanName));
-}
-
-export function clearPlayerInstance() {
-    art = null;
 }
