@@ -23,6 +23,7 @@ export async function addToAppLibrary(mediaData) {
         // Add to Global Media (ignore it if it already exists)
         await supabase.from('global_media').upsert({
             media_id: mediaData.id,
+            tmdb_id: mediaData?.tmdbId || null,
             media_type: mediaData.type,
             title: mediaData.title,
             poster_path: mediaData.poster,
@@ -38,6 +39,7 @@ export async function addToAppLibrary(mediaData) {
 export async function linkHashToMedia(mediaData, torboxHash, addedViaApp = false) {
     if (!appState.currentUser) return;
     const userId = appState.currentUser.id;
+    
     // Link the Torbox Hash to the Media ID
     const { error } = await supabase.from('added_sources').insert({
         user_id: userId,
@@ -61,14 +63,14 @@ export async function linkHashToMedia(mediaData, torboxHash, addedViaApp = false
     if (addedViaApp) await loadAppLibrary();
 }
 
-async function removeFromAppLibrary(mediaId) {
+async function removeFromAppLibrary(mediaIds) {
     const userId = appState.currentUser?.id;
     if (!userId || !confirm('Remove this movie from your library?')) return;
     try {
         const { error } = await supabase.from('added_sources')
             .delete()
             .eq('user_id', userId)
-            .eq('media_id', mediaId);
+            .eq('media_id', mediaIds);
         if (error) throw error;
         await loadAppLibrary();
         showToast('Removed from your library.', 'success');
@@ -102,33 +104,68 @@ export async function loadAppLibrary() {
 }
 
 async function fetchAppLibraryData() {
-    if (!appState.currentUser) return [];
+    const userId = appState.currentUser?.id;
+    if (!userId) return [];
 
-    // 1. Fetch sources added through the app, joined with global_media
     const { data, error } = await supabase
         .from('added_sources')
         .select(`
             media_id,
             added_hash,
-            global_media ( media_type, title, poster_path, base_url )
+            global_media (
+                tmdb_id,
+                media_type,
+                title,
+                poster_path,
+                base_url
+            )
         `)
-        .eq('user_id', appState.currentUser.id)
+        .eq('user_id', userId)
         .eq('added_via_app', true);
 
     if (error) throw error;
 
-    // 2. Group by media_id to remove duplicates (One poster per movie/show)
     const groupedLibrary = new Map();
+
     for (const row of data || []) {
-        if (!groupedLibrary.has(row.media_id)) {
-            groupedLibrary.set(row.media_id, {
+        const meta = row.global_media;
+        if (!meta) continue;
+
+        // Normalize series/tv so both use the same grouping key.
+        const type = meta.media_type === 'series'
+            ? 'tv'
+            : meta.media_type;
+
+        const candidate = Number(meta.tmdb_id);
+        const tmdbId = Number.isSafeInteger(candidate) && candidate > 0
+            ? candidate
+            : null;
+
+        // Separate movies from shows, and TMDB IDs from original IDs.
+        const groupKey = tmdbId
+            ? `${type}:tmdb:${tmdbId}`
+            : `${type}:original:${row.media_id}`;
+
+        if (!groupedLibrary.has(groupKey)) {
+            groupedLibrary.set(groupKey, {
+                ...meta,
                 id: row.media_id,
-                ...row.global_media,
-                sources: [] // We pack all the hashes into this array
+                media_type: type,
+                tmdb_id: tmdbId,
+                media_ids: [],
+                sources: []
             });
         }
-        groupedLibrary.get(row.media_id).sources.push({
-            hash: row.added_hash
+
+        const group = groupedLibrary.get(groupKey);
+
+        if (!group.media_ids.includes(row.media_id)) {
+            group.media_ids.push(row.media_id);
+        }
+
+        group.sources.push({
+            hash: row.added_hash,
+            media_id: row.media_id
         });
     }
 
@@ -168,7 +205,7 @@ export function renderAppLibrary(items) {
             if (action) event.stopPropagation();
             if (busy) return;
             if (action === 'delete') {
-                await removeFromAppLibrary(media.id);
+                await removeFromAppLibrary(media.media_ids);
                 return;
             }
             if (!action && appState.clickCooldown) {
@@ -196,7 +233,7 @@ export function renderAppLibrary(items) {
                     if (playableFile) await requestLink(sourceTorrent.id, playableFile.id, sourceTorrent.name, playableFile.name);
                     else showToast('No playable files found.', 'error');
                 } else {
-                    await openPicker(sourceTorrents, media.id, media.title);
+                    await openPicker(sourceTorrents, media.tmdb_id, media.title);
                 }
             } catch (error) {
                 showToast(error.message || 'Could not open this media.', 'error');

@@ -15,8 +15,7 @@ import { openPicker } from '../metadata/picker.js';
 import { requestLink } from '../streaming/player.js';
 import { downloadFile } from '../streaming/download.js';
 import { createLibraryCard } from './library-renderer.js';
-import { addToAppLibrary, linkHashToMedia, loadAppLibrary } from './app-library.js';
-import { supabase } from '../user-data/db.js';
+import { loadAppLibrary } from './app-library.js';
 
 export { downloadFile } from '../streaming/download.js';
 
@@ -56,67 +55,10 @@ export async function fetchLibrary() {
             //Set globally
             appState.allTorrents = torrents;
 
-            // LAYER 1: LOCAL CACHE
-            const localCache = getLocalMetaCache();
-            const fullyCachedItems = [];
-            const missingFromLocal = [];
-
-            for (const t of torrents) {
-                const cachedMeta = localCache[t.hash];
-                if (cachedMeta) {
-                    // Rebuild the item using fresh Torbox data + cached metadata
-                    fullyCachedItems.push({
-                        torrent: t,
-                        name: cachedMeta.name,
-                        mediaText: getMediaText(t),
-                        isSingle: (t.files || []).filter(f => /\.(mkv|mp4|avi|mov)$/i.test(f.name)).length === 1,
-                        size: t.size,
-                        tmdbId: cachedMeta.tmdbId,
-                        poster: cachedMeta.poster
-                    });
-                } else {
-                    missingFromLocal.push(t);
-                }
-            }
-            if (missingFromLocal.length === 0) {
-                if (appState.allTorrents === torrents) renderList(fullyCachedItems);
-                return;
-            }
-
-            // LAYER 2: CLOUD CACHE
-            const cloudRows = (await getMediaFromHash(missingFromLocal)).filter(row => row.global_media);
-            const cloudHashes = new Set(cloudRows.map(r => r.added_hash));
-
-            const cloudItems = cloudRows.map(row => {
-                const t = missingFromLocal.find(x => x.hash === row.added_hash);
-                return {
-                    torrent: t,
-                    name: row.global_media.title,
-                    mediaText: getMediaText(t),
-                    isSingle: (t.files || []).filter(f => /\.(mkv|mp4|avi|mov)$/i.test(f.name)).length === 1,
-                    size: t.size,
-                    tmdbId: { id: row.media_id },
-                    poster: row.global_media.poster_path
-                };
-            });
-
-            // LAYER 3: TMDB FETCH & UPLOAD
-            const needsTmdb = missingFromLocal.filter(t => !cloudHashes.has(t.hash));
-            const newTmdbItems = needsTmdb.length > 0 ? await fetchMainMetadata(needsTmdb) : [];
-
-            // Save new findings (from both Supabase and TMDB) to Local Storage for next time
-            saveToMetaCache([...cloudItems, ...newTmdbItems]);
-
-            // Combine all arrays
-            const allItems = [...fullyCachedItems, ...cloudItems, ...newTmdbItems];
-
-            // Map over original torbox array to perfectly preserve the user's native TorBox order
-            const sortedItems = torrents
-                .map(t => allItems.find(item => item.torrent.hash === t.hash))
-                .filter(Boolean);
+            const items = await getLibraryMetadata(torrents);
 
             if (appState.allTorrents === torrents) {
-                renderList(sortedItems);
+                renderList(items);
             }
 
         } else {
@@ -155,18 +97,13 @@ export async function deleteTorrent(torrentId, event) {
         if (data.success) {
             showToast("Deleted from Torbox successfully!", 'success');
 
-            // 1. Find the deleted torrent and remove it from Supabase (Background)
             const deletedTorrent = appState.allTorrents.find(t => t.id === torrentId);
-            if (deletedTorrent && appState.currentUser?.id) {
-                supabase.from('added_sources')
-                    .delete()
-                    .eq('user_id', appState.currentUser.id)
-                    .eq('added_hash', deletedTorrent.hash)
-                    .then(({ error }) => { if (error) console.error("DB cleanup failed:", error); });
-            }
-
-            // 2. Remove it from your local appState
             appState.allTorrents = appState.allTorrents.filter(t => t.id !== torrentId);
+            if (deletedTorrent?.hash) {
+                const cache = getLocalMetaCache();
+                delete cache[deletedTorrent.hash];
+                writeMetaCache(cache);
+            }
 
             return true; // Tell the UI it succeeded!
         } else {
@@ -182,61 +119,75 @@ export async function deleteTorrent(torrentId, event) {
 //#endregion
 
 
-//#region Cach Data
-async function getMediaFromHash(torrents) {
-    const userId = appState.currentUser?.id;
-    if (!userId || !torrents || torrents.length === 0) return [];
-
-    // 1. Extract just the hash strings into an array
-    const hashes = torrents.map(t => t.hash);
-
-    // 2. Fetch all matching sources for this user in a single query
-    const { data, error } = await supabase
-        .from('added_sources')
-        .select(`
-            media_id,
-            added_hash,
-            global_media ( media_type, title, poster_path )
-        `)
-        .eq('user_id', userId)
-        .in('added_hash', hashes);
-
-    if (error) {
-        console.error("Error fetching cached media:", error.message);
-        return [];
-    }
-
-    return  data || [];
-}
-
+//#region Cache Data
 const CACHE_KEY = 'theama_meta_cache';
+// Older entries may contain addon IDs incorrectly labeled as TMDB IDs.
+const CACHE_VERSION = 2;
 
 function getLocalMetaCache() {
-    // Get active storage
-    const storage = getStorage();
-
     try {
-        return JSON.parse(storage.getItem(CACHE_KEY) || '{}');
+        const cache = JSON.parse(getStorage().getItem(CACHE_KEY) || '{}');
+        return cache && typeof cache === 'object' && !Array.isArray(cache) ? cache : {};
     } catch {
         return {}; // Fallback if JSON is corrupted
     }
 }
 
+function writeMetaCache(cache) {
+    try {
+        getStorage().setItem(CACHE_KEY, JSON.stringify(cache));
+    } catch (error) {
+        console.warn('Could not save local library metadata:', error);
+    }
+}
+
 function saveToMetaCache(itemsToCache) {
     const cache = getLocalMetaCache();
-    const storage = getStorage();
 
     for (const item of itemsToCache) {
         if (!item || !item.torrent?.hash) continue;
+        if (!Number.isSafeInteger(item.tmdbId?.id) || item.tmdbId.id <= 0) continue;
 
         // Save only the static metadata tied to the hash
         cache[item.torrent.hash] = {
+            version: CACHE_VERSION,
             name: item.name,
             poster: item.poster,
             tmdbId: item.tmdbId
         };
     }
-    storage.setItem(CACHE_KEY, JSON.stringify(cache));
+    writeMetaCache(cache);
+}
+
+async function getLibraryMetadata(torrents) {
+    const cache = getLocalMetaCache();
+    const cachedItems = new Map();
+    const missing = [];
+
+    for (const torrent of torrents) {
+        const meta = cache[torrent.hash];
+        if (meta?.version === CACHE_VERSION && meta.name
+            && Number.isSafeInteger(meta.tmdbId?.id) && meta.tmdbId.id > 0) {
+            cachedItems.set(torrent.hash, {
+                torrent,
+                name: meta.name,
+                mediaText: getMediaText(torrent),
+                size: torrent.size,
+                tmdbId: meta.tmdbId,
+                poster: meta.poster
+            });
+        } else {
+            missing.push(torrent);
+        }
+    }
+
+    if (missing.length > 0) {
+        const freshItems = await fetchMainMetadata(missing);
+        saveToMetaCache(freshItems);
+        for (const item of freshItems) cachedItems.set(item.torrent.hash, item);
+    }
+
+    return torrents.map(torrent => cachedItems.get(torrent.hash));
 }
 
 //#endregion
@@ -258,9 +209,11 @@ export function getMediaText(torrent, mediaInfo = parseMediaData(torrent.name)) 
 }
 
 export async function searchLibrary(searchString) {
-    const filtered = appState.allTorrents.filter(t => t.name.toLowerCase().includes(searchString));
+    const torrents = appState.allTorrents;
+    const query = searchString.toLowerCase();
+    const filtered = torrents.filter(t => t.name.toLowerCase().includes(query));
 
-    const items = await fetchMainMetadata(filtered);
+    const items = await getLibraryMetadata(filtered);
     if (appState.allTorrents === torrents) renderList(items);
 }
 
@@ -292,25 +245,7 @@ async function fetchMainMetadata(items) {
 
             if (!tmdbId) return { ...item, tmdbId: null, poster: null };
 
-            const global_media = {
-                id: tmdbId.id,
-                type: type,
-                title: tmdbId.officialName,
-                poster: poster,
-                base_url: null,
-                season: null,
-                episode: null
-            };
-
-            if (appState.currentUser && tmdbId.officialName && poster) {
-                // 1. Save the media to global_media (ignoring if it exists)
-                await addToAppLibrary(global_media);
-
-                // 2. Link this specific user and hash to the media
-                await linkHashToMedia(global_media, torrent.hash);
-            }
-
-            return { ...item, tmdbId, poster };
+            return { ...item, name: tmdbId.officialName || cleanName, tmdbId, poster };
         } catch (error) {
             console.warn(`Failed to fetch library metadata for ${cleanName}:`, error);
             return { ...item, tmdbId: null, poster: null };
@@ -395,6 +330,7 @@ function renderItem(item) {
                 ? requestLink(t.id, playableFile.id, t.name, playableFile.name)
                 : showToast("No playable files found.", "error");
         } else {
+            console.log(item);
             openPicker(t, item.tmdbId?.id);
         }
     });

@@ -6,16 +6,17 @@ import { showStreamPicker } from './user-addons/scraper-renderer.js';
 
 // Export a lightwight object for saving in lists and quick rendering
 export const mediaStore = (() => {
-    let state = { id: null, title: null, type: null, year: null, poster: null, baseUrl: null };
+    let state = { id: null, tmdbId: null, title: null, type: null, year: null, poster: null, baseUrl: null };
     return {
         get: () => ({ ...state }),
         set: (newData) => { state = { ...state, ...newData }; },
-        clear: () => { state = { id: null, title: null, year: null, type: null, poster: null, baseUrl: null }; }
+        clear: () => { state = { id: null, tmdbId: null, title: null, year: null, type: null, poster: null, baseUrl: null }; }
     };
 })();
 
 export async function openMasterDetail(mediaObject) {
     mediaStore.clear();
+    console.log(mediaObject);
 
     // Render UI
     renderMasterDetailView(mediaObject);
@@ -168,12 +169,16 @@ async function checkFullData(mediaObject) {
         try {
             const url = `${mediaObject.baseUrl}/meta/${mediaObject.type}/${mediaObject.id}.json`;
             const res = await fetch(url);
-
+            
             if (!res.ok) throw new Error("Stremio Addon meta fetch failed");
             const data = await res.json();
             const meta = data.meta;
-
+            console.log(data);
+            
             if (!meta) return;
+
+            // Set tmdb id and save in cloud for merging
+            const tmdbId = meta?._tmdbId;
 
             const rawCast = meta.app_extras?.cast || meta.cast;
             const formattedCast = Array.isArray(rawCast)
@@ -241,6 +246,7 @@ async function checkFullData(mediaObject) {
 
             mediaStore.set({
                 id: mediaObject.id,
+                tmdbId: tmdbId,
                 title: mediaObject.title,
                 type: mediaObject.type,
                 year: mediaObject.year,
