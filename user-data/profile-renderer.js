@@ -165,6 +165,7 @@ export function renderPublicProfile(userId, profile) {
         renderMediaCards(list.media || [], `watchlist-track-${list.id}`, null, media => {
             openMasterDetail({
                 id: media.media_id,
+                tmdbId: media.tmdb_id,
                 type: media.media_type,
                 title: media.title,
                 poster: media.poster_path,

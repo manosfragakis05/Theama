@@ -24,7 +24,7 @@ export async function fetchPublicProfile(userId) {
         .select(`
             id, name, is_private, created_at, 
             list_items ( 
-                global_media ( media_id, media_type, title, poster_path, base_url ) 
+                global_media ( media_id, tmdb_id, media_type, title, poster_path, base_url )
             )
         `)
         .eq('user_id', userId).eq('is_private', false)

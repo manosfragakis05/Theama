@@ -20,15 +20,18 @@ export async function addToAppLibrary(mediaData) {
     if (!appState.currentUser) return;
 
     try {
-        // Add to Global Media (ignore it if it already exists)
-        await supabase.from('global_media').upsert({
+        const candidate = Number(mediaData.tmdbId);
+        const tmdbId = Number.isSafeInteger(candidate) && candidate > 0 ? candidate : null;
+        // Refresh existing entries when a TMDB mapping is available.
+        const { error } = await supabase.from('global_media').upsert({
             media_id: mediaData.id,
-            tmdb_id: mediaData?.tmdbId || null,
+            tmdb_id: tmdbId,
             media_type: mediaData.type,
             title: mediaData.title,
             poster_path: mediaData.poster,
             base_url: mediaData.baseUrl
-        }, { onConflict: 'media_id', ignoreDuplicates: true });
+        }, { onConflict: 'media_id', ignoreDuplicates: tmdbId === null });
+        if (error) throw error;
 
         console.log("Successfully linked Torbox source to App Library.");
     } catch (err) {

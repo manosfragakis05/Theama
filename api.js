@@ -1,6 +1,7 @@
 import { showToast, MY_PROXY, TMDB_KEY } from './services/config.js';
 import { loadAllAddonsParallel } from './user-addons/scrapers.js';
 import { showStreamPicker } from './user-addons/scraper-renderer.js';
+import { getTmdbId } from './metadata/metadata.js';
 
 //#region State and Data
 
@@ -137,6 +138,7 @@ async function checkFullData(mediaObject) {
 
             mediaStore.set({
                 id: mediaObject.id,
+                tmdbId: Number(mediaObject.id),
                 title: mediaObject.title,
                 type: mediaObject.type,
                 year: mediaObject.year,
@@ -169,16 +171,30 @@ async function checkFullData(mediaObject) {
         try {
             const url = `${mediaObject.baseUrl}/meta/${mediaObject.type}/${mediaObject.id}.json`;
             const res = await fetch(url);
-            
+
             if (!res.ok) throw new Error("Stremio Addon meta fetch failed");
             const data = await res.json();
             const meta = data.meta;
             console.log(data);
-            
+
             if (!meta) return;
 
             // Set tmdb id and save in cloud for merging
-            const tmdbId = meta?._tmdbId;
+            let tmdbId = meta._tmdbId || meta.tmdb_id || meta.tmdbId || mediaObject.tmdbId;
+            const imdbId = meta._imdbId || meta.imdb_id || meta.imdbId;
+            if (!tmdbId && imdbId) {
+                const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_KEY}&external_source=imdb_id`;
+                const response = await fetch(url);
+                const data = await response.json();
+                console.log(data);
+
+                const results = mediaObject.type === 'movie'
+                    ? data.movie_results
+                    : data.tv_results;
+
+                tmdbId = results?.[0]?.id ?? null;
+            }
+            console.log(tmdbId);
 
             const rawCast = meta.app_extras?.cast || meta.cast;
             const formattedCast = Array.isArray(rawCast)

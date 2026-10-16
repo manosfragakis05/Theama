@@ -77,7 +77,7 @@ async function getListMedia(list) {
             .select(`
                 list_id,
                 created_at,
-                global_media ( media_id, media_type, title, poster_path, base_url )
+                global_media ( media_id, tmdb_id, media_type, title, poster_path, base_url )
             `)
             .eq('list_id', list.id)
             .order('created_at', { ascending: false });
@@ -102,8 +102,10 @@ async function getListMedia(list) {
 
 // Save media to a list
 async function saveMediaToList(mediaData, list) {
+    const candidate = Number(mediaData.tmdbId);
     const payload = {
         media_id: mediaData.id,
+        tmdb_id: Number.isSafeInteger(candidate) && candidate > 0 ? candidate : null,
         media_type: mediaData.type,
         title: mediaData.title,
         poster_path: mediaData.poster,
@@ -111,14 +113,12 @@ async function saveMediaToList(mediaData, list) {
     };
 
     if (appState.currentUser) {
-        // 1. Upsert into the Global Catalog (ignores if it already exists)
-        await supabase.from('global_media').upsert({
-            media_id: mediaData.id,
-            media_type: mediaData.type,
-            title: mediaData.title,
-            poster_path: mediaData.poster,
-            base_url: mediaData.baseUrl
-        }, { onConflict: 'media_id', ignoreDuplicates: true });
+        // Refresh existing entries when a TMDB mapping is available.
+        const { error: mediaError } = await supabase.from('global_media').upsert(payload, {
+            onConflict: 'media_id',
+            ignoreDuplicates: payload.tmdb_id === null
+        });
+        if (mediaError) throw mediaError;
 
         // Insert the connection into the bridge table
         const { error } = await supabase.from('list_items').insert({
@@ -182,6 +182,7 @@ async function syncLocalFavouritesToCloud() {
         for (const media of localFavs) {
             await saveMediaToList({
                 id: media.media_id,
+                tmdbId: media.tmdb_id,
                 type: media.media_type,
                 title: media.title,
                 poster: media.poster_path,
@@ -259,7 +260,7 @@ export async function renderPersonalProfile(isCurrent = () => !new URLSearchPara
             .from('list_items')
             .select(`
                 list_id,
-                global_media ( media_id, media_type, title, poster_path, base_url ),
+                global_media ( media_id, tmdb_id, media_type, title, poster_path, base_url ),
                 lists!inner ( user_id )
             `)
             .eq('lists.user_id', appState.currentUser.id)
@@ -288,6 +289,7 @@ export async function renderPersonalProfile(isCurrent = () => !new URLSearchPara
         }, media => {
             openMasterDetail({
                 id: media.media_id,
+                tmdbId: media.tmdb_id,
                 type: media.media_type,
                 title: media.title,
                 poster: media.poster_path,
