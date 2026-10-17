@@ -692,13 +692,12 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName) {
                 if (btn?.dataset.action === 'queue') {
                     e.stopPropagation();
                     addToQueue(queueItem);
-                    showToast(`Queued: ${queueItem.title}`, 'success');
                     return;
                 }
 
                 if (btn) return;
 
-                // Start from the clicked episode; all remaining episodes in this season + next seasons are queued!
+                // Start from the clicked episode; all remaining episodes in this season + next seasons are queued
                 if (activeGroupKey !== groupKey) stageGroup(groupKey);
                 playEpisode(index);
             };

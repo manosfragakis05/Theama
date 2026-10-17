@@ -17,7 +17,6 @@ export const mediaStore = (() => {
 
 export async function openMasterDetail(mediaObject) {
     mediaStore.clear();
-    console.log(mediaObject);
 
     // Render UI
     renderMasterDetailView(mediaObject);
@@ -175,7 +174,6 @@ async function checkFullData(mediaObject) {
             if (!res.ok) throw new Error("Stremio Addon meta fetch failed");
             const data = await res.json();
             const meta = data.meta;
-            console.log(data);
 
             if (!meta) return;
 
@@ -186,7 +184,6 @@ async function checkFullData(mediaObject) {
                 const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_KEY}&external_source=imdb_id`;
                 const response = await fetch(url);
                 const data = await response.json();
-                console.log(data);
 
                 const results = mediaObject.type === 'movie'
                     ? data.movie_results
@@ -194,7 +191,6 @@ async function checkFullData(mediaObject) {
 
                 tmdbId = results?.[0]?.id ?? null;
             }
-            console.log(tmdbId);
 
             const rawCast = meta.app_extras?.cast || meta.cast;
             const formattedCast = Array.isArray(rawCast)

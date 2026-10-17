@@ -16,10 +16,10 @@ export function filterAndSortStreams(streams, addonName) {
         const parsed = parseFormated(stream);
 
         // Audio Tier Classification
-        let audioTier = parsed.audioType;
+        let audioTier = parsed.audio;
 
         // Video Tier Classification
-        let videoTier = parsed.source;
+        let videoTier = parsed.codec;
 
         return {
             rawStream: stream,
@@ -434,7 +434,6 @@ function createStreamCard(stream, isRecommended) {
         btn.innerHTML = `
         <div class="w-full flex justify-between items-start text-left cursor-default">            
             <span class="text-[14px] font-semibold text-slate-300 break-words block">${rawInfo}</span>
-            <span class="text-[10px] whitespace-nowrap font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg transition-colors flex-shrink-0 mt-0.5 ${buttonHover}">Send to Torbox</span>
         </div>`;
 
         btn.onclick = handleSubmit;
@@ -454,7 +453,6 @@ function createStreamCard(stream, isRecommended) {
                     ${renderLine(blueprint.line2)}
                 </div>
             </div>
-            <span class="text-[10px] whitespace-nowrap font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg transition-colors flex-shrink-0 mt-0.5 ${buttonHover}">Send to Torbox</span>
         </div>
         
         <div class="flex justify-between items-end w-full mt-2">

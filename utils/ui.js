@@ -10,6 +10,7 @@ import { searchLibrary } from '../pages/library.js';
 import { stopPlayback } from '../streaming/player.js';
 import { loadDiscover, searchTMDB } from '../user-addons/catalogs.js';
 import { returnToMyProfile } from '../user-data/profile.js';
+import { loadHome } from '../pages/home.js';
 
 // --- NAVIGATION & TABS ---
 
@@ -20,7 +21,7 @@ export function goHome() {
     
     document.getElementById('player-wrapper').classList.add('hidden');
     document.getElementById('search-input').value = '';
-    switchTab('library-page');
+    switchTab('home-page');
 }
 
 export function switchTab(targetId) {
@@ -51,6 +52,9 @@ export function switchTab(targetId) {
 
 function handlePageSpecificLogic(pageId) {
     switch (pageId) {
+        case 'home-page':
+            loadHome();
+            break;
         case 'library-page':
             // E.g., refresh library or reset views
             break;

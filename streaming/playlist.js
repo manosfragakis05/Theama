@@ -1,4 +1,6 @@
-const STORAGE_KEY_QUEUE = 'pwa_active_queue_v1';
+import { getStorage } from "../user-data/user-settings";
+
+const STORAGE_KEY_QUEUE = 'active_queue';
 
 function emptyQueue() {
     return { entries: [], currentUid: null, nextIndex: 0, isShuffled: false, playbackStatus: 'idle' };
@@ -12,7 +14,7 @@ function validItem(item) {
 
 function loadQueue() {
     try {
-        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY_QUEUE));
+        const saved = JSON.parse(getStorage().getItem(STORAGE_KEY_QUEUE));
         if (!saved || typeof saved !== 'object') return emptyQueue();
 
         // Import the old split queue, including its visible previous entries.
@@ -64,7 +66,7 @@ let stagedSeriesItems = [];
 
 function saveQueue() {
     try {
-        localStorage.setItem(STORAGE_KEY_QUEUE, JSON.stringify(queueState));
+        getStorage().setItem(STORAGE_KEY_QUEUE, JSON.stringify(queueState));
     } catch (error) {
         console.warn('Could not save the playback queue:', error);
     }

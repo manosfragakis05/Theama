@@ -47,9 +47,7 @@ export function parseFormated(stream) {
     // Seeders
     const seederMatch = streamDesc.match(/👤[\s\-:|]*([\d,]+)/u);
     if (seederMatch) {
-        streamData.seeders = parseInt(seederMatch[1].replace(/,/g, ''), 10);
-    } else {
-        streamData.seeders = pttData.seeders || 0;
+        streamData.seeders = parseInt(seederMatch[1].replace(/,/g, ''), 10) || 0;
     }
 
     // Size
@@ -86,13 +84,12 @@ export function parseMediaData(rawString) {
 
     const parsed = parseMedia(rawString);
 
+    // Works for now
     return parsed;
 
     // Seasons and Episodes
     let finalSeasons = null;
     let finalEpisodes = null;
-    
-    //if(parsed.se)
     
     let fallbackSeason = null;
     let fallbackEpisode = null;

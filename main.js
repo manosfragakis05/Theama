@@ -255,6 +255,7 @@ async function refreshFriendsLists() {
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize our new static listeners immediately
     setupStaticEventListeners();
+    switchTab('home-page');
     window.addEventListener('popstate', handleProfileRouting);
 
     let lastAuthKey;
@@ -319,7 +320,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 const mainContainer = document.getElementById('app-main');
 const scrollCache = new Map();
-let currentTabId = 'library-page';
+let currentTabId = 'home-page';
 
 document.querySelectorAll('.nav-link').forEach(btn => {
     btn.addEventListener('click', (e) => {

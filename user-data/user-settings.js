@@ -9,7 +9,7 @@ let userSettings = {
         torboxApiKey: "",
         saveAddonsToCloud: false,
         trustThisDevice: true,
-        parseAddonLinks: true,
+        parseAddonLinks: false,
         defaultPlayer: "Internal"
     }
 };
@@ -130,7 +130,6 @@ function attachSettingsListeners() {
     });
 
     document.getElementById('trust-device-toggle').addEventListener('click', (e) => {
-        userSettings.user_preferences.trustThisDevice = e.target.checked;
         // SWITCH BETWEEN SESSIONSTORAGE AND LOCALSTORAGE
         switchStorageMode(e.target.checked);
     });
@@ -196,50 +195,31 @@ export function getStorage() {
     return trustDevice ? localStorage : sessionStorage;
 }
 
-// OIHFSOIVUHOSIV
 function switchStorageMode(trustDevice) {
-    // Grab the addon cache from whichever storage currently holds it before we switch
-    const currentAddonData = sessionStorage.getItem('full_addon_data') || localStorage.getItem('full_addon_data');
-    const currentSettings = getCurrentUserSettings();
+    if (!trustDevice && !confirm("Any saved data will be forgotten. Data saved in your Theama account will remain, but you will have to sign back in.")) {
+        document.getElementById('trust-device-toggle').checked = userSettings.user_preferences.trustThisDevice;
+        return;
+    }
 
-    const sbTokenKey = Object.keys(localStorage).find(k => k.startsWith('sb-') && k.endsWith('-auth-token'))
-        || Object.keys(sessionStorage).find(k => k.startsWith('sb-') && k.endsWith('-auth-token'));
+    const sourceStorage = trustDevice ? sessionStorage : localStorage;
+    const targetStorage = trustDevice ? localStorage : sessionStorage;
+    const keysToMove = ['full_addon_data', 'theama_meta_cache', 'active_queue'];
+    const sbTokenKey = Object.keys(sourceStorage).find(k => k.startsWith('sb-') && k.endsWith('-auth-token'))
+        || Object.keys(targetStorage).find(k => k.startsWith('sb-') && k.endsWith('-auth-token'));
+    if (sbTokenKey) keysToMove.push(sbTokenKey);
 
-    const sbTokenData = sbTokenKey ? (sessionStorage.getItem(sbTokenKey) || localStorage.getItem(sbTokenKey)) : null;
+    userSettings.user_preferences.trustThisDevice = trustDevice;
+    targetStorage.setItem('user_settings', JSON.stringify(getCurrentUserSettings()));
+    sourceStorage.removeItem('user_settings');
+
+    for (const key of keysToMove) {
+        const value = sourceStorage.getItem(key) ?? targetStorage.getItem(key);
+        if (value !== null) targetStorage.setItem(key, value);
+        sourceStorage.removeItem(key);
+    }
 
     if (trustDevice) {
-        sessionStorage.removeItem("user_settings");
-        if (currentSettings) localStorage.setItem("user_settings", JSON.stringify(currentSettings));
-
-        // Move full addons
-        if (currentAddonData) localStorage.setItem("full_addon_data", currentAddonData);
-        sessionStorage.removeItem("full_addon_data");
-
-        // Move Supabase Token to Local Storage
-        if (sbTokenKey && sbTokenData) {
-            localStorage.setItem(sbTokenKey, sbTokenData);
-            sessionStorage.removeItem(sbTokenKey);
-        }
-
         showToast("Data will remain in local storage", "info");
-    } else {
-
-        if (confirm("Any saved data will be forgotten. Data saved in your Theama account will remain, but you will have to sign back in.")) {
-
-            localStorage.removeItem("user_settings");
-            if (currentSettings) sessionStorage.setItem("user_settings", JSON.stringify(currentSettings));
-
-            if (currentAddonData) sessionStorage.setItem("full_addon_data", currentAddonData);
-            localStorage.removeItem("full_addon_data");
-
-            if (sbTokenKey && sbTokenData) {
-                sessionStorage.setItem(sbTokenKey, sbTokenData);
-                localStorage.removeItem(sbTokenKey);
-            }
-        } else {
-            document.getElementById('trust-device-toggle').checked = true;
-            userSettings.user_preferences.trustThisDevice = e.target.checked;
-        }
     }
 }
 //#endregion
