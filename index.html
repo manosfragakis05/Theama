@@ -1062,7 +1062,7 @@
 
             <div
                 class="flex items-center justify-between p-4 sm:p-5 border-b border-slate-800 bg-slate-800/50 shrink-0">
-                <h3 id="picker-title" class="font-bold text-xl text-white truncate pr-4"></h3>
+                <h3 id="picker-title" class="min-w-0 flex-1 pr-2 font-bold text-xl text-white sm:pr-4"></h3>
 
                 <button id="close-episode-picker-btn"
                     class="text-slate-400 hover:text-white bg-slate-700/30 hover:bg-slate-700 p-2 rounded-full transition-colors shrink-0 outline-none">
@@ -1277,9 +1277,9 @@
                 <source media="(max-width: 767px)" sizes="100vw">
                 <img class="pointer-events-none absolute inset-0 h-full w-full object-cover object-top md:object-[center_25%] [-webkit-user-drag:none]" alt="" draggable="false" decoding="async">
             </picture>
-            <div class="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/80 to-slate-950/10 md:bg-gradient-to-r md:from-slate-950/95 md:via-slate-950/40 md:to-slate-950/10"></div>
-            <div class="pointer-events-none absolute inset-0 hidden bg-gradient-to-t from-slate-950 to-transparent md:block"></div>
-            <div class="relative z-10 w-full max-w-3xl p-[clamp(1.5rem,4vw,4rem)] pb-28">
+            <div class="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/80 to-slate-950/10 md:bg-gradient-to-r md:from-slate-950/80 md:via-slate-950/20 md:to-transparent"></div>
+            <div class="pointer-events-none absolute inset-0 hidden bg-gradient-to-t from-slate-950/60 via-slate-950/10 to-transparent md:block"></div>
+            <div class="pointer-events-none relative z-10 w-full max-w-3xl p-[clamp(1.5rem,4vw,4rem)] pb-28">
                 <span class="mb-4 block text-[11px] font-extrabold uppercase tracking-[.2em] text-blue-200 md:mb-6">Trending this week</span>
                 <div class="mb-3.5 flex flex-wrap items-center gap-4 text-[13px] font-semibold text-slate-300">
                     <span class="home-hero-type rounded-md border border-white/25 px-2 py-1 text-[11px] uppercase tracking-wider text-slate-50"></span>
@@ -1287,9 +1287,9 @@
                     <span class="home-hero-rating text-amber-300"></span>
                 </div>
                 <h1 class="home-hero-title mb-4 text-balance text-[clamp(2rem,4.5vw,4rem)] font-extrabold leading-[1.08] tracking-[-.035em] text-white [overflow-wrap:anywhere] [text-shadow:0_2px_24px_rgb(0_0_0_/_30%)]"></h1>
-                <p class="home-hero-overview mb-6 line-clamp-3 max-w-[35rem] text-sm leading-relaxed text-slate-300 md:text-[15px]"></p>
-                <button type="button" class="home-hero-details inline-flex min-h-11 items-center justify-center rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white transition-colors hover:bg-blue-500">View details</button>
+                <p class="home-hero-overview line-clamp-3 max-w-[35rem] text-sm leading-relaxed text-slate-300 md:text-[15px]"></p>
             </div>
+            <button type="button" class="home-hero-details absolute inset-0 z-10 cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-blue-400"></button>
         </article>
     </template>
 

@@ -5,6 +5,12 @@ import { getTmdbId } from './metadata/metadata.js';
 
 //#region State and Data
 
+function originalBackdropUrl(path) {
+    if (!path) return '';
+    if (path.startsWith('/')) return `https://image.tmdb.org/t/p/original${path}`;
+    return path.replace(/^https?:\/\/image\.tmdb\.org\/t\/p\/[^/]+\//i, 'https://image.tmdb.org/t/p/original/');
+}
+
 // Export a lightwight object for saving in lists and quick rendering
 export const mediaStore = (() => {
     let state = { id: null, tmdbId: null, title: null, type: null, year: null, poster: null, baseUrl: null };
@@ -86,7 +92,7 @@ async function checkFullData(mediaObject) {
             mediaObject.runtime ||= tmdbRuntime;
             mediaObject.tagline ||= tmdbTagline;
             mediaObject.rating ||= tmdbRating;
-            mediaObject.backdrop ||= tmdbBackdrop.startsWith('http') ? tmdbBackdrop : `https://image.tmdb.org/t/p/original${tmdbBackdrop}`;
+            if (tmdbBackdrop) mediaObject.backdrop = originalBackdropUrl(tmdbBackdrop);
 
             if ((mediaObject.type === "tv" || mediaObject.type === "series") && detailedData.seasons) {
                 const validSeasons = detailedData.seasons.filter(s => s.season_number > 0);
@@ -512,7 +518,8 @@ function renderMasterDetailView(mediaObject) {
         ui.poster.src = mediaObject.poster;
     }
     if (ui.backdrop) {
-        ui.backdrop.style.backgroundImage = mediaObject.backdrop ? `url('${mediaObject.backdrop}')` : 'none';
+        const backdrop = originalBackdropUrl(mediaObject.backdrop);
+        ui.backdrop.style.backgroundImage = backdrop ? `url('${backdrop}')` : 'none';
     }
 }
 

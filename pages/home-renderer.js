@@ -26,7 +26,7 @@ function createSlide(item, index, count) {
     const title = item.title || item.name || 'Untitled';
     const year = (item.release_date || item.first_air_date || '').slice(0, 4);
     const rating = Number(item.vote_average);
-    const backdrop = imageUrl(item.backdrop_path, 'w1280');
+    const backdrop = imageUrl(item.backdrop_path, 'original');
     const poster = imageUrl(item.poster_path, 'w500');
     slide.setAttribute('aria-label', `${index + 1} of ${count}: ${title}`);
 
@@ -38,10 +38,6 @@ function createSlide(item, index, count) {
         const image = artwork.querySelector('img');
         image.loading = index === 0 ? 'eager' : 'lazy';
         image.fetchPriority = index === 0 ? 'high' : 'low';
-        if (backdrop) {
-            image.srcset = `${imageUrl(item.backdrop_path, 'w780')} 780w, ${backdrop} 1280w`;
-            image.sizes = '100vw';
-        }
         image.src = backdrop || poster;
         let fallbackAttempted = false;
         image.addEventListener('error', () => {
@@ -84,6 +80,7 @@ export function renderHomeCarousel(root, items) {
     carouselListeners = new AbortController();
     let activeIndex = 0;
     let pointerStart = null;
+    let suppressClick = false;
     const carousel = cloneTemplate('home-hero-carousel-template');
     const viewport = carousel.querySelector('.home-hero-viewport');
     const track = carousel.querySelector('.home-hero-track');
@@ -116,20 +113,33 @@ export function renderHomeCarousel(root, items) {
         selectSlide(activeIndex + (event.key === 'ArrowRight' ? 1 : -1));
     }, { signal: carouselListeners.signal });
     viewport.addEventListener('pointerdown', event => {
-        if (!event.isPrimary || event.button !== 0 || event.target.closest('button')) return;
+        if (!event.isPrimary || event.button !== 0) return;
+        suppressClick = false;
         pointerStart = { x: event.clientX, y: event.clientY };
-        viewport.setPointerCapture(event.pointerId);
+        // Keep taps targeted at the slide button while tracking swipes outside it.
+        const target = event.target.closest('.home-hero-details') || viewport;
+        target.setPointerCapture(event.pointerId);
     });
     viewport.addEventListener('pointerup', event => {
         if (!pointerStart) return;
         const dx = event.clientX - pointerStart.x;
         const dy = event.clientY - pointerStart.y;
         pointerStart = null;
+        suppressClick = Math.abs(dx) > 10 || Math.abs(dy) > 10;
         if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
             selectSlide(activeIndex + (dx < 0 ? 1 : -1));
         }
     });
-    viewport.addEventListener('pointercancel', () => { pointerStart = null; });
+    viewport.addEventListener('pointercancel', () => {
+        pointerStart = null;
+        suppressClick = true;
+    });
+    viewport.addEventListener('click', event => {
+        // Keyboard activation has no pointer movement and should always work.
+        if (!suppressClick || event.detail === 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+    }, { capture: true });
     track.append(...slides);
     dots.append(...dotButtons);
     controls.classList.toggle('hidden', items.length < 2);

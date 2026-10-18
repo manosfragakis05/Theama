@@ -488,12 +488,17 @@ function mapAbsoluteToTmdbRelative(absoluteEp, tmdbSeasons) {
 
 export function closePicker() {
     pickerGeneration++;
+    pickerHeaderListeners?.abort();
     document.getElementById('file-picker').classList.add('hidden');
 }
 //#endregion
 
 //#region UI Rendering
+let pickerHeaderListeners = null;
+
 function renderPickerUI(torrent, franchiseGroups, listElement, cleanName, tmdbId, watchProgress) {
+    pickerHeaderListeners?.abort();
+    pickerHeaderListeners = new AbortController();
     const titleElement = document.getElementById('picker-title');
     const watchedCounts = watchProgress?.watched_counts || {};
     const position = Number(watchProgress?.position_seconds);
@@ -607,29 +612,71 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName, tmdbId
     };
 
     titleElement.innerHTML = `
-        <div class="flex items-center justify-between w-full gap-3 overflow-hidden">
-        <span id="picker-series-title" class="min-w-0 flex-1 font-bold text-slate-100 text-xl truncate"></span>
-        <div class="flex items-center shrink-0 gap-3">
-            <div id="season-dropdown-container" class="relative inline-flex items-center"></div>
-                <button id="picker-play-btn" class="flex shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 shadow-lg shadow-black/10 hover:bg-slate-700 cursor-pointer">
-                    Play
-                </button>
-                <button id="picker-shuffle-btn" class="flex shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 shadow-lg shadow-black/10 hover:bg-slate-700 cursor-pointer">
-                    <svg class="w-5 h-5 shrink-0" aria-hidden="true" focusable="false" fill="none" stroke="currentColor">
-                        <use href="#icon-shuffle"></use>
-                    </svg>
-                    Play Shuffled
-                </button>
-                <button id="picker-queue-btn" title="Add Series to Queue" class="flex shrink-0 items-center justify-center gap-1.5 rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 shadow-lg shadow-black/10 hover:bg-slate-700 cursor-pointer">
-                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-                    </svg>
-                    Queue
-                </button>
+        <div class="flex w-full flex-wrap items-center gap-x-3 gap-y-2 md:flex-nowrap">
+            <span id="picker-series-title" class="max-w-full font-bold text-slate-100 text-base [overflow-wrap:anywhere] md:min-w-0 md:flex-1 md:truncate md:text-xl"></span>
+            <div class="flex min-w-0 max-w-full flex-auto items-center justify-end gap-2 md:flex-none md:gap-3">
+                <div id="season-dropdown-container" class="relative inline-flex min-w-0 flex-1 items-center md:flex-none"></div>
+                <div id="picker-actions" class="relative shrink-0">
+                    <button id="picker-actions-toggle" type="button" aria-label="Playback and queue options" aria-expanded="false" aria-controls="picker-actions-menu"
+                        class="group grid h-11 w-11 place-items-center rounded-lg text-slate-400 transition-colors hover:text-slate-200 aria-expanded:text-slate-200 md:hidden">
+                        <span class="pointer-events-none grid h-8 w-7 place-items-center rounded-lg bg-slate-700/20 transition-colors group-hover:bg-slate-700/40 group-aria-expanded:bg-slate-700/40">
+                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+                                <circle cx="12" cy="5" r="1.75"></circle>
+                                <circle cx="12" cy="12" r="1.75"></circle>
+                                <circle cx="12" cy="19" r="1.75"></circle>
+                            </svg>
+                        </span>
+                    </button>
+                    <div id="picker-actions-menu" class="absolute right-0 top-full z-30 mt-2 hidden flex-col gap-1 w-48 max-w-[calc(100vw-6rem)] rounded-xl border border-slate-700 bg-slate-900 p-1.5 shadow-xl md:static md:mt-0 md:flex md:w-auto md:max-w-none md:flex-row md:gap-3 md:rounded-none md:border-0 md:bg-transparent md:p-0 md:shadow-none">
+                        <button id="picker-play-btn" type="button" class="flex min-h-11 shrink-0 items-center justify-start gap-2 rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 shadow-lg shadow-black/10 hover:bg-slate-700 cursor-pointer md:justify-center">
+                            Play
+                        </button>
+                        <button id="picker-shuffle-btn" type="button" class="flex min-h-11 shrink-0 items-center justify-start gap-2 rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 shadow-lg shadow-black/10 hover:bg-slate-700 cursor-pointer md:justify-center">
+                            <svg class="w-5 h-5 shrink-0" aria-hidden="true" focusable="false" fill="none" stroke="currentColor">
+                                <use href="#icon-shuffle"></use>
+                            </svg>
+                            Play Shuffled
+                        </button>
+                        <button id="picker-queue-btn" type="button" title="Add Series to Queue" class="flex min-h-11 shrink-0 items-center justify-start gap-1.5 rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 shadow-lg shadow-black/10 hover:bg-slate-700 cursor-pointer md:justify-center">
+                            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                            </svg>
+                            Queue
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     `;
     document.getElementById('picker-series-title').textContent = cleanName;
+
+    const actions = document.getElementById('picker-actions');
+    const actionsToggle = document.getElementById('picker-actions-toggle');
+    const actionsMenu = document.getElementById('picker-actions-menu');
+    const setActionsOpen = (open) => {
+        actionsToggle.setAttribute('aria-expanded', String(open));
+        actionsMenu.classList.toggle('hidden', !open);
+        actionsMenu.classList.toggle('flex', open);
+    };
+    actionsToggle.addEventListener('click', () => {
+        setActionsOpen(actionsToggle.getAttribute('aria-expanded') !== 'true');
+    });
+    actionsMenu.addEventListener('click', event => {
+        if (event.target.closest('button')) {
+            setActionsOpen(false);
+            if (actionsToggle.offsetParent) actionsToggle.focus();
+        }
+    });
+    document.addEventListener('click', event => {
+        if (!actions.contains(event.target)) setActionsOpen(false);
+    }, { signal: pickerHeaderListeners.signal });
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && actionsToggle.getAttribute('aria-expanded') === 'true') {
+            event.preventDefault();
+            setActionsOpen(false);
+            actionsToggle.focus();
+        }
+    }, { signal: pickerHeaderListeners.signal });
 
     document.getElementById('picker-queue-btn')?.addEventListener('click', () => {
         const count = queueStagedSeries();
@@ -758,7 +805,7 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName, tmdbId
 
     if (sortedSeasonKeys.length > 1) {
         seasonContainer.innerHTML = `
-            <select id="library-season-select" aria-label="Season" class="rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 shadow-lg shadow-black/10 hover:bg-slate-700 cursor-pointer outline-none">
+            <select id="library-season-select" aria-label="Season" class="min-h-11 min-w-0 max-w-full rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 shadow-lg shadow-black/10 hover:bg-slate-700 cursor-pointer outline-none">
                 <button type="button" class="flex w-full items-center justify-between gap-3 text-left">
                     <selectedcontent class="min-w-0 truncate"></selectedcontent>
                     <svg class="season-dropdown-icon w-4 h-4 shrink-0 text-slate-400 transition-transform duration-200" aria-hidden="true" focusable="false" fill="none" stroke="currentColor">

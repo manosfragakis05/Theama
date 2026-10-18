@@ -28,6 +28,8 @@ export function switchTab(targetId) {
     // 1. Hide ALL pages
     document.querySelectorAll('.page-view').forEach(page => {
         page.classList.add('hidden');
+        // Hide full detail view
+        document.getElementById('full-detail-view').classList.add("hidden");
     });
 
     // 2. Show the TARGET page
