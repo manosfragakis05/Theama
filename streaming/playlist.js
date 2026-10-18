@@ -83,6 +83,14 @@ function createQueueItem(data, uid = crypto.randomUUID()) {
         uid,
         tid: data.tid,
         fid: data.fid,
+        hash: text(data.hash),
+        tmdbId: Number.isSafeInteger(Number(data.tmdbId)) && Number(data.tmdbId) > 0
+            ? Number(data.tmdbId) : null,
+        mediaType: data.mediaType === 'movie' || data.mediaType === 'tv' ? data.mediaType : null,
+        seasonNumber: data.seasonNumber != null && Number.isInteger(Number(data.seasonNumber))
+            && Number(data.seasonNumber) >= 0 ? Number(data.seasonNumber) : null,
+        watchEpisodeNumber: data.watchEpisodeNumber != null && Number.isInteger(Number(data.watchEpisodeNumber))
+            && Number(data.watchEpisodeNumber) > 0 ? Number(data.watchEpisodeNumber) : null,
         seriesTitle: text(data.seriesTitle),
         season: text(data.season),
         episodeNumber: Number.isFinite(Number(data.episodeNumber)) && data.episodeNumber != null
@@ -197,6 +205,13 @@ export function addToQueue(itemData) {
     insertPriority([item]);
     saveQueue();
     return { ...item };
+}
+
+export function startQueueFromItem(itemData) {
+    const item = createQueueItem(itemData);
+    queueState.entries.splice(queueState.nextIndex, 0,
+        { item, listType: 'priority', originalIndex: -1 });
+    return selectQueueItem(item.uid);
 }
 
 export function removeFromQueue(uid) {

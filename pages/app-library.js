@@ -9,6 +9,8 @@ import { appState, smartFetch, showToast } from '../services/config.js';
 
 import { getCurrentUserSettings } from '../user-data/user-settings.js';
 import { requestLink } from '../streaming/player.js';
+import { startQueueFromItem } from '../streaming/playlist.js';
+import { parseMediaData } from '../utils/parseMedia.js';
 import { downloadFile } from '../streaming/download.js';
 import { createLibraryCard } from './library-renderer.js';
 import { getMediaText } from './library.js';
@@ -233,8 +235,19 @@ export function renderAppLibrary(items) {
                     if (playableFile) await downloadFile(sourceTorrent.id, playableFile.id, playableFile.name);
                     else showToast('No playable files found.', 'error');
                 } else if (sourceTorrents.length === 1 && (sourceMediaText === 'Movie' || sourceMediaText === 'Single Episode')) {
-                    if (playableFile) await requestLink(sourceTorrent.id, playableFile.id, sourceTorrent.name, playableFile.name);
-                    else showToast('No playable files found.', 'error');
+                    if (!playableFile) return showToast('No playable files found.', 'error');
+                    const parsed = parseMediaData(playableFile.short_name || playableFile.name);
+                    const torrentInfo = parseMediaData(sourceTorrent.name);
+                    const current = startQueueFromItem({
+                        tid: sourceTorrent.id, fid: playableFile.id,
+                        hash: sourceTorrent.hash,
+                        torrentName: sourceTorrent.name, fileName: playableFile.name,
+                        title: media.title, thumbnail: media.poster_path,
+                        tmdbId: media.tmdb_id, mediaType: media.media_type,
+                        seasonNumber: parsed.seasons?.[0] ?? torrentInfo.seasons?.[0] ?? 1,
+                        episodeNumber: parsed.episodes?.[0] ?? torrentInfo.episodes?.[0]
+                    });
+                    await requestLink(current.tid, current.fid, current.torrentName, current.fileName, current.uid);
                 } else {
                     await openPicker(sourceTorrents, media.tmdb_id, media.title);
                 }
@@ -249,13 +262,14 @@ export function renderAppLibrary(items) {
     }
 }
 
-async function resolveLibraryTorrents(sources) {
+export async function resolveLibraryTorrents(sources) {
     const hashes = new Set(sources.map(source => source.hash).filter(Boolean));
     const cachedTorrents = appState.allTorrents.filter(torrent => hashes.has(torrent.hash) && torrent.download_finished);
     if (cachedTorrents.length === hashes.size && cachedTorrents.length > 0) return cachedTorrents;
 
     const tbKey = getCurrentUserSettings().user_preferences.torboxApiKey;
     if (!tbKey) throw new Error('Link TorBox in settings to play or download this media.');
+    const userId = appState.currentUser?.id;
 
     // 1. Fetch the user's active Torbox library
     const res = await smartFetch('https://api.torbox.app/v1/api/torrents/mylist', {
@@ -264,6 +278,10 @@ async function resolveLibraryTorrents(sources) {
     const result = await res.json();
     if (!result.success || !Array.isArray(result.data)) {
         throw new Error(result.detail || 'Could not load your TorBox files.');
+    }
+    if (tbKey === getCurrentUserSettings().user_preferences.torboxApiKey
+        && userId === appState.currentUser?.id) {
+        appState.allTorrents = result.data.filter(torrent => torrent.download_finished);
     }
 
     // 2. Resolve all linked hashes in one request.

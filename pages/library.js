@@ -13,6 +13,7 @@ import { getPosterForLibrary, getTmdbId } from '../metadata/metadata.js';
 import { openPicker } from '../metadata/picker.js';
 
 import { requestLink } from '../streaming/player.js';
+import { startQueueFromItem } from '../streaming/playlist.js';
 import { downloadFile } from '../streaming/download.js';
 import { createLibraryCard } from './library-renderer.js';
 import { loadAppLibrary } from './app-library.js';
@@ -326,9 +327,19 @@ function renderItem(item) {
 
 
         if (item.mediaText == "Movie" || item.mediaText == "Single Episode") {
-            playableFile
-                ? requestLink(t.id, playableFile.id, t.name, playableFile.name)
-                : showToast("No playable files found.", "error");
+            if (!playableFile) return showToast("No playable files found.", "error");
+            const parsed = parseMediaData(playableFile.short_name || playableFile.name);
+            const torrentInfo = parseMediaData(t.name);
+            const current = startQueueFromItem({
+                tid: t.id, fid: playableFile.id, torrentName: t.name, fileName: playableFile.name,
+                hash: t.hash,
+                title: item.name, thumbnail: item.poster,
+                tmdbId: item.tmdbId?.id,
+                mediaType: item.mediaText === 'Movie' ? 'movie' : 'tv',
+                seasonNumber: parsed.seasons?.[0] ?? torrentInfo.seasons?.[0] ?? 1,
+                episodeNumber: parsed.episodes?.[0] ?? torrentInfo.episodes?.[0]
+            });
+            requestLink(current.tid, current.fid, current.torrentName, current.fileName, current.uid);
         } else {
             console.log(item);
             openPicker(t, item.tmdbId?.id);

@@ -1,6 +1,7 @@
 import { MKVPlayer } from '../engine/mkv_lib.js';
-import { smartFetch, showToast } from '../services/config.js';
+import { appState, smartFetch, showToast } from '../services/config.js';
 import { getCurrentUserSettings } from '../user-data/user-settings.js';
+import { upsertWatchProgress } from '../user-data/watch-history.js';
 
 import { advanceToNextItem, retreatToPreviousItem, getQueueState, setQueuePlaybackStatus } from './playlist.js';
 import { openExternalPlayer } from './external-players.js';
@@ -8,6 +9,9 @@ import { openExternalPlayer } from './external-players.js';
 export let art = null;
 let playbackGeneration = 0;
 let queuePlaybackUid = null;
+let watchProgressInterval = null;
+let saveActiveProgress = null;
+let progressSave = Promise.resolve();
 
 window.addEventListener('queue:updated', ({ detail }) => {
     if (queuePlaybackUid && detail.current?.uid !== queuePlaybackUid) stopPlayback();
@@ -35,7 +39,7 @@ export async function getTorboxLink(tid, fid) {
     }
 }
 
-export async function requestLink(tid, fid, torrentName, fileName, queueUid = null) {
+export async function requestLink(tid, fid, torrentName, fileName, queueUid = null, resumePosition = 0) {
     if (queueUid && getQueueState().current?.uid !== queueUid) return;
     const generation = stopPlayback();
     queuePlaybackUid = queueUid;
@@ -51,7 +55,7 @@ export async function requestLink(tid, fid, torrentName, fileName, queueUid = nu
         if (generation !== playbackGeneration) return;
         if (list) list.style.opacity = '1';
         if (streamUrl) {
-            startPlayer(streamUrl, fileName || torrentName || 'Untitled', null, queueUid);
+            startPlayer(streamUrl, fileName || torrentName || 'Untitled', null, queueUid, resumePosition);
             return;
         }
         if (!queueUid) return;
@@ -63,13 +67,14 @@ export async function requestLink(tid, fid, torrentName, fileName, queueUid = nu
         queuePlaybackUid = null;
         const next = advanceToNextItem();
         ({ tid, fid, torrentName, fileName, uid: queueUid } = next);
+        resumePosition = 0;
         queuePlaybackUid = queueUid;
         setQueuePlaybackStatus(queueUid, 'loading');
     }
 }
 
 //#region Player
-export function startPlayer(url, name, localFileObject = null, queueUid = null) {
+export function startPlayer(url, name, localFileObject = null, queueUid = null, resumePosition = 0) {
     stopPlayback();
     queuePlaybackUid = queueUid;
     const defaultPlayer = getCurrentUserSettings().user_preferences.defaultPlayer || 'Internal';
@@ -107,7 +112,7 @@ export function startPlayer(url, name, localFileObject = null, queueUid = null) 
         fastForward: true,
         theme: '#3b82f6',
         pip: !isIOS,
-        autoPlayback: !isMkv,
+        autoPlayback: false,
         miniProgressBar: false,
         screenshot: false,
         subtitles: false,
@@ -200,6 +205,74 @@ export function startPlayer(url, name, localFileObject = null, queueUid = null) 
     });
 
     const playerArt = art;
+    const video = playerArt.video;
+    const resumeTime = Number(resumePosition);
+    let resumePending = Number.isFinite(resumeTime) && resumeTime > 0;
+    const removeResumeListeners = () => {
+        video.removeEventListener('loadedmetadata', restorePosition);
+        video.removeEventListener('loadeddata', restorePosition);
+    };
+    const restorePosition = () => {
+        if (!resumePending || art !== playerArt || generation !== playbackGeneration
+            || video.readyState < 1 || !Number.isFinite(video.duration) || video.duration <= 0) return;
+        try {
+            // Native seeking also tells the MKV remuxer to load the matching clusters.
+            video.currentTime = Math.min(resumeTime, video.duration);
+            resumePending = false;
+            removeResumeListeners();
+        } catch (error) {
+            console.warn('Could not restore playback position:', error);
+        }
+    };
+    if (resumePending) {
+        video.addEventListener('loadedmetadata', restorePosition);
+        video.addEventListener('loadeddata', restorePosition);
+        restorePosition();
+    }
+
+    const media = queueUid && getQueueState().current?.uid === queueUid
+        ? getQueueState().current : null;
+
+    const completedForUsers = new Set();
+    let lastSavedSample = null;
+    const saveProgress = () => {
+        const userId = appState.currentUser?.id;
+        if (!media || !userId || resumePending) return;
+        if (!Number.isFinite(video.currentTime) || !Number.isFinite(video.duration)
+            || video.currentTime < 0 || video.duration < 1) return;
+        const duration = Math.floor(video.duration);
+        const position = Math.min(Math.floor(video.currentTime), duration);
+        // Each sample gets its own upsert; serialize writes so episode counts stay ordered.
+        progressSave = progressSave.then(async () => {
+            if (lastSavedSample?.userId === userId && lastSavedSample.position === position
+                && lastSavedSample.duration === duration) return;
+            const result = await upsertWatchProgress(position, duration, {
+                media, userId, countCompletion: !completedForUsers.has(userId)
+            });
+            if (result) lastSavedSample = { userId, position, duration };
+            if (result?.completed) completedForUsers.add(userId);
+        });
+    };
+    saveActiveProgress = saveProgress;
+
+    const progressInterval = media ? setInterval(() => {
+        if (art === playerArt && generation === playbackGeneration && !video.paused && !video.ended) saveProgress();
+    }, 60_000) : null;
+    watchProgressInterval = progressInterval;
+    const saveCurrentProgress = () => {
+        if (art === playerArt && generation === playbackGeneration) saveProgress();
+    };
+    const onVisibilityChange = () => {
+        if (document.visibilityState === 'hidden') saveCurrentProgress();
+    };
+    if (media) document.addEventListener('visibilitychange', onVisibilityChange);
+    playerArt.on('video:pause', saveCurrentProgress);
+    playerArt.on('destroy', () => {
+        removeResumeListeners();
+        clearInterval(progressInterval);
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+        if (saveActiveProgress === saveProgress) saveActiveProgress = null;
+    });
     const closePlayerButton = document.getElementById('close-player-btn');
     const syncCloseButton = () => {
         if (art !== playerArt || generation !== playbackGeneration) return;
@@ -211,6 +284,7 @@ export function startPlayer(url, name, localFileObject = null, queueUid = null) 
     // Auto skip when video ends
     playerArt.on('video:ended', () => {
         if (art !== playerArt || generation !== playbackGeneration) return;
+        saveProgress();
         if (!queueUid || getQueueState().current?.uid !== queueUid) return;
         const next = advanceToNextItem();
         if (next) {
@@ -401,6 +475,11 @@ export function startPlayer(url, name, localFileObject = null, queueUid = null) 
 }
 
 export function stopPlayback() {
+    const saveProgress = saveActiveProgress;
+    saveActiveProgress = null;
+    saveProgress?.();
+    clearInterval(watchProgressInterval);
+    watchProgressInterval = null;
     const generation = ++playbackGeneration;
     const instance = art;
     const stoppedQueueUid = queuePlaybackUid;

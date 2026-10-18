@@ -5,7 +5,8 @@
  * ==========================================
  */
 
-import { showToast } from '../services/config.js';
+import { appState, showToast } from '../services/config.js';
+import { supabase } from '../user-data/db.js';
 import { parseMediaData } from '../utils/parseMedia.js';
 
 import { requestLink } from '../streaming/player.js';
@@ -301,7 +302,31 @@ function buildPickerGroups(torrents) {
 //#endregion
 
 //#region Main Picker Logic
+let pickerGeneration = 0;
+
+async function fetchPickerWatchProgress(tmdbId, userId) {
+    if (!tmdbId || !userId) return null;
+    try {
+        const { data, error } = await supabase.from('watch_progress')
+            .select('watched_counts,current_episode,position_seconds,duration_seconds')
+            .eq('user_id', userId)
+            .eq('media_type', 'tv')
+            .eq('tmdb_id', tmdbId)
+            .maybeSingle();
+        if (error) throw error;
+        return data;
+    } catch (error) {
+        console.warn('Could not load watched episodes:', error);
+        return null;
+    }
+}
+
 export async function openPicker(torrentOrTorrents, tmdbId, title) {
+    const generation = ++pickerGeneration;
+    const candidate = Number(tmdbId);
+    tmdbId = Number.isSafeInteger(candidate) && candidate > 0 ? candidate : null;
+    const userId = appState.currentUser?.id;
+    const watchProgressPromise = fetchPickerWatchProgress(tmdbId, userId);
     const torrents = Array.isArray(torrentOrTorrents) ? torrentOrTorrents : [torrentOrTorrents];
     const torrent = torrents[0];
     const picker = document.getElementById('file-picker');
@@ -422,6 +447,8 @@ export async function openPicker(torrentOrTorrents, tmdbId, title) {
                     );
 
                     if (tmdbEpData) {
+                        file.watchSeason = fetchSeason;
+                        file.watchEpisode = tmdbEpData.episode_number;
                         file.displayTitle = tmdbEpData.name;
                         file.displayThumbnail = tmdbEpData.still_path
                             ? `https://image.tmdb.org/t/p/w500${tmdbEpData.still_path}`
@@ -435,7 +462,10 @@ export async function openPicker(torrentOrTorrents, tmdbId, title) {
         }
     }
 
-    renderPickerUI(torrent, franchiseGroups, list, cleanName);
+    const watchProgress = await watchProgressPromise;
+    if (generation !== pickerGeneration) return;
+    renderPickerUI(torrent, franchiseGroups, list, cleanName, tmdbId,
+        appState.currentUser?.id === userId ? watchProgress : null);
 }
 
 function mapAbsoluteToTmdbRelative(absoluteEp, tmdbSeasons) {
@@ -457,13 +487,19 @@ function mapAbsoluteToTmdbRelative(absoluteEp, tmdbSeasons) {
 }
 
 export function closePicker() {
+    pickerGeneration++;
     document.getElementById('file-picker').classList.add('hidden');
 }
 //#endregion
 
 //#region UI Rendering
-function renderPickerUI(torrent, franchiseGroups, listElement, cleanName) {
+function renderPickerUI(torrent, franchiseGroups, listElement, cleanName, tmdbId, watchProgress) {
     const titleElement = document.getElementById('picker-title');
+    const watchedCounts = watchProgress?.watched_counts || {};
+    const position = Number(watchProgress?.position_seconds);
+    const duration = Number(watchProgress?.duration_seconds);
+    const progressPercent = Number.isFinite(position) && Number.isFinite(duration) && duration > 0
+        ? Math.max(0, Math.min(position / duration * 100, 100)) : null;
 
     const typePriority = {
         'TV': 1,
@@ -522,6 +558,11 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName) {
             return {
                 tid: sourceTorrent.id,
                 fid: originalFile.id,
+                hash: sourceTorrent.hash,
+                tmdbId: fileType === 'TV' ? tmdbId : null,
+                mediaType: 'tv',
+                seasonNumber: fileObj.watchSeason ?? fileObj.tmdbSeason,
+                watchEpisodeNumber: fileObj.watchEpisode ?? relativeEpisode ?? episode ?? (index + 1),
                 seriesTitle: cleanName,
                 season: groupData.title,
                 fileType: groupData.fileType,
@@ -608,7 +649,10 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName) {
         if (!episode) return;
         playbackRequested = true;
         closePicker();
-        requestLink(episode.tid, episode.fid, episode.torrentName, episode.fileName, episode.uid);
+        const episodeKey = `${episode.seasonNumber}:${episode.watchEpisodeNumber}`;
+        const resumePosition = episode.tmdbId === tmdbId && watchProgress?.current_episode === episodeKey
+            && progressPercent !== null ? Math.max(0, Math.min(position, duration)) : 0;
+        requestLink(episode.tid, episode.fid, episode.torrentName, episode.fileName, episode.uid, resumePosition);
     };
 
     // Wire up Header "Play" Button (Starts from Episode 1 of current season + queues future seasons)
@@ -645,39 +689,21 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName) {
                         ? 'bg-purple-600'
                         : 'bg-blue-600';
 
-            const extendedBadgeHTML = isExtended
-                ? `<span class="text-[10px] font-bold text-white px-2 py-0.5 rounded w-max bg-rose-600">Extended</span>`
-                : '';
-
-            const card = document.createElement('div');
-            card.className = "relative flex flex-col w-full rounded-xl border-2 border-slate-700 bg-slate-800 overflow-hidden cursor-pointer hover:border-blue-500 transition-all group select-none";
-
-            card.innerHTML = `
-                <div class="relative aspect-video bg-slate-900 border-b border-slate-700 overflow-hidden">
-                    <img loading="lazy" class="w-full h-full object-cover opacity-60 group-hover:opacity-40 transition-opacity" alt="">
-                    
-                    <div class="absolute inset-0 flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                        <button type="button" data-action="download" class="bg-slate-800/90 hover:bg-slate-700 text-white w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-md transition-colors shadow-xl border border-slate-600" title="Download to Device">
-                            <svg style="width:22px;height:22px;margin-top:2px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                        </button>
-                        <button type="button" data-action="queue" class="bg-slate-800/90 hover:bg-slate-700 text-white w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-md transition-colors shadow-xl border border-slate-600" title="Add to Queue">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-                        </button>
-                    </div>
-
-                    <div class="picker-episode-size absolute bottom-2 right-2 bg-black/80 px-2 py-1 rounded text-[11px] text-white font-bold pointer-events-none"></div>
-                </div>
-                <div class="p-3 flex flex-col gap-1 pointer-events-none">
-                    <div class="flex flex-wrap items-center gap-1.5">
-                        <span class="picker-episode-badge text-[10px] font-bold text-white px-2 py-0.5 rounded w-max ${badgeColor}"></span>
-                        ${extendedBadgeHTML}
-                    </div>
-                    <p class="picker-episode-title text-xs text-slate-300 line-clamp-2 mt-1 group-hover:text-white"></p>
-                </div>
-            `;
+            const card = document.getElementById('picker-episode-card-template').content.firstElementChild.cloneNode(true);
+            card.querySelector('.picker-episode-badge').classList.add(badgeColor);
+            card.querySelector('.picker-episode-extended').classList.toggle('hidden', !isExtended);
             card.querySelector('.picker-episode-size').textContent = queueItem.size;
             card.querySelector('.picker-episode-badge').textContent = queueItem.badge;
             card.querySelector('.picker-episode-title').textContent = queueItem.title;
+            const episodeKey = `${queueItem.seasonNumber}:${queueItem.watchEpisodeNumber}`;
+            const isWatched = queueItem.tmdbId != null && Number(watchedCounts[episodeKey]) > 0;
+            card.querySelector('.picker-episode-watched').classList.toggle('hidden', !isWatched);
+            if (queueItem.tmdbId != null && watchProgress?.current_episode === episodeKey && progressPercent !== null) {
+                const progressBar = card.querySelector('.picker-episode-progress');
+                progressBar.classList.remove('hidden');
+                progressBar.setAttribute('aria-valuenow', String(Math.round(progressPercent)));
+                card.querySelector('.picker-episode-progress-fill').style.width = `${progressPercent}%`;
+            }
             if (queueItem.thumbnail) card.querySelector('img').src = queueItem.thumbnail;
 
             card.onclick = (e) => {

@@ -315,13 +315,25 @@
                     </ol>
                 </section>
 
-                <div id="home-page" class="page-view min-h-[50vh]">
-                    <section id="home-hero" class="home-hero" aria-label="Trending this week"
+                <div id="home-page" class="page-view flex-none min-h-[50vh] !pb-[calc(7rem+env(safe-area-inset-bottom))] max-md:!px-0 max-md:!pt-0 md:!pb-8">
+                    <section id="home-hero"
+                        class="relative isolate min-h-[clamp(34rem,150vw,56rem)] overflow-hidden bg-slate-800 select-none [-webkit-touch-callout:none] md:min-h-[clamp(32rem,68svh,43rem)] md:rounded-xl [&_*]:select-none"
+                        aria-label="Trending this week"
                         aria-roledescription="carousel" aria-busy="true">
-                        <div class="home-hero-message" role="status">
-                            <span class="home-hero-eyebrow">Trending this week</span>
+                        <div class="flex [min-height:inherit] flex-col items-start justify-center gap-3 bg-gradient-to-bl from-slate-700 to-slate-900 p-8 text-slate-300" role="status">
+                            <span class="text-[11px] font-extrabold uppercase tracking-[.2em] text-blue-200">Trending this week</span>
                             <p>Loading this week's picks...</p>
                         </div>
+                    </section>
+                    <section id="home-watch-progress" class="min-w-0 px-4 pt-8 md:px-0" aria-labelledby="home-watch-heading"
+                        aria-busy="false" hidden>
+                        <div class="home-watch-header mb-4 flex items-center justify-between gap-3">
+                            <h2 id="home-watch-heading" class="home-watch-heading text-xl font-bold">Recently watched</h2>
+                            <button type="button" class="home-watch-restore hidden shrink-0 rounded px-2 py-1 text-xs text-slate-400 hover:text-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400">Show hidden</button>
+                        </div>
+                        <p class="home-watch-message hidden text-sm text-slate-400" role="status"></p>
+                        <div id="home-watch-row" class="draggable-row scrollbar-hide flex gap-4 overflow-x-auto pb-3 cursor-grab"
+                            tabindex="0" role="list" aria-labelledby="home-watch-heading"></div>
                     </section>
                 </div>
 
@@ -1228,6 +1240,115 @@
             </div>
         </template>
     </div>
+
+    <template id="home-hero-message-template">
+        <div class="flex [min-height:inherit] flex-col items-start justify-center gap-3 bg-gradient-to-bl from-slate-700 to-slate-900 p-8 text-slate-300" role="status">
+            <span class="text-[11px] font-extrabold uppercase tracking-[.2em] text-blue-200">Trending this week</span>
+            <p class="home-hero-message-text"></p>
+            <button type="button" class="home-hero-retry hidden min-h-11 rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white transition-colors hover:bg-blue-500">Try again</button>
+        </div>
+    </template>
+
+    <template id="home-hero-carousel-template">
+        <div class="[min-height:inherit]">
+            <div id="home-hero-viewport" class="home-hero-viewport [min-height:inherit] overflow-hidden touch-pan-y focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-blue-400"
+                tabindex="0" aria-label="Trending titles. Use left and right arrow keys to change slides.">
+                <div class="home-hero-track flex [min-height:inherit] transition-transform duration-[450ms] ease-[cubic-bezier(.22,.61,.36,1)] motion-reduce:transition-none"></div>
+            </div>
+            <div class="home-hero-controls absolute inset-x-[clamp(1rem,4vw,4rem)] bottom-5 z-20 flex items-center justify-between gap-2 border-t border-white/10 pt-3">
+                <div class="home-hero-dots flex items-center" role="group" aria-label="Choose a featured title"></div>
+                <div class="flex items-center gap-2">
+                    <button type="button" class="home-hero-previous grid h-11 w-9 place-items-center rounded-xl border border-white/20 bg-slate-900/50 text-slate-100 transition-colors hover:bg-white/20"
+                        aria-label="Previous title" aria-controls="home-hero-viewport">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M15 18l-6-6 6-6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                    </button>
+                    <button type="button" class="home-hero-next grid h-11 w-9 place-items-center rounded-xl border border-white/20 bg-slate-900/50 text-slate-100 transition-colors hover:bg-white/20"
+                        aria-label="Next title" aria-controls="home-hero-viewport">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M9 6l6 6-6 6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template id="home-hero-slide-template">
+        <article class="home-hero-slide relative flex flex-none basis-full [min-height:inherit] min-w-0 items-end overflow-hidden bg-gradient-to-bl from-slate-700 to-slate-900" role="group" aria-roledescription="slide">
+            <picture class="pointer-events-none absolute inset-0">
+                <source media="(max-width: 767px)" sizes="100vw">
+                <img class="pointer-events-none absolute inset-0 h-full w-full object-cover object-top md:object-[center_25%] [-webkit-user-drag:none]" alt="" draggable="false" decoding="async">
+            </picture>
+            <div class="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/80 to-slate-950/10 md:bg-gradient-to-r md:from-slate-950/95 md:via-slate-950/40 md:to-slate-950/10"></div>
+            <div class="pointer-events-none absolute inset-0 hidden bg-gradient-to-t from-slate-950 to-transparent md:block"></div>
+            <div class="relative z-10 w-full max-w-3xl p-[clamp(1.5rem,4vw,4rem)] pb-28">
+                <span class="mb-4 block text-[11px] font-extrabold uppercase tracking-[.2em] text-blue-200 md:mb-6">Trending this week</span>
+                <div class="mb-3.5 flex flex-wrap items-center gap-4 text-[13px] font-semibold text-slate-300">
+                    <span class="home-hero-type rounded-md border border-white/25 px-2 py-1 text-[11px] uppercase tracking-wider text-slate-50"></span>
+                    <span class="home-hero-year"></span>
+                    <span class="home-hero-rating text-amber-300"></span>
+                </div>
+                <h1 class="home-hero-title mb-4 text-balance text-[clamp(2rem,4.5vw,4rem)] font-extrabold leading-[1.08] tracking-[-.035em] text-white [overflow-wrap:anywhere] [text-shadow:0_2px_24px_rgb(0_0_0_/_30%)]"></h1>
+                <p class="home-hero-overview mb-6 line-clamp-3 max-w-[35rem] text-sm leading-relaxed text-slate-300 md:text-[15px]"></p>
+                <button type="button" class="home-hero-details inline-flex min-h-11 items-center justify-center rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white transition-colors hover:bg-blue-500">View details</button>
+            </div>
+        </article>
+    </template>
+
+    <template id="home-hero-dot-template">
+        <button type="button" class="group grid h-11 w-5 place-items-center" aria-controls="home-hero-viewport">
+            <span class="h-1.5 w-1.5 rounded-full bg-white/40 transition-[width,background-color] duration-200 group-aria-[current=true]:w-4 group-aria-[current=true]:bg-blue-400 motion-reduce:transition-none" aria-hidden="true"></span>
+        </button>
+    </template>
+
+    <template id="home-watch-card-template">
+        <article class="home-watch-card relative min-w-0 flex-[0_0_clamp(15rem,30vw,21rem)] overflow-hidden rounded-xl border border-slate-700 bg-slate-800 select-none" role="listitem">
+            <button type="button" class="home-watch-play block w-full text-left transition-colors hover:bg-slate-700/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400 disabled:cursor-wait">
+                <span class="relative grid aspect-video place-items-center bg-slate-900">
+                    <span class="p-4 text-[13px] text-slate-400">No artwork available</span>
+                    <img class="home-watch-image absolute inset-0 h-full w-full object-cover [-webkit-user-drag:none]" loading="lazy" decoding="async" draggable="false" alt="">
+                    <span class="home-watch-badge absolute bottom-3 right-3 hidden rounded-md bg-slate-900/90 px-2 py-1 text-xs font-semibold text-emerald-300">Watched</span>
+                </span>
+                <span class="block p-3.5 pt-2">
+                    <span class="home-watch-title block truncate font-semibold leading-tight"></span>
+                    <span class="home-watch-description mt-0.5 block truncate text-[13px] leading-tight text-slate-400"></span>
+                    <progress class="home-watch-progress mb-2 mt-2.5 block h-1 w-full overflow-hidden rounded-full border-0 bg-slate-700 appearance-none accent-blue-500 [&::-webkit-progress-bar]:bg-slate-700 [&::-webkit-progress-value]:bg-blue-500 [&::-moz-progress-bar]:bg-blue-500" max="100" value="0"></progress>
+                    <span class="home-watch-status block text-[13px] text-slate-400"></span>
+                </span>
+            </button>
+            <button type="button" class="home-watch-hide absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-slate-900/80 text-slate-300 transition-colors hover:bg-slate-700 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" title="Hide from Recently watched">
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" aria-hidden="true"><use href="#icon-close"></use></svg>
+            </button>
+        </article>
+    </template>
+
+    <template id="picker-episode-card-template">
+        <div class="relative flex w-full flex-col overflow-hidden rounded-xl border-2 border-slate-700 bg-slate-800 cursor-pointer transition-all hover:border-blue-500 group select-none">
+            <div class="relative aspect-video overflow-hidden border-b border-slate-700 bg-slate-900">
+                <img loading="lazy" draggable="false" class="h-full w-full object-cover opacity-60 transition-opacity group-hover:opacity-40" alt="">
+                <span class="picker-episode-watched pointer-events-none absolute right-2 top-2 z-20 hidden h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg flex" role="img" aria-label="Watched" title="Watched">
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                </span>
+                <div class="absolute inset-0 z-10 flex items-center justify-center gap-3 opacity-0 transition-opacity group-hover:opacity-100">
+                    <button type="button" data-action="download" class="flex h-10 w-10 items-center justify-center rounded-full border border-slate-600 bg-slate-800/90 text-white shadow-xl backdrop-blur-md transition-colors hover:bg-slate-700" title="Download to Device">
+                        <svg class="h-[22px] w-[22px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                    </button>
+                    <button type="button" data-action="queue" class="flex h-10 w-10 items-center justify-center rounded-full border border-slate-600 bg-slate-800/90 text-white shadow-xl backdrop-blur-md transition-colors hover:bg-slate-700" title="Add to Queue">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+                    </button>
+                </div>
+                <div class="picker-episode-size pointer-events-none absolute bottom-2 right-2 rounded bg-black/80 px-2 py-1 text-[11px] font-bold text-white"></div>
+            </div>
+            <div class="pointer-events-none flex flex-col gap-1 p-3">
+                <div class="picker-episode-progress mb-1 hidden h-1 w-full overflow-hidden rounded-full bg-slate-700" role="progressbar" aria-label="Playback progress" aria-valuemin="0" aria-valuemax="100">
+                    <div class="picker-episode-progress-fill h-full bg-blue-500"></div>
+                </div>
+                <div class="flex flex-wrap items-center gap-1.5">
+                    <span class="picker-episode-badge w-max rounded px-2 py-0.5 text-[10px] font-bold text-white"></span>
+                    <span class="picker-episode-extended hidden w-max rounded bg-rose-600 px-2 py-0.5 text-[10px] font-bold text-white">Extended</span>
+                </div>
+                <p class="picker-episode-title mt-1 line-clamp-2 text-xs text-slate-300 group-hover:text-white"></p>
+            </div>
+        </div>
+    </template>
 
     <template id="addon-panel-template">
         <div class="addon-panel flex-col w-full hidden">
