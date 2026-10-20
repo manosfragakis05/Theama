@@ -6,8 +6,8 @@ export default {
         status: 204,
         headers: {
           "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, HEAD, POST, OPTIONS",
-          "Access-Control-Allow-Headers": request.headers.get("Access-Control-Request-Headers") || "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
+          "Access-Control-Allow-Headers": "Authorization, Content-Type",
           "Access-Control-Max-Age": "86400",
         }
       });
@@ -108,10 +108,13 @@ export default {
     }
 
     if (!targetUrl) {
-      // 1. LOCAL DEV: Always use live Vite server, completely ignoring the dist folder
-      if (url.hostname === "127.0.0.1" || url.hostname === "localhost") {
+      // The dev binding also works behind HTTPS tunnels, whose hostname is public.
+      // Always connect to the local HTTP origin, never the incoming tunnel host.
+      if (env.VITE_DEV_ORIGIN) {
         const viteUrl = new URL(request.url);
-        viteUrl.port = "5173";
+        const viteOrigin = new URL(env.VITE_DEV_ORIGIN);
+        viteUrl.protocol = viteOrigin.protocol;
+        viteUrl.host = viteOrigin.host;
 
         const viteHeaders = new Headers(request.headers);
         viteHeaders.delete("Host");
@@ -127,56 +130,215 @@ export default {
       return await env.ASSETS.fetch(request.clone());
     }
 
-    const proxyHeaders = new Headers(request.headers);
-    proxyHeaders.delete("Origin");
-    proxyHeaders.delete("Referer");
-    proxyHeaders.delete("Host");
-
-    const proxyRequest = new Request(targetUrl, {
-      method: request.method,
-      headers: proxyHeaders,
-      body: (request.method !== "GET" && request.method !== "HEAD") ? request.body : null,
-      redirect: "follow"
-    });
-
-    try {
-      const proxyResponse = await fetch(proxyRequest);
-      const finalResponse = new Response(proxyResponse.body, proxyResponse);
-
-      const origin = request.headers.get("Origin") || "*";
-
-      // Reflect exact origin and strip credentials
-      finalResponse.headers.set("Access-Control-Allow-Origin", origin);
-      finalResponse.headers.set("Access-Control-Allow-Methods", "GET, HEAD, POST, OPTIONS");
-      finalResponse.headers.delete("Access-Control-Allow-Credentials");
-      finalResponse.headers.set("Access-Control-Expose-Headers", "*");
-
-      return finalResponse;
-    } catch (error) {
-      return new Response(JSON.stringify({ error: "Proxy Fetch Error", details: error.message }), {
-        status: 502,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": request.headers.get("Origin") || "*"
-        }
-      });
-    }
+    return fetchRestrictedJson(request, targetUrl, env);
   }
 };
 
-async function cachedFetch(targetUrl, ttlSeconds, ctx) {
-  const cache = caches.default;
-  const cacheKey = new Request(targetUrl);
+// Keep this list in step with the TorBox operations used by the app.
+const TORBOX_ROUTES = new Map([
+  ['/v1/api/user/me', 'GET'],
+  ['/v1/api/torrents/mylist', 'GET'],
+  ['/v1/api/torrents/requestdl', 'GET'],
+  ['/v1/api/torrents/createtorrent', 'POST'],
+  ['/v1/api/torrents/controltorrent', 'POST'],
+  ['/v1/api/torrents/edittorrent', 'PUT']
+]);
+const MAX_REQUEST_BYTES = 1024 * 1024;
+const MAX_MANIFEST_BYTES = 1024 * 1024;
+const MAX_TORBOX_BYTES = 16 * 1024 * 1024;
 
-  let res = await cache.match(cacheKey);
-  if (res) return res;
+class ProxyError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
 
-  res = await fetch(targetUrl);
-  if (!res.ok) throw new Error(`Fetch failed: ${targetUrl} (${res.status})`);
+function jsonResponse(data, status = 200, retryAfter = null) {
+  // Never copy upstream headers: cookies, redirects, cache directives, and active
+  // content must not acquire the application's origin.
+  const headers = new Headers({
+    'Content-Type': 'application/json; charset=utf-8',
+    'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'; sandbox",
+    'Cache-Control': 'no-store',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Expose-Headers': 'Retry-After'
+  });
+  if (retryAfter) headers.set('Retry-After', retryAfter);
+  return new Response(JSON.stringify(data), { status, headers });
+}
 
-  const toCache = new Response(res.clone().body, res);
-  toCache.headers.set("Cache-Control", `s-maxage=${ttlSeconds}`);
-  ctx.waitUntil(cache.put(cacheKey, toCache));
+function isPublicHostname(hostname) {
+  // No IP literals (including WHATWG-normalized numeric/hex IPv4), single-label
+  // hosts, trailing dots, or names reserved for private networks.
+  return hostname.length <= 253
+    && hostname.includes('.')
+    && !/^\d+(\.\d+){3}$/.test(hostname)
+    && !hostname.includes(':')
+    && !/(^|\.)(localhost|local|internal|lan|home|test|invalid|example|onion|arpa)$/.test(hostname)
+    && hostname.split('.').every(label => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label));
+}
 
-  return res;
+function validateDestination(rawUrl, request, env) {
+  let target;
+  try {
+    if (rawUrl.length > 8192) throw new Error();
+    target = new URL(rawUrl);
+  } catch {
+    throw new ProxyError(400, 'Invalid proxy URL.');
+  }
+  if (
+    target.protocol !== 'https:' || target.port
+    || target.username || target.password || target.hash
+  ) {
+    throw new ProxyError(403, 'Proxy destinations must use HTTPS on port 443 without URL credentials or fragments.');
+  }
+  if (!isPublicHostname(target.hostname) || target.hostname === new URL(request.url).hostname) {
+    throw new ProxyError(403, 'Proxy destination is not permitted.');
+  }
+
+  const isTorbox = target.hostname === 'api.torbox.app';
+  if (isTorbox) {
+    const method = TORBOX_ROUTES.get(target.pathname);
+    if (!method) throw new ProxyError(403, 'TorBox endpoint is not permitted.');
+    if (request.method !== method) throw new ProxyError(405, 'Method is not permitted for this TorBox endpoint.');
+  } else {
+    // Operator-controlled exact hostnames, never a list provided by the client.
+    // Trust the DNS operator of each listed provider; this is not an arbitrary
+    // hostname proxy with a DNS check vulnerable to DNS rebinding.
+    const addonHosts = String(env.ADDON_PROXY_HOSTS || '')
+      .split(',')
+      .map(host => host.trim().toLowerCase());
+    if (!addonHosts.includes(target.hostname)) {
+      throw new ProxyError(403, 'Addon host is not enabled for proxy fallback.');
+    }
+    if (!target.pathname.endsWith('/manifest.json')) {
+      throw new ProxyError(403, 'Only addon manifest.json requests are permitted.');
+    }
+    if (request.method !== 'GET') throw new ProxyError(405, 'Addon manifests only support GET.');
+  }
+  return { target, isTorbox };
+}
+
+async function readLimitedBody(message, maxBytes, status, signal) {
+  signal.throwIfAborted();
+  const fail = () => new ProxyError(
+    status,
+    status === 413 ? 'Proxy request is too large.' : 'Upstream JSON response is too large.'
+  );
+  if (Number(message.headers.get('Content-Length')) > maxBytes) {
+    await message.body?.cancel();
+    throw fail();
+  }
+  if (!message.body) return new Uint8Array();
+  const reader = message.body.getReader();
+  const abortRead = () => {
+    reader.cancel(signal.reason).catch(() => {});
+  };
+  signal.addEventListener('abort', abortRead, { once: true });
+  const chunks = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      signal.throwIfAborted();
+      if (done) break;
+      size += value.byteLength;
+      if (size > maxBytes) {
+        await reader.cancel();
+        throw fail();
+      }
+      chunks.push(value);
+    }
+  } finally {
+    signal.removeEventListener('abort', abortRead);
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+async function fetchRestrictedJson(request, rawUrl, env) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+  try {
+    const { target, isTorbox } = validateDestination(rawUrl, request, env);
+    const headers = new Headers({ Accept: 'application/json' });
+    if (isTorbox && request.headers.has('Authorization')) {
+      headers.set('Authorization', request.headers.get('Authorization'));
+    }
+    let body;
+    if (request.method === 'POST' || request.method === 'PUT') {
+      const contentType = request.headers.get('Content-Type') || '';
+      if (!/^(application\/json|application\/x-www-form-urlencoded|multipart\/form-data)(;|$)/i.test(contentType)) {
+        throw new ProxyError(415, 'Unsupported request content type.');
+      }
+      headers.set('Content-Type', contentType);
+      body = await readLimitedBody(request, MAX_REQUEST_BYTES, 413, controller.signal);
+    }
+
+    const upstream = await fetch(target.href, {
+      method: request.method,
+      headers,
+      body,
+      // Automatic redirects can forward TorBox credentials to a different host.
+      redirect: 'manual',
+      signal: controller.signal
+    });
+    if (upstream.status >= 300 && upstream.status < 400) {
+      await upstream.body?.cancel();
+      throw new ProxyError(502, 'Upstream redirects are not permitted. Use the final manifest URL.');
+    }
+    if (upstream.status === 204) {
+      if (!isTorbox) throw new ProxyError(502, 'Addon returned an empty manifest.');
+      return jsonResponse(null, 200);
+    }
+    const contentType = upstream.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase();
+    // Some addons label JSON as plain text. Parse it anyway, then serialize it
+    // ourselves. HTML, scripts, images, and other media types are rejected.
+    if (
+      contentType && contentType !== 'text/plain'
+      && !/^application\/(?:json|[a-z0-9!#$&^_.+-]+\+json)$/.test(contentType)
+    ) {
+      await upstream.body?.cancel();
+      throw new ProxyError(502, 'Upstream did not return JSON.');
+    }
+    const bytes = await readLimitedBody(
+      upstream,
+      isTorbox ? MAX_TORBOX_BYTES : MAX_MANIFEST_BYTES,
+      502,
+      controller.signal
+    );
+    let data;
+    try {
+      data = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+    } catch {
+      throw new ProxyError(502, 'Upstream returned invalid JSON.');
+    }
+    if (
+      !isTorbox && upstream.ok
+      && (
+        !data || Array.isArray(data)
+        || typeof data.id !== 'string' || typeof data.name !== 'string'
+        || !Array.isArray(data.resources)
+      )
+    ) {
+      throw new ProxyError(502, 'Upstream did not return a valid addon manifest.');
+    }
+    return jsonResponse(data, upstream.status, upstream.headers.get('Retry-After'));
+  } catch (error) {
+    if (error instanceof ProxyError) return jsonResponse({ error: error.message }, error.status);
+    return jsonResponse(
+      { error: controller.signal.aborted ? 'Proxy request timed out.' : 'Proxy fetch failed.' },
+      controller.signal.aborted ? 504 : 502
+    );
+  } finally {
+    clearTimeout(timer);
+  }
 }
