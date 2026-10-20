@@ -1,5 +1,50 @@
 import { openMasterDetail } from '../api.js';
-import { isDragging } from '../user-addons/catalog-renderer.js';
+import {
+    isDragging, initGlobalDrag, initGlobalClickListener, injectCatalogShell, renderRow, teardownRow
+} from '../user-addons/catalog-renderer.js';
+import { homeCatalogs, formatCatalogItem } from '../user-addons/catalogs.js';
+
+function clearHomeRecommendations(root) {
+    for (const type of ['movie', 'tv']) {
+        const containerId = `home-recommended-${type}-row`;
+        teardownRow(containerId);
+        delete homeCatalogs[containerId];
+    }
+    root.replaceChildren();
+}
+
+export function renderHomeRecommendations(root, recommendations) {
+    clearHomeRecommendations(root);
+    initGlobalDrag();
+    initGlobalClickListener();
+    root.hidden = true;
+    for (const type of ['movie', 'tv']) {
+        const items = (recommendations[type] || []).map(item => formatCatalogItem(item, type));
+        if (!items.length) continue;
+        const containerId = `home-recommended-${type}-row`;
+        const catalog = {
+            containerId, type, title: type === 'movie' ? 'Recommended movies' : 'Recommended series',
+            addonName: 'customTMDB', items, hasOptions: false, hasMore: false, loading: false
+        };
+        homeCatalogs[containerId] = catalog;
+        root.hidden = false;
+        injectCatalogShell(catalog, root);
+        const row = document.getElementById(containerId);
+        row.tabIndex = 0;
+        row.setAttribute('aria-label', catalog.title);
+        renderRow(items, catalog);
+    }
+}
+
+export function renderHomeRecommendationsMessage(root, message) {
+    clearHomeRecommendations(root);
+    root.hidden = false;
+    const status = document.createElement('p');
+    status.className = 'text-sm text-slate-400';
+    status.setAttribute('role', 'status');
+    status.textContent = message;
+    root.appendChild(status);
+}
 
 function cloneTemplate(id) {
     return document.getElementById(id).content.firstElementChild.cloneNode(true);

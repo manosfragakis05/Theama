@@ -6,7 +6,10 @@ import { resolveLibraryTorrents } from './app-library.js';
 import { buildSeriesQueue, startQueueFromEpisode, startQueueFromItem } from '../streaming/playlist.js';
 import { buildRemainingTorrentQueue } from '../metadata/picker.js';
 import { requestLink } from '../streaming/player.js';
-import { renderHomeCarousel, renderHomeMessage, renderWatchProgress, renderWatchProgressMessage } from './home-renderer.js';
+import {
+    renderHomeCarousel, renderHomeMessage, renderWatchProgress, renderWatchProgressMessage,
+    renderHomeRecommendations, renderHomeRecommendationsMessage
+} from './home-renderer.js';
 
 let loadPromise = null;
 let loadedAt = 0;
@@ -19,6 +22,10 @@ let progressRequest = null;
 let progressVersion = 0;
 let resumeVersion = 0;
 let progressItems = [];
+let recommendationsUserId = null;
+let recommendationsLoadedAt = 0;
+let recommendationsRequest = null;
+let recommendationsVersion = 0;
 const HIDDEN_PROGRESS_PREFIX = 'theama_hidden_watch_progress:';
 let hiddenProgressUserId = null;
 let hiddenProgressIds = new Set();
@@ -221,6 +228,120 @@ export function loadWatchProgress() {
     return request;
 }
 
+async function getRecommendationSeeds(type, userId, isCurrent) {
+    const ids = new Set();
+    const pageSize = 32;
+    // Several sources can belong to one show; collect four distinct titles.
+    for (let offset = 0; isCurrent(); offset += pageSize) {
+        const { data, error } = await supabase.from('added_sources')
+            .select('global_media!inner(tmdb_id,media_type)')
+            .eq('user_id', userId)
+            .eq('added_via_app', true)
+            .in('global_media.media_type', type === 'tv' ? ['tv', 'series'] : ['movie'])
+            .not('global_media.tmdb_id', 'is', null)
+            .order('created_at', { ascending: false })
+            .range(offset, offset + pageSize - 1);
+        if (error) throw error;
+        if (!isCurrent()) return [];
+        for (const row of data || []) {
+            const id = Number(row.global_media?.tmdb_id);
+            if (Number.isSafeInteger(id) && id > 0) ids.add(id);
+            if (ids.size === 4) return [...ids];
+        }
+        if (!data || data.length < pageSize) break;
+    }
+    return [...ids];
+}
+
+function mixRecommendationResults(results, seedIds) {
+    const lists = results.filter(result => result.status === 'fulfilled')
+        .map(result => Array.isArray(result.value?.results) ? result.value.results : []);
+    const seen = new Set(seedIds);
+    const mixed = [];
+    const length = Math.max(0, ...lists.map(list => list.length));
+    // Alternate between seeds so each title contributes to the row.
+    for (let index = 0; index < length; index++) {
+        for (const list of lists) {
+            const item = list[index];
+            const id = Number(item?.id);
+            if (!Number.isSafeInteger(id) || id <= 0 || seen.has(id)) continue;
+            seen.add(id);
+            mixed.push({ ...item, id });
+        }
+    }
+    return mixed;
+}
+
+export function loadHomeRecommendations() {
+    const root = document.getElementById('home-recommendations');
+    if (!root) return Promise.resolve();
+    const userId = appState.currentUser?.id ?? null;
+    if (recommendationsUserId !== userId) {
+        recommendationsUserId = userId;
+        recommendationsLoadedAt = 0;
+        recommendationsRequest = null;
+        recommendationsVersion++;
+        renderHomeRecommendations(root, {});
+        root.setAttribute('aria-busy', 'false');
+    }
+    if (!userId || Date.now() - recommendationsLoadedAt < PROGRESS_CACHE_MS) return Promise.resolve();
+    if (recommendationsRequest) return recommendationsRequest;
+    const version = ++recommendationsVersion;
+    const isCurrent = () => version === recommendationsVersion && appState.currentUser?.id === userId;
+    root.setAttribute('aria-busy', 'true');
+    if (!recommendationsLoadedAt) renderHomeRecommendationsMessage(root, 'Finding recommendations from your library...');
+    const request = (async () => {
+        try {
+            const types = ['movie', 'tv'];
+            const seeds = await Promise.all(types.map(type => getRecommendationSeeds(type, userId, isCurrent)));
+            if (!isCurrent()) return;
+            const recommendations = await Promise.all(types.map(async (type, index) => {
+                const results = await Promise.allSettled(seeds[index].map(id =>
+                    fetchHomeMetadata(`${type}/${id}/recommendations`)));
+                if (results.length && results.every(result => result.status === 'rejected')) {
+                    console.warn(`Could not load ${type} recommendations:`, results[0].reason);
+                }
+                return { results, items: mixRecommendationResults(results, seeds[index]) };
+            }));
+            if (!isCurrent()) return;
+            const failed = recommendations.some(row => row.results.some(result => result.status === 'rejected'));
+            if (recommendations.some(row => row.items.length)) {
+                renderHomeRecommendations(root, Object.fromEntries(types.map((type, index) => [type, recommendations[index].items])));
+            } else {
+                renderHomeRecommendationsMessage(root, failed
+                    ? "Couldn't load recommendations. Try visiting Home again."
+                    : seeds.every(ids => ids.length === 0)
+                        ? 'Add movies or series to your library to get recommendations.'
+                        : 'No recommendations found for your recent library additions yet.');
+            }
+            if (!failed) recommendationsLoadedAt = Date.now();
+        } catch (error) {
+            if (!isCurrent()) return;
+            console.error('Home recommendations failed:', error);
+            renderHomeRecommendationsMessage(root, "Couldn't load recommendations. Try visiting Home again.");
+        } finally {
+            if (isCurrent()) root.setAttribute('aria-busy', 'false');
+            if (recommendationsRequest === request) recommendationsRequest = null;
+        }
+    })();
+    recommendationsRequest = request;
+    return request;
+}
+
+window.addEventListener('auth-state-changed', () => {
+    if (recommendationsUserId === (appState.currentUser?.id ?? null)) return;
+    recommendationsUserId = null;
+    recommendationsLoadedAt = 0;
+    recommendationsRequest = null;
+    recommendationsVersion++;
+    const root = document.getElementById('home-recommendations');
+    if (root) {
+        renderHomeRecommendations(root, {});
+        root.setAttribute('aria-busy', 'false');
+    }
+    if (!document.getElementById('home-page')?.classList.contains('hidden')) loadHomeRecommendations();
+});
+
 window.addEventListener('auth-state-changed', () => {
     if (progressUserId === (appState.currentUser?.id ?? null)) return;
     resumeVersion++;
@@ -297,5 +418,5 @@ async function loadTrendingHome() {
 }
 
 export async function loadHome() {
-    await Promise.all([loadTrendingHome(), loadWatchProgress()]);
+    await Promise.all([loadTrendingHome(), loadWatchProgress(), loadHomeRecommendations()]);
 }

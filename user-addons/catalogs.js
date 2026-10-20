@@ -44,7 +44,11 @@ export async function loadDiscover() {
 }
 
 // Get or change a catalogs state
+// Home rows share catalog rendering without appearing in Discover's selectors.
+export const homeCatalogs = {};
+
 export function getActiveState(targetId) {
+    if (homeCatalogs[targetId]) return homeCatalogs[targetId];
     // Check TMDB dictionary
     for (const type in rowState) {
         if (rowState[type][targetId]) {
@@ -308,30 +312,7 @@ export async function fetchNextBatch(containerId) {
 
             // FINISHED BASIC CARD DETAILS
             const prunedItems = newItems
-                .map(item => {
-                    const rawType = item.type || item.media_type || catalogObject.type || "movie";
-
-                    const rawCast = item.app_extras?.cast || item.cast;
-                    const formattedCast = Array.isArray(rawCast)
-                        ? rawCast.slice(0, 5).map(c => c.name || c).join(', ')
-                        : '';
-
-                    return {
-                        id: item.id,
-                        title: item.name || item.title || "Untitled",
-                        year: item.releaseInfo || item.year || parseInt(item.release_date) || parseInt(item.first_air_date) || "N/A",
-                        type: rawType,
-
-                        poster: resolveImageUrl(item.poster || item.poster_path, 'w500'),
-                        backdrop: resolveImageUrl(item.backdrop_path || item.backdrop || item.background_path || item.background, 'original'),
-
-                        overview: item.description || item.overview || '',
-                        runtime: item.runtime || '',
-                        rating: (item.vote_average || item.imdbRating) ? parseFloat(item.vote_average || item.imdbRating).toFixed(1) : '',
-                        genre: item.genre || (item.genres?.length > 0 ? item.genres[0] : ''),
-                        cast: formattedCast
-                    };
-                })
+                .map(item => formatCatalogItem(item, catalogObject.type))
                 .filter(item => item.id != null && item.type !== 'person' && !catalogObject.idSet.has(item.id));
 
             if (prunedItems.length > 0) {
@@ -368,6 +349,23 @@ export async function fetchNextBatch(containerId) {
 }
 
 // Helper for images
+export function formatCatalogItem(item, defaultType = 'movie') {
+    const rawCast = item.app_extras?.cast || item.cast;
+    return {
+        id: item.id,
+        title: item.name || item.title || 'Untitled',
+        year: item.releaseInfo || item.year || parseInt(item.release_date) || parseInt(item.first_air_date) || 'N/A',
+        type: item.type || item.media_type || defaultType,
+        poster: resolveImageUrl(item.poster || item.poster_path, 'w500'),
+        backdrop: resolveImageUrl(item.backdrop_path || item.backdrop || item.background_path || item.background, 'original'),
+        overview: item.description || item.overview || '',
+        runtime: item.runtime || '',
+        rating: (item.vote_average || item.imdbRating) ? parseFloat(item.vote_average || item.imdbRating).toFixed(1) : '',
+        genre: item.genre || (item.genres?.length > 0 ? item.genres[0] : ''),
+        cast: Array.isArray(rawCast) ? rawCast.slice(0, 5).map(c => c.name || c).join(', ') : ''
+    };
+}
+
 function resolveImageUrl(path, size = 'w500') {
     if (!path) return null;
 

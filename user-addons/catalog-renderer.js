@@ -372,7 +372,8 @@ export function renderCardsToRow(items, containerId, hasMore) {
     }
 }
 
-function teardownRow(containerId) {
+export function teardownRow(containerId) {
+    if (activeGridCatalogId === containerId) closeGridView();
     const rowEl = document.getElementById(containerId);
     if (rowEl) viewportObserver.unobserve(rowEl);
     destroyObserver(containerId);
