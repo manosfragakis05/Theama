@@ -33,6 +33,13 @@ export async function updateUserPreference(key, value) {
 
 // Returns ONLY the cloud data if the user is logged in
 export async function initializeSettings() {
+    // Library metadata now lives in RAM; discard the old persistent cache.
+    try {
+        localStorage.removeItem('theama_meta_cache');
+        sessionStorage.removeItem('theama_meta_cache');
+    } catch (error) {
+        console.warn('Could not remove legacy library metadata:', error);
+    }
     console.log("INITIALIZING");
     if (appState.currentUser) {
         const { data: settings, error: settingsErr } = await supabase
@@ -203,7 +210,7 @@ function switchStorageMode(trustDevice) {
 
     const sourceStorage = trustDevice ? sessionStorage : localStorage;
     const targetStorage = trustDevice ? localStorage : sessionStorage;
-    const keysToMove = ['full_addon_data', 'theama_meta_cache', 'active_queue'];
+    const keysToMove = ['full_addon_data', 'active_queue'];
     const sbTokenKey = Object.keys(sourceStorage).find(k => k.startsWith('sb-') && k.endsWith('-auth-token'))
         || Object.keys(targetStorage).find(k => k.startsWith('sb-') && k.endsWith('-auth-token'));
     if (sbTokenKey) keysToMove.push(sbTokenKey);

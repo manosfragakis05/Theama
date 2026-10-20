@@ -13,6 +13,7 @@ import { startQueueFromItem } from '../streaming/playlist.js';
 import { parseMediaData } from '../utils/parseMedia.js';
 import { downloadFile } from '../streaming/download.js';
 import { createLibraryCard } from './library-renderer.js';
+import { createLibraryGrid } from './library-grid.js';
 import { getMediaText } from './library.js';
 import { openPicker } from '../metadata/picker.js';
 
@@ -68,43 +69,74 @@ export async function linkHashToMedia(mediaData, torboxHash, addedViaApp = false
     if (addedViaApp) await loadAppLibrary();
 }
 
-async function removeFromAppLibrary(mediaIds) {
-    const userId = appState.currentUser?.id;
-    if (!userId || !confirm('Remove this movie from your library?')) return;
+export async function removeHashFromAppLibrary(hash, userId = appState.currentUser?.id) {
+    if (!userId || !hash) return;
+
+    // Remove only this source, preserving any other torrents linked to the media.
+    const { error } = await supabase.from('added_sources')
+        .delete()
+        .eq('user_id', userId)
+        .eq('added_hash', hash);
+    if (error) throw error;
+
+    if (userId === appState.currentUser?.id) await loadAppLibrary();
+}
+
+async function removeFromAppLibrary(mediaIds, {
+    message = 'Remove this media from your library?',
+    hashes,
+    userId = appState.currentUser?.id
+} = {}) {
+    if (!userId || userId !== appState.currentUser?.id || !confirm(message)) return;
     try {
-        const { error } = await supabase.from('added_sources')
+        let removal = supabase.from('added_sources')
             .delete()
             .eq('user_id', userId)
-            .eq('media_id', mediaIds);
+            .in('media_id', mediaIds);
+        // A missing-item prompt only applies to the sources that were checked.
+        if (hashes) removal = removal.in('added_hash', hashes);
+        const { error } = await removal;
         if (error) throw error;
+        if (userId !== appState.currentUser?.id) return;
         await loadAppLibrary();
         showToast('Removed from your library.', 'success');
     } catch (error) {
-        showToast(error.message || 'Could not remove this movie.', 'error');
+        showToast(error.message || 'Could not remove this media.', 'error');
     }
 }
 //#endregion
 
 //#region Load Library
+let libraryLoadId = 0;
+let appLibraryGrid = null;
+let renderedUserId = null;
+
 export async function loadAppLibrary() {
+    const loadId = ++libraryLoadId;
     const userId = appState.currentUser?.id;
     const list = document.getElementById('app-library-list');
     const info = document.getElementById('app-library-info-text');
     if (!list || !info) return;
 
-    list.replaceChildren();
+    if (userId !== renderedUserId) {
+        appLibraryGrid?.destroy();
+        appLibraryGrid = null;
+        list.replaceChildren();
+        renderedUserId = userId;
+    }
     info.textContent = userId ? 'Loading your library...' : 'Sign in to view your library.';
-    info.classList.remove('hidden');
+    info.classList.toggle('hidden', !!userId && list.children.length > 0);
     if (!userId) return;
 
     try {
         const items = await fetchAppLibraryData();
-        if (userId !== appState.currentUser?.id) return;
+        if (loadId !== libraryLoadId || userId !== appState.currentUser?.id) return;
         renderAppLibrary(items);
     } catch (error) {
-        if (userId !== appState.currentUser?.id) return;
+        if (loadId !== libraryLoadId || userId !== appState.currentUser?.id) return;
         console.error('App library load failed:', error);
         info.textContent = 'Could not load your library. Select Library to try again.';
+        info.classList.remove('hidden');
     }
 }
 
@@ -180,12 +212,13 @@ async function fetchAppLibraryData() {
 export function renderAppLibrary(items) {
     const list = document.getElementById('app-library-list');
     const info = document.getElementById('app-library-info-text');
-    list.replaceChildren();
+    appLibraryGrid?.destroy();
     info.textContent = 'Your library is empty.';
     info.classList.toggle('hidden', items.length > 0);
 
-    for (const media of items) {
-        const torrent = appState.allTorrents.find(t => media.sources.some(source => source.hash === t.hash));
+    const torrentsByHash = new Map(appState.allTorrents.map(torrent => [torrent.hash, torrent]));
+    appLibraryGrid = createLibraryGrid(list, { items, createCard(media) {
+        const torrent = media.sources.map(source => torrentsByHash.get(source.hash)).find(Boolean);
         const isPacked = new Set(media.sources.map(source => source.hash).filter(Boolean)).size > 1;
         const mediaText = isPacked
             ? media.media_type === 'tv' ? 'Series' : 'Collection'
@@ -224,8 +257,13 @@ export function renderAppLibrary(items) {
 
             busy = true;
             card.style.opacity = '0.5';
+            const userId = appState.currentUser?.id;
+            const key = getCurrentUserSettings().user_preferences.torboxApiKey;
+            const isCurrent = () => userId === appState.currentUser?.id
+                && key === getCurrentUserSettings().user_preferences.torboxApiKey;
             try {
-                const sourceTorrents = await resolveLibraryTorrents(media.sources);
+                const sourceTorrents = await resolveLibraryTorrents(media.sources, { refresh: true });
+                if (!isCurrent()) return;
                 const sourceTorrent = sourceTorrents[0];
                 const files = sourceTorrent.files || [];
                 const playableFile = files.find(file => /\.(mkv|mp4|avi|mov)$/i.test(file.name)) || files[0];
@@ -252,46 +290,85 @@ export function renderAppLibrary(items) {
                     await openPicker(sourceTorrents, media.tmdb_id, media.title);
                 }
             } catch (error) {
-                showToast(error.message || 'Could not open this media.', 'error');
+                if (!isCurrent()) return;
+                if (error.code === 'TORBOX_SOURCE_NOT_FOUND') {
+                    await removeFromAppLibrary(media.media_ids, {
+                        userId,
+                        hashes: media.sources.map(source => source.hash).filter(Boolean),
+                        message: `None of the sources for "${media.title || 'this item'}" were found in TorBox. Remove this item from your library?`
+                    });
+                } else {
+                    showToast(error.message || 'Could not open this media.', 'error');
+                }
             } finally {
                 busy = false;
                 card.style.opacity = '1';
             }
         });
-        list.appendChild(card);
-    }
+        return card;
+    } });
 }
 
-export async function resolveLibraryTorrents(sources) {
-    const hashes = new Set(sources.map(source => source.hash).filter(Boolean));
-    const cachedTorrents = appState.allTorrents.filter(torrent => hashes.has(torrent.hash) && torrent.download_finished);
-    if (cachedTorrents.length === hashes.size && cachedTorrents.length > 0) return cachedTorrents;
+export async function resolveLibraryTorrents(sources, { refresh = false } = {}) {
+    const normalizeHash = hash => typeof hash === 'string' ? hash.trim().toLowerCase() : '';
+    const hashes = new Set(sources.map(source => normalizeHash(source.hash)).filter(Boolean));
+    if (hashes.size === 0) throw new Error('No valid source is linked to this item.');
+    const cachedTorrents = appState.allTorrents.filter(torrent => hashes.has(normalizeHash(torrent.hash)) && torrent.download_finished);
+    if (!refresh && cachedTorrents.length === hashes.size && cachedTorrents.length > 0) return cachedTorrents;
 
     const tbKey = getCurrentUserSettings().user_preferences.torboxApiKey;
     if (!tbKey) throw new Error('Link TorBox in settings to play or download this media.');
     const userId = appState.currentUser?.id;
 
-    // 1. Fetch the user's active Torbox library
-    const res = await smartFetch('https://api.torbox.app/v1/api/torrents/mylist', {
-        headers: { 'Authorization': `Bearer ${tbKey}` }
-    });
-    const result = await res.json();
-    if (!result.success || !Array.isArray(result.data)) {
-        throw new Error(result.detail || 'Could not load your TorBox files.');
-    }
-    if (tbKey === getCurrentUserSettings().user_preferences.torboxApiKey
-        && userId === appState.currentUser?.id) {
-        appState.allTorrents = result.data.filter(torrent => torrent.download_finished);
-    }
+    const isCurrent = () => tbKey === getCurrentUserSettings().user_preferences.torboxApiKey
+        && userId === appState.currentUser?.id;
+    const torrents = [];
+    const matchingTorrents = [];
+    const foundHashes = new Set();
+    const seenHashes = new Set();
+    const pageSize = 1000;
+    let complete = false;
 
-    // 2. Resolve all linked hashes in one request.
-    const matchingTorrents = result.data.filter(torrent => hashes.has(torrent.hash));
+    // Verify on demand, bypassing TorBox's cache. Only exhaust the list when
+    // some requested sources are still missing; the API defaults to 1,000 items.
+    for (let offset = 0; ; offset += pageSize) {
+        const res = await smartFetch(
+            `https://api.torbox.app/v1/api/torrents/mylist?bypass_cache=true&offset=${offset}&limit=${pageSize}`,
+            { headers: { 'Authorization': `Bearer ${tbKey}` } }
+        );
+        if (!res.ok) throw new Error('Could not load your TorBox files.');
+        const result = await res.json();
+        if (!isCurrent()) throw new Error('Your account changed. Please open this item again.');
+        if (!result.success || !Array.isArray(result.data)
+            || result.data.some(torrent => !normalizeHash(torrent?.hash))) {
+            throw new Error(result.detail || 'TorBox returned an invalid torrent list.');
+        }
+        let newHashes = 0;
+        for (const torrent of result.data) {
+            const hash = normalizeHash(torrent.hash);
+            if (seenHashes.has(hash)) continue;
+            seenHashes.add(hash);
+            newHashes++;
+            torrents.push(torrent);
+            if (hashes.has(hash)) {
+                foundHashes.add(hash);
+                matchingTorrents.push(torrent);
+            }
+        }
+        complete = result.data.length < pageSize;
+        if (complete || foundHashes.size === hashes.size) break;
+        if (newHashes === 0) throw new Error('TorBox returned an incomplete torrent list. Please try again.');
+    }
+    const readyTorrents = matchingTorrents.filter(torrent => torrent.download_finished);
+    appState.allTorrents = complete ? torrents.filter(torrent => torrent.download_finished)
+        : [...appState.allTorrents.filter(torrent => !hashes.has(normalizeHash(torrent.hash))), ...readyTorrents];
 
     if (matchingTorrents.length === 0) {
-        throw new Error("Torrent not found in Torbox. Did you delete it?");
+        const error = new Error('None of the linked sources were found in TorBox.');
+        error.code = 'TORBOX_SOURCE_NOT_FOUND';
+        throw error;
     }
 
-    const readyTorrents = matchingTorrents.filter(torrent => torrent.download_finished);
     if (readyTorrents.length > 0) return readyTorrents;
     throw new Error('No source is ready yet. Check its download in TorBox.');
 }
