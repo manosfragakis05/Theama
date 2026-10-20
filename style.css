@@ -46,6 +46,7 @@ select::picker-icon {
 }
 
 #library-season-select:open .season-dropdown-icon,
+#library-torrent-select:open .season-dropdown-icon,
 #playback-queue-toggle[aria-expanded="true"] .queue-dropdown-icon {
     transform: rotate(180deg);
 }

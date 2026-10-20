@@ -3,7 +3,8 @@ import { appState, showToast } from '../services/config.js';
 import { supabase } from '../user-data/db.js';
 import { getCurrentUserSettings } from '../user-data/user-settings.js';
 import { resolveLibraryTorrents } from './app-library.js';
-import { startQueueFromItem } from '../streaming/playlist.js';
+import { buildSeriesQueue, startQueueFromEpisode, startQueueFromItem } from '../streaming/playlist.js';
+import { buildRemainingTorrentQueue } from '../metadata/picker.js';
 import { requestLink } from '../streaming/player.js';
 import { renderHomeCarousel, renderHomeMessage, renderWatchProgress, renderWatchProgressMessage } from './home-renderer.js';
 
@@ -143,7 +144,7 @@ export async function playWatchProgress(item) {
         const file = (torrent.files || []).find(candidate => String(candidate.id) === String(item.fileId));
         if (!file) throw new Error('The saved episode file is no longer available in this torrent.');
 
-        const current = startQueueFromItem({
+        const resumeItem = {
             tid: torrent.id, fid: file.id, hash: torrent.hash,
             torrentName: torrent.name, fileName: file.name || file.short_name,
             tmdbId: item.id, mediaType: item.type,
@@ -151,7 +152,21 @@ export async function playWatchProgress(item) {
             seriesTitle: item.type === 'tv' ? item.title : '',
             season: item.season !== null ? `Season ${item.season}` : '',
             title: item.episodeTitle || item.title, thumbnail: item.image
-        });
+        };
+        const episodes = item.type === 'tv'
+            ? await buildRemainingTorrentQueue(torrent, item.id, file.id, item.title, item.image)
+            : [];
+        if (version !== resumeVersion || userId !== appState.currentUser?.id) return;
+
+        let current;
+        if (episodes.length > 0) {
+            // Keep the saved episode mapping and position for the exact resumed file.
+            episodes[0] = { ...episodes[0], ...resumeItem };
+            buildSeriesQueue(episodes);
+            current = startQueueFromEpisode();
+        } else {
+            current = startQueueFromItem(resumeItem);
+        }
         await requestLink(current.tid, current.fid, current.torrentName, current.fileName,
             current.uid, item.positionSeconds);
     } catch (error) {
