@@ -7,7 +7,9 @@ export default defineConfig({
             registerType: 'autoUpdate',
             injectRegister: 'inline',
             workbox: {
-                globPatterns: ['**/*.{js,css,html,ico,png,svg}']
+                globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+                globIgnores: ['**/privacy.html'],
+                navigateFallbackDenylist: [/^\/privacy(?:\.html|\/)?(?:\?.*)?$/]
             },
             manifest: {
                 "name": "Theama",

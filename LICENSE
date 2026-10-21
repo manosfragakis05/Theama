@@ -1,0 +1,110 @@
+THEAMA SOURCE AVAILABLE LICENSE
+Version 1.0 - 2026-10-21
+
+Copyright (c) 2026 Manos Fragakis
+Official project: https://theama.app
+Permission requests: https://github.com/manosfragakis05/Theama/issues
+
+1. SCOPE AND OWNERSHIP
+
+These terms apply only to original Theama code and documentation that the
+copyright holder has authority to license under these terms (the Software).
+They do not apply to third-party code, libraries, dependencies, or materials
+covered by another license. See section 6 and THIRD_PARTY_NOTICES.txt.
+
+The copyright holder retains ownership of their original work. These terms
+grant limited permissions; they do not transfer copyright ownership. An author
+of changes retains ownership of those changes. Submitting a contribution does
+not by itself assign its copyright to the project maintainer.
+
+2. PERMITTED USE AND PUBLIC SOURCE FORKS
+
+Subject to these terms, you may obtain, inspect, copy, modify, build, and run
+the Software for private use, study, testing, development, and contributions.
+Private use includes a deployment accessible only to you, rather than an app
+or service offered to other users.
+
+You may publish and share source code forks, patches, and modifications for
+collaboration and for others to exercise the permissions in this license.
+Public source code hosting is expressly permitted and is not, by itself,
+operation of a competing public app. Recipients receive the same permissions
+directly from the copyright holder under these terms.
+
+Keep this license and existing copyright and third-party notices with copies
+and source forks. Clearly identify modified versions and describe significant
+changes. The original Software remains subject to these terms in a fork.
+
+You may use the official app and execute copies of its client code delivered
+to your browser by the official project in the normal course of that use.
+
+3. COMPETING PUBLIC APPS REQUIRE SEPARATE PERMISSION
+
+Without separate written permission from the copyright holder, you may not
+use the Software or a modified version to operate, publish, distribute, sell,
+or otherwise offer a competing app or service to other users.
+
+A competing app or service is one that incorporates the Software and offers
+Theama's browser media player, addon integration, media library, or related
+features as a substitute for the official Theama app. This includes hosted
+web apps, public PWA deployments, downloadable app releases, and services
+offered to customers or members. It applies whether access is free, paid,
+supported by advertising, or supported by donations.
+
+Changing the name, adding features, or retaining attribution does not remove
+this requirement. Publishing source code as allowed by section 2 does not
+authorize operating or distributing a competing app. Building and privately
+running such a source fork remains allowed by section 2.
+
+This restriction applies to uses of the Software. It does not restrict
+independently developed software that does not use protected material from
+the Software, or rights you have independently under applicable law.
+
+4. OFFICIAL VERSION AND BRANDING
+
+Only releases designated by the copyright holder are official Theama releases.
+Do not represent a fork as official, endorsed, or maintained by the original
+project without written permission. Public source forks must prominently
+identify themselves as unofficial and link to the official project.
+
+These terms grant no right to use the Theama name or logo as the branding of
+another app or service. Accurate references identifying the original project
+and giving attribution are allowed. Rights under applicable law are preserved.
+
+5. DONATIONS
+
+Support the original maintainer: https://buymeacoffee.com/manosfragakis
+
+Donations are optional. A donation does not buy
+ownership, remove license conditions, or grant permission for a competing app.
+Any additional permissions must be granted separately in writing.
+
+6. THIRD-PARTY LICENSES AND LGPL RIGHTS
+
+Third-party components, including FFmpeg, retain their own copyright holders,
+licenses, notices, and permissions. These terms do not relicense them or limit
+rights granted by their licenses. Preserve their applicable notices and
+source or relinking materials when distributing those components.
+
+For the work linked with FFmpeg or another LGPL library, you are expressly
+permitted to modify that work for your own use and to reverse engineer it
+to debug those modifications, as required by LGPL 2.1 section 6. You may use,
+copy, and modify the supplied original engine source as needed to rebuild and
+relink that work with a modified LGPL library for your own use. No restriction
+elsewhere in these terms overrides these permissions or applicable LGPL rights.
+
+7. RIGHTS RESERVED AND EXISTING PERMISSIONS
+
+Uses outside the permissions in these terms require separate written
+permission from the relevant copyright holder. Nothing here limits fair use,
+statutory exceptions, or permissions you independently received under another
+license for a particular copy. These terms do not retroactively replace any
+license already granted for earlier copies.
+
+8. NO WARRANTY OR LIABILITY
+
+To the fullest extent permitted by applicable law, the Software is provided
+as is, without warranties of any kind, including merchantability, fitness
+for a particular purpose, and noninfringement. The copyright holders are not
+liable for claims, damages, or other liability arising from the Software or
+its use. This section does not exclude liability that the law does not allow
+to be excluded.

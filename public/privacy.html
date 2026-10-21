@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="How Theama handles account information, viewing progress, connected services, browser storage, and privacy requests.">
+    <meta name="referrer" content="no-referrer">
+    <meta name="theme-color" content="#0f172a">
+    <title>Privacy Policy | Theama</title>
+    <link rel="canonical" href="https://theama.app/privacy">
+    <style>
+        :root { color-scheme: dark; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0f172a; color: #cbd5e1; line-height: 1.75; }
+        * { box-sizing: border-box; }
+        body { margin: 0; }
+        main { max-width: 800px; margin: auto; padding: 36px 24px 72px; }
+        a { color: #93c5fd; text-underline-offset: 4px; overflow-wrap: anywhere; }
+        a:hover { color: #bfdbfe; }
+        a:focus-visible { outline: 2px solid #60a5fa; outline-offset: 5px; border-radius: 3px; }
+        .brand { font-size: 1.1rem; font-weight: 750; text-decoration: none; color: #f8fafc; }
+        header { padding: 28px 0; border-bottom: 1px solid #334155; }
+        h1, h2, h3 { color: #f8fafc; line-height: 1.3; }
+        h1 { font-size: clamp(2rem, 6vw, 3rem); margin: 0 0 12px; letter-spacing: -0.03em; }
+        h2 { font-size: 1.4rem; margin-top: 36px; }
+        h3 { font-size: 1.05rem; margin: 24px 0 8px; }
+        p, ul { margin: 12px 0; }
+        li { margin: 8px 0; }
+        ul { padding-left: 24px; }
+        strong { color: #e2e8f0; }
+        .muted { color: #94a3b8; font-size: 0.9rem; }
+        .summary { margin-top: 24px; padding: 18px 22px; border: 1px solid #334155; border-radius: 14px; background: #1e293b; }
+        nav { margin-top: 24px; }
+        nav ul { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 0; list-style: none; }
+        nav li { margin: 0; }
+        section { scroll-margin-top: 24px; }
+        footer { border-top: 1px solid #334155; margin-top: 36px; padding-top: 20px; }
+        @media (max-width: 480px) { main { padding: 24px 18px 48px; } }
+        @media print { :root { color-scheme: light; background: white; color: #222; } h1, h2, h3, strong, .brand { color: black; } a { color: #174c8f; } .summary { background: none; } main { max-width: none; padding: 0; } nav { display: none; } }
+    </style>
+</head>
+<body>
+    <main>
+        <a class="brand" href="/">Theama</a>
+        <header>
+            <h1>Privacy Policy</h1>
+            <p class="muted">Last updated: <time datetime="2026-10-21">21 October 2026</time></p>
+            <p>This policy explains how Theama at <a href="https://theama.app">theama.app</a> handles your personal data, including when you use the installed progressive web app.</p>
+        </header>
+
+        <div class="summary">
+            <strong>At a glance</strong>
+            <p>You can use features without a Theama account. An account saves your lists, library links, preferences, and viewing progress. Saving your TorBox API key or addon URLs to your account is optional. Connected services receive the requests needed for their features. We use Cloudflare analytics, but do not sell personal data or use advertising trackers.</p>
+        </div>
+
+        <nav aria-label="Policy contents">
+            <ul>
+                <li><a href="#contact">Contact</a></li>
+                <li><a href="#data">Data we handle</a></li>
+                <li><a href="#purposes">Why we use it</a></li>
+                <li><a href="#sharing">Services and sharing</a></li>
+                <li><a href="#storage">Device storage</a></li>
+                <li><a href="#retention">Retention</a></li>
+                <li><a href="#rights">Your rights</a></li>
+            </ul>
+        </nav>
+
+        <section id="contact" aria-labelledby="contact-title">
+            <h2 id="contact-title">1. Who is responsible for your data?</h2>
+            <p>Theama is operated by <strong>Manos Fragakis, based in Greece</strong>, who is the data controller for the personal data processed to operate Theama.</p>
+            <p>For privacy questions, access requests, or account deletion, email <a href="mailto:support@theama.app">support@theama.app</a>. Please use this private contact instead of posting personal information in public repository issues. Never send your password or TorBox API key.</p>
+        </section>
+
+        <section id="data" aria-labelledby="data-title">
+            <h2 id="data-title">2. Data we handle</h2>
+            <h3>Account and profile information</h3>
+            <p>If you register, we process your username, account identifier, authentication information, and email address if you provide one. A real email address is optional; without one, a username-based account identifier is generated. Email-based recovery requires a working email address. Passwords are submitted to Supabase's authentication service; they are not stored as plaintext in Theama's profile or settings tables.</p>
+
+            <h3>Lists, library links, and viewing progress</h3>
+            <p>For signed-in users, we save favourites and watchlists, list names and visibility choices, followed-user relationships, and media information such as titles, IDs, poster links, and source/addon URLs. Library and playback records can include torrent hashes, file identifiers, episode information, playback position and duration, last-watched timestamps, and completion counts. These records support your library, resume playback, and account features.</p>
+            <p>Guest favourites are stored on your device and are imported into your account when you sign in. Your playback queue and some display preferences are stored on your device.</p>
+
+            <h3>TorBox credentials and addon settings</h3>
+            <p>If you connect TorBox, we process the API key you enter, TorBox account/library responses, file and torrent information, and the requests you make to manage your library or obtain playback and download links. The key is saved in browser storage. It is also saved to your Theama account only when you enable <strong>Link API Key to Theama Account</strong>.</p>
+            <p>Installed addon URLs, settings, and manifest information are stored on your device. Addon URLs are saved to your account when you enable <strong>Save Addons to Theama Account</strong>. URLs can contain credentials or user-specific configuration, so treat them as sensitive. Ordinary account preferences are synced when you are signed in, even if these two optional sync settings are off.</p>
+
+            <h3>Requests, analytics, and support</h3>
+            <p>Hosting and connected services process technical request information such as IP addresses, request URLs, timestamps, browser/device information, response status, and security information. Cloudflare analytics provides traffic and performance measurements. Depending on the analytics feature, these can include page views, referring sites, approximate country, browser/device categories, and loading performance. Analytics is separate from hosting and security logs; using analytics does not mean all requests are anonymous or unlogged.</p>
+            <p>If you contact us, we receive your email address, message, and information you choose to include.</p>
+        </section>
+
+        <section id="purposes" aria-labelledby="purposes-title">
+            <h2 id="purposes-title">3. Why we use data and the legal bases</h2>
+            <ul>
+                <li><strong>Providing requested features:</strong> account authentication, saved lists, profile features, library management, optional syncing, and playback use data necessary to provide the service you request (GDPR Article 6(1)(b)). Some features cannot work without the relevant information, such as a TorBox key for TorBox library access.</li>
+                <li><strong>Operating and improving the service:</strong> troubleshooting, responding to ordinary support requests, preventing abuse, securing accounts, and understanding traffic and performance serve our legitimate interests in maintaining a usable and secure service (Article 6(1)(f)), subject to your rights. Where applicable law requires consent for an analytics or storage feature, consent must be obtained before that feature is used.</li>
+                <li><strong>Legal obligations:</strong> we process information where necessary to comply with applicable law, including handling data-protection requests (Article 6(1)(c)).</li>
+            </ul>
+            <p>We do not use personal data for targeted advertising or sell it. We do not make solely automated decisions that produce legal or similarly significant effects about you. Media matching and recommendations are ordinary app functions.</p>
+        </section>
+
+        <section id="sharing" aria-labelledby="sharing-title">
+            <h2 id="sharing-title">4. Who receives information?</h2>
+            <ul>
+                <li><strong>Supabase:</strong> provides authentication and the database for account records, profiles, saved content, preferences, and optional credentials/addon syncing. It processes this application data on our behalf. See its <a href="https://supabase.com/legal/dpa" rel="noreferrer">data processing terms</a>.</li>
+                <li><strong>Cloudflare and the configured API proxy:</strong> provide hosting, delivery, analytics, security, and request forwarding. TorBox API requests pass through the configured proxy, including credentials needed to authenticate them. This happens even when saving the key to your account is disabled. Some link requests place the key inside the request URL, so the proxy and hosting infrastructure process that URL. See <a href="https://www.cloudflare.com/privacypolicy/" rel="noreferrer">Cloudflare's privacy policy</a>.</li>
+                <li><strong>TorBox and playback/download hosts:</strong> receive the account credentials and file/torrent requests needed for your chosen actions. Streaming or downloading contacts the returned content host, which receives connection and request information. TorBox is a separately operated service with its own terms and privacy practices.</li>
+                <li><strong>Metadata, images, and addons:</strong> TMDB receives searches, media identifiers, and requests for posters or other metadata. Anime matching may contact api.ani.zip and use mapping data fetched from GitHub. Your installed addon providers receive relevant manifest, catalog, metadata, search, or stream requests and configuration embedded in their URLs. Direct requests and remote images expose ordinary connection information, including your IP address, to their hosts. This also applies to remotely hosted branding images.</li>
+                <li><strong>Other users:</strong> your username and profile identifier are used for profile and follow features. Lists marked public and the media entries in them can be viewed through public profiles. Lists marked private are not shown by the public-profile feature. A public link can be forwarded or copied by others.</li>
+                <li><strong>Email and external services you choose:</strong> Cloudflare routes messages sent to our support and privacy contact to Gmail, which handles the mailbox. Opening an external player, using device sharing, or following a donation link sends the relevant media link/file or other information to the service you select. Donations are processed by Buy Me a Coffee and its payment providers; they may give the maintainer donor details, amounts, and messages. Theama does not collect payment-card details through its app.</li>
+            </ul>
+            <p>Authorised service administrators can access account data where needed to operate the service, investigate problems, or handle requests. We may also disclose information where required by law or necessary to establish, exercise, or defend legal claims. Third-party services may act as independent controllers for their own services; this policy does not replace their policies.</p>
+        </section>
+
+        <section id="storage" aria-labelledby="storage-title">
+            <h2 id="storage-title">5. Browser storage, cookies, and local files</h2>
+            <p>Theama uses browser local storage, session storage, and the service worker's app-file cache to support sign-in, preferences, addon information, queues, guest favourites, and installation/offline app loading. These are not advertising storage.</p>
+            <p><strong>Trust this device</strong> is enabled by default. Turning it off switches managed settings, the sign-in session, addon cache, and queue to session storage. Session storage normally lasts for that tab's session, subject to browser session-restoration behaviour. Guest favourites and hidden-progress display choices can still use persistent local storage; this setting does not make all data temporary or remove cloud records.</p>
+            <p>Logging out clears Theama's local and session storage in that browser. Browser site-data controls can clear app caches too. Clearing storage, uninstalling the PWA, or logging out does not delete your account or records held by connected services. Infrastructure providers may use necessary security cookies under their own service settings.</p>
+            <p>Files selected for local playback are read by the browser player; selecting a file does not upload its contents to Theama's account database. If you choose to share a file or open it in another app, it is passed to the destination you select. Network playback still involves the content provider.</p>
+        </section>
+
+        <section id="retention" aria-labelledby="retention-title">
+            <h2 id="retention-title">6. How long information is kept</h2>
+            <ul>
+                <li><strong>Account data:</strong> saved account records remain while the account exists, unless removed through the relevant feature or a deletion request. The current app does not automatically expire inactive accounts or viewing progress. Retention is assessed against the purposes above and applicable legal obligations.</li>
+                <li><strong>Optional cloud copies:</strong> saving settings with TorBox key syncing or addon syncing disabled clears the corresponding values in the active account-settings record. It does not revoke credentials with the provider or immediately erase historical logs or any retained backups. You can disconnect TorBox in Settings and revoke its key with TorBox.</li>
+                <li><strong>Device data:</strong> persists according to the storage type described above, until cleared, overwritten, or removed by the browser. Clearing device data does not clear synced records.</li>
+                <li><strong>Support, security, analytics, and backups:</strong> retained according to the need to resolve a request, operate and secure the service, applicable legal requirements, and provider retention settings. Deleted live data may remain in provider logs or any backups until their retention periods expire. Provider schedules depend on the hosting plan and configuration; contact us for the applicable details. A single immediate-erasure deadline is not promised for these copies.</li>
+            </ul>
+            <p>To request account deletion, email the contact above. There is currently no self-service account-deletion button. We will explain any information that must be retained and why. Deleting Theama records does not delete your TorBox account, hosted files, addon accounts, or copies others made of previously public information.</p>
+        </section>
+
+        <section id="transfers" aria-labelledby="transfers-title">
+            <h2 id="transfers-title">7. Where data is processed</h2>
+            <p>Theama is operated from Greece, but its providers use international infrastructure and subprocessors. Data may be processed outside Greece and the European Economic Area; this policy does not promise EU-only storage. For transfers requiring safeguards, the providers' applicable data-processing terms include mechanisms such as EU Standard Contractual Clauses, where applicable. See the <a href="https://supabase.com/legal/dpa" rel="noreferrer">Supabase DPA</a> and <a href="https://www.cloudflare.com/cloudflare-customer-dpa/" rel="noreferrer">Cloudflare DPA</a>. Contact us for information about the location and safeguards applicable to your data.</p>
+        </section>
+
+        <section id="rights" aria-labelledby="rights-title">
+            <h2 id="rights-title">8. Your choices and rights</h2>
+            <p>You can change profile details and supported preferences, manage lists and their visibility, remove library associations, unfollow users, disconnect TorBox, and turn off optional syncing. These controls affect different records; removing a list entry is not a request to erase all viewing history or your account.</p>
+            <p>Subject to applicable law, you may request access to and a copy of your personal data, correction, erasure, restriction, or portability. You may object to processing based on legitimate interests and withdraw consent where processing relies on it, without affecting the lawfulness of earlier processing. These rights have conditions and exceptions.</p>
+            <p>Email <a href="mailto:support@theama.app">support@theama.app</a> to exercise your rights. We may request proportionate information to verify that you control the account; we do not need your password or TorBox key. We respond without undue delay and normally within one month. If a permitted extension is needed, we will explain it within that month.</p>
+            <p>You may complain to the <a href="https://www.dpa.gr/en/individuals/complaint-to-the-hellenic-dpa" rel="noreferrer">Hellenic Data Protection Authority</a> or another competent supervisory authority, including where you live or work in the EEA.</p>
+        </section>
+
+        <section id="security" aria-labelledby="security-title">
+            <h2 id="security-title">9. Security</h2>
+            <p>Theama uses HTTPS on its official site and relies on its providers for authentication and hosting protections. No service or browser storage is risk-free. Anyone with access to your browser profile or account may gain access to stored settings or credentials; use trusted devices and protect connected-service keys.</p>
+        </section>
+
+        <section id="changes" aria-labelledby="changes-title">
+            <h2 id="changes-title">10. Changes to this policy</h2>
+            <p>We will update this page when our practices change and revise the date above. Material changes will be communicated through an appropriate notice in the service or another available channel. This policy explains data handling; it does not transfer ownership of your data or replace the project's software license.</p>
+        </section>
+
+        <footer>
+            <a href="/">Return to Theama</a>
+            <p class="muted">Privacy contact: <a href="mailto:support@theama.app">support@theama.app</a></p>
+        </footer>
+    </main>
+</body>
+</html>

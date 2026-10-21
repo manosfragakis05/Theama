@@ -950,12 +950,109 @@
 
                         </div>
                     </section>
+
+                    <section aria-label="Licenses and policies">
+                        <button id="open-licenses-credits-btn" type="button" aria-controls="licenses-credits-page"
+                            class="w-full flex items-center justify-between gap-4 bg-slate-800/40 border border-slate-700/50 p-6 rounded-2xl shadow-lg text-left text-white transition-colors hover:bg-slate-800/70 hover:border-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+                            <span class="flex items-center gap-3 font-bold">
+                                <svg class="w-5 h-5 shrink-0 text-blue-400" aria-hidden="true" fill="none"
+                                    stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M9 12h6m-6 4h6M8 3h6l4 4v14H6V3h2zm6 0v5h4"></path>
+                                </svg>
+                                Licenses &amp; Policies
+                            </span>
+                            <svg class="w-5 h-5 shrink-0 text-slate-400 -rotate-90" aria-hidden="true" fill="none"
+                                stroke="currentColor" viewBox="0 0 24 24">
+                                <use href="#icon-arrow"></use>
+                            </svg>
+                        </button>
+
+                    </section>
+
                     <div
                         class="w-full flex flex-col items-center justify-center opacity-60 hover:opacity-100 transition-opacity select-none">
                         <span
                             class="text-[10px] font-bold tracking-widest uppercase text-slate-500 mb-0.5">Theama</span>
                         <span id="app-version-text" class="text-[10px] font-mono text-slate-600">v0.5.9</span>
                     </div>
+                </div>
+
+                <div id="licenses-credits-page" aria-labelledby="licenses-credits-title"
+                    class="page-view hidden flex-none max-w-4xl mx-auto w-full min-h-[60vh] !pb-[calc(7rem+env(safe-area-inset-bottom))] md:!pb-8">
+                    <button id="close-licenses-credits-btn" type="button"
+                        class="inline-flex min-h-11 items-center gap-2 mb-6 text-sm font-semibold text-slate-400 hover:text-white transition-colors rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+                        <svg class="w-5 h-5" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                        </svg>
+                        Back to Settings
+                    </button>
+
+                    <h1 id="licenses-credits-title" tabindex="-1"
+                        class="text-3xl md:text-4xl font-extrabold text-white tracking-tight outline-none mb-8">
+                        Licenses &amp; Policies
+                    </h1>
+
+                    <section aria-labelledby="tmdb-credit-title"
+                        class="bg-slate-800/40 border border-slate-700/50 p-6 rounded-2xl">
+                        <h2 id="tmdb-credit-title" class="text-lg font-bold text-white mb-4">The Movie Database</h2>
+                        <a href="https://www.themoviedb.org" target="_blank" rel="noopener noreferrer"
+                            aria-label="Visit The Movie Database (opens in a new tab)"
+                            class="inline-block mb-4 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+                            <img src="/tmdb-logo.svg" alt="TMDB" width="64" height="46" class="w-16 h-auto">
+                        </a>
+                        <p class="text-sm leading-relaxed text-slate-300">
+                            This product uses the TMDB API but is not endorsed or certified by TMDB.
+                        </p>
+                    </section>
+
+                    <section aria-labelledby="torbox-credit-title"
+                        class="mt-6 bg-slate-800/40 border border-slate-700/50 p-6 rounded-2xl">
+                        <h2 id="torbox-credit-title" class="text-lg font-bold text-white mb-4">TorBox</h2>
+                        <img src="https://torbox.app/apple-touch-icon.png" alt="TorBox" width="64" height="64"
+                            loading="lazy" referrerpolicy="no-referrer" class="w-16 h-16 mb-4">
+                        <p class="text-sm leading-relaxed text-slate-300">
+                            Theama connects to TorBox for library access and management, and playback features.
+                        </p>
+                        <a href="https://torbox.app" target="_blank" rel="noopener noreferrer"
+                            aria-label="Visit TorBox (opens in a new tab)"
+                            class="inline-flex min-h-11 items-center mt-2 text-sm font-semibold text-blue-400 hover:text-blue-300 underline underline-offset-4 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+                            Visit torbox.app
+                        </a>
+                    </section>
+
+                    <section aria-labelledby="support-title"
+                        class="mt-6 bg-slate-800/40 border border-slate-700/50 p-6 rounded-2xl">
+                        <h2 id="support-title" class="text-lg font-bold text-white mb-4">Theama</h2>
+                        <div class="flex flex-col gap-3">
+                            <a href="https://github.com/manosfragakis05/Theama" target="_blank" rel="noopener noreferrer"
+                                aria-label="Source code and licenses on GitHub (opens in a new tab)"
+                                class="flex min-h-11 items-center justify-between gap-4 rounded-xl border border-slate-700/50 px-4 py-3 text-sm font-semibold text-blue-400 transition-colors hover:bg-slate-800/70 hover:text-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+                                <span>Source code and licenses</span>
+                                <svg class="w-4 h-4 shrink-0" aria-hidden="true" fill="none"
+                                    stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M15 3h6v6m0-6L10 14M9 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-4"></path>
+                                </svg>
+                            </a>
+                            <a href="/privacy.html" target="_blank" rel="noopener noreferrer"
+                                aria-label="Privacy Policy (opens in a new tab)"
+                                class="flex min-h-11 items-center justify-between gap-4 rounded-xl border border-slate-700/50 px-4 py-3 text-sm font-semibold text-blue-400 transition-colors hover:bg-slate-800/70 hover:text-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+                                <span>Privacy Policy</span>
+                                <svg class="w-4 h-4 shrink-0" aria-hidden="true" fill="none"
+                                    stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M15 3h6v6m0-6L10 14M9 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-4"></path>
+                                </svg>
+                            </a>
+                            <a href="mailto:support@theama.app"
+                                class="flex min-h-11 flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-700/50 px-4 py-3 text-sm transition-colors hover:bg-slate-800/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+                                <span class="font-semibold text-white">Support email</span>
+                                <span class="text-blue-400 break-all">support@theama.app</span>
+                            </a>
+                        </div>
+                    </section>
                 </div>
 
                 <!-- Catalog Full Grid Page -->

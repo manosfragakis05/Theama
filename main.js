@@ -120,6 +120,19 @@ function setupStaticEventListeners() {
     // UI.js
     document.getElementById('profile-dropdown-login')?.addEventListener('click', () => switchTab('settings-page'));
     document.getElementById('profile-settings-btn')?.addEventListener('click', () => switchTab('settings-page'));
+    let settingsCreditsScrollTop = 0;
+    document.getElementById('open-licenses-credits-btn')?.addEventListener('click', () => {
+        const main = document.getElementById('app-main');
+        settingsCreditsScrollTop = main.scrollTop;
+        switchTab('licenses-credits-page');
+        main.scrollTop = 0;
+        document.getElementById('licenses-credits-title').focus({ preventScroll: true });
+    });
+    document.getElementById('close-licenses-credits-btn')?.addEventListener('click', () => {
+        switchTab('settings-page');
+        document.getElementById('app-main').scrollTop = settingsCreditsScrollTop;
+        document.getElementById('open-licenses-credits-btn').focus({ preventScroll: true });
+    });
     document.getElementById('header-profile-toggle')?.addEventListener('click', toggleProfile);
     document.getElementById('home-logo-btn')?.addEventListener('click', goHome);
     document.getElementById('sidebar-collapse-btn')?.addEventListener('click', toggleSidebar);
