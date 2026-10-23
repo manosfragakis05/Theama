@@ -70,6 +70,45 @@ const SEGMENT_VIDEO_FRAMES = 30;
 const SEGMENT_DURATION_MS = 1000;
 const SEGMENT_MEDIA_BYTES = 4 * 1024 * 1024;
 
+// Read random-access timestamps from OUR generated video traf (90 kHz,
+// version-1 tfdt/trun with explicit duration/size/flags/composition offset).
+// MKV cues can refer to other tracks; only successfully appended video RAPs
+// are suitable eviction boundaries.
+function videoKeyframes(data) {
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    const boxes = function* (start, end) {
+        for (let p = start; p + 8 <= end;) {
+            const size = view.getUint32(p);
+            if (size < 8 || p + size > end) return;
+            yield { type: view.getUint32(p + 4), start: p + 8, end: p + size };
+            p += size;
+        }
+    };
+    const keys = [];
+    for (const moof of boxes(0, data.length)) {
+        if (moof.type !== 0x6d6f6f66) continue;
+        for (const traf of boxes(moof.start, moof.end)) {
+            if (traf.type !== 0x74726166) continue;
+            const children = [...boxes(traf.start, traf.end)];
+            const tfhd = children.find(b => b.type === 0x74666864);
+            const tfdt = children.find(b => b.type === 0x74666474);
+            if (!tfhd || !tfdt || view.getUint32(tfhd.start + 4) !== 1) continue;
+            let dts = Number(view.getBigUint64(tfdt.start + 4));
+            for (const run of children.filter(b => b.type === 0x7472756e)) {
+                if (view.getUint32(run.start) !== 0x01000f01) continue;
+                const count = view.getUint32(run.start + 4);
+                for (let i = 0, p = run.start + 12; i < count && p + 16 <= run.end; i++, p += 16) {
+                    const pts = dts + view.getInt32(p + 12);
+                    if (!(view.getUint32(p + 8) & 0x10000))
+                        keys.push({ time: pts / 90000, cutoff: Math.min(dts, pts) / 90000 });
+                    dts += view.getUint32(p);
+                }
+            }
+        }
+    }
+    return keys;
+}
+
 class FetchWatchdog {
     constructor(timeoutMs, externalSignal) {
         this.controller = new AbortController();
@@ -125,17 +164,18 @@ class MKVFetcher {
         let finalSize = null;
 
         // Phase 1: Try HEAD
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
         try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 3000);
             const headRes = await fetch(this.source, { method: 'HEAD', signal: controller.signal });
-            clearTimeout(timeoutId);
 
             const length = parseInt(headRes.headers.get('content-length'));
             // Safety check: Ensure length is a valid number larger than 1 byte
             if (length && length > 1) finalSize = length;
         } catch (e) {
             console.log("🌐 [Network] HEAD failed or timed out.");
+        } finally {
+            clearTimeout(timeoutId);
         }
 
         // Phase 2: The 1-Byte Range Request
@@ -172,7 +212,6 @@ class MKVFetcher {
                 if (length && length > 1) finalSize = length;
 
                 if (getRes.body) await getRes.body.cancel().catch(() => { });
-                watchdog.controller.abort(); // we only wanted the headers — cut the body now that we have them
             } catch (e) { }
             finally {
                 watchdog.dispose();
@@ -273,6 +312,11 @@ class MKVFetcher {
                     yield part;
                 }
             }
+        } catch (error) {
+            // Fetch implementations may reject body reads with AbortError even
+            // when the watchdog supplied a more useful TimeoutError reason.
+            if (watchdog.signal.aborted) throw watchdog.signal.reason || error;
+            throw error;
         } finally {
             watchdog.dispose();
             if (reader) {
@@ -282,7 +326,8 @@ class MKVFetcher {
             } else if (response?.body) {
                 await response.body.cancel().catch(() => {});
             }
-            watchdog.controller.abort();
+            // cancel() already closes the body. Abort only on a real timeout or
+            // external cancellation, not after every successful range read.
         }
     }
 
@@ -480,6 +525,17 @@ class CoreEngine {
 
     log(msg) { console.log("Engine:", msg); }
 
+    _reportError(error, context) {
+        if (this._destroying || this._streamError) return;
+        this._streamError = error;
+        // A fatal media error invalidates queued appends and stops the producer.
+        // Preserve this cause instead of replacing it with appendBuffer errors.
+        ++this.currentStreamId;
+        this.abortController?.abort(error);
+        console.error(context, error);
+        this.onError?.(error);
+    }
+
     _resetState() {
         this.isFetching = false;
         if (this.abortController) this.abortController.abort();
@@ -497,6 +553,9 @@ class CoreEngine {
         this._eof = false;
         this._streamError = null;
         this._lastEviction = 0;
+        this._videoKeyframes = [];
+        this._bufferTarget = STREAM_BUFFER_TARGET_SECONDS;
+        this._bufferWaiters = new Set();
         this._performanceStats = { parseCalls: 0, parsedBytes: 0, parseMs: 0,
             maxParseMs: 0, parseYields: 0, segments: 0, segmentBytes: 0, maxSegmentBytes: 0 };
     }
@@ -634,6 +693,7 @@ class CoreEngine {
     }
 
     async preload(fetcher) {
+        if (!MSE) throw new Error('This browser does not support MediaSource playback. Try a newer browser.');
         this._resetState();
         this.sourceInput = fetcher;
 
@@ -655,78 +715,73 @@ class CoreEngine {
 
 
         while (!clusterFound && absoluteFileOffset < this.sourceInput.size && currentSize < maxProbe) {
-            const probeController = new AbortController();
             let jumped = false;
 
             // 1. Calculate a bounded end to stop ghost connections
             const probeEnd = Math.min(absoluteFileOffset + capacity, this.sourceInput.size);
 
-            try {
-                // 2. Request only up to probeEnd instead of this.sourceInput.size
-                for await (const chunk of this.sourceInput.stream(absoluteFileOffset, probeEnd, probeController.signal)) {
+            // 2. Request only up to probeEnd instead of this.sourceInput.size
+            for await (const chunk of this.sourceInput.stream(absoluteFileOffset, probeEnd)) {
 
 
-                    if (currentSize + chunk.length > capacity) {
-                        let oldPtr = ptr;
-                        let oldCapacity = capacity;
-                        capacity = Math.max(capacity * 2, currentSize + chunk.length);
-                        ptr = wasm._alloc_memory(capacity);
-                        let freshBuffer = getWasmMemory();
-                        let oldView = new Uint8Array(freshBuffer, oldPtr, currentSize);
-                        let newWasmHeap = new Uint8Array(freshBuffer, ptr, capacity);
-                        newWasmHeap.set(oldView);
-                        wasm._free_memory(oldPtr, oldCapacity);
-                        wasmHeap = newWasmHeap;
-                    } else if (wasmHeap.buffer.byteLength === 0) {
-                        wasmHeap = new Uint8Array(getWasmMemory(), ptr, capacity);
+                if (currentSize + chunk.length > capacity) {
+                    let oldPtr = ptr;
+                    let oldCapacity = capacity;
+                    capacity = Math.max(capacity * 2, currentSize + chunk.length);
+                    ptr = wasm._alloc_memory(capacity);
+                    let freshBuffer = getWasmMemory();
+                    let oldView = new Uint8Array(freshBuffer, oldPtr, currentSize);
+                    let newWasmHeap = new Uint8Array(freshBuffer, ptr, capacity);
+                    newWasmHeap.set(oldView);
+                    wasm._free_memory(oldPtr, oldCapacity);
+                    wasmHeap = newWasmHeap;
+                } else if (wasmHeap.buffer.byteLength === 0) {
+                    wasmHeap = new Uint8Array(getWasmMemory(), ptr, capacity);
+                }
+
+                wasmHeap.set(chunk, currentSize);
+
+                let scanStart = Math.max(0, currentSize - 8);
+                currentSize += chunk.length;
+                absoluteFileOffset += chunk.length;
+
+                for (let i = scanStart; i < currentSize - 4; i++) {
+                    if (wasmHeap[i] === 0x1F && wasmHeap[i + 1] === 0x43 &&
+                        wasmHeap[i + 2] === 0xB6 && wasmHeap[i + 3] === 0x75) {
+                        console.log(`[Probe] CLUSTER FOUND at absolute offset: ${absoluteFileOffset - currentSize + i}`); // ADD THIS
+
+                        clusterFound = true;
+                        this.firstClusterOffset = absoluteFileOffset - currentSize + i;
+                        firstClusterIndex = i; // Save exact byte where headers end
+
+                        break;
                     }
 
-                    wasmHeap.set(chunk, currentSize);
+                    if (wasmHeap[i] === 0x19 && wasmHeap[i + 1] === 0x41 &&
+                        wasmHeap[i + 2] === 0xA4 && wasmHeap[i + 3] === 0x69) {
 
-                    let scanStart = Math.max(0, currentSize - 8);
-                    currentSize += chunk.length;
-                    absoluteFileOffset += chunk.length;
+                        const vint = readVintJS(wasmHeap, i + 4, currentSize);
+                        if (vint) {
+                            if (vint.value < 1024 * 1024) continue;
 
-                    for (let i = scanStart; i < currentSize - 4; i++) {
-                        if (wasmHeap[i] === 0x1F && wasmHeap[i + 1] === 0x43 &&
-                            wasmHeap[i + 2] === 0xB6 && wasmHeap[i + 3] === 0x75) {
-                            console.log(`[Probe] CLUSTER FOUND at absolute offset: ${absoluteFileOffset - currentSize + i}`); // ADD THIS
+                            const skipAmount = 4 + vint.length + vint.value;
+                            this.log(`Attachments skipped! Size: ${(vint.value / 1024 / 1024).toFixed(2)} MB.`);
 
-                            clusterFound = true;
-                            this.firstClusterOffset = absoluteFileOffset - currentSize + i;
-                            firstClusterIndex = i; // Save exact byte where headers end
+                            const startOfBufferOffset = absoluteFileOffset - currentSize;
+                            absoluteFileOffset = startOfBufferOffset + i + skipAmount;
+                            currentSize = i;
 
-                            probeController.abort();
+                            jumped = true;
                             break;
                         }
-
-                        if (wasmHeap[i] === 0x19 && wasmHeap[i + 1] === 0x41 &&
-                            wasmHeap[i + 2] === 0xA4 && wasmHeap[i + 3] === 0x69) {
-
-                            const vint = readVintJS(wasmHeap, i + 4, currentSize);
-                            if (vint) {
-                                if (vint.value < 1024 * 1024) continue;
-
-                                const skipAmount = 4 + vint.length + vint.value;
-                                this.log(`Attachments skipped! Size: ${(vint.value / 1024 / 1024).toFixed(2)} MB.`);
-
-                                const startOfBufferOffset = absoluteFileOffset - currentSize;
-                                absoluteFileOffset = startOfBufferOffset + i + skipAmount;
-                                currentSize = i;
-
-                                jumped = true;
-                                probeController.abort();
-                                break;
-                            }
-                        }
                     }
-
-                    if (clusterFound || jumped) break;
-                    if (currentSize >= maxProbe) break;
                 }
-            } catch (err) {
-                if (err?.name !== 'AbortError') throw err;
+
+                if (clusterFound || jumped) break;
+                if (currentSize >= maxProbe) break;
             }
+            // Leaving the async iterator cancels its reader without aborting a
+            // successful fetch. Real fetch failures must propagate to load().
             if (clusterFound) break;
         }
 
@@ -751,24 +806,24 @@ class CoreEngine {
             : null;
 
         if (!videoTrack) {
-            console.error(" [Debug] FATAL: Rust failed to find a video track! The MKV headers might be corrupted from the attachment jump.");
-            return;
+            throw new Error('No video track found in the MKV headers.');
         }
 
         if (videoTrack.codec_id !== "V_MPEG4/ISO/AVC" && videoTrack.codec_id !== "V_MPEGH/ISO/HEVC") {
             this.log(`Critical: Unsupported video codec ${videoTrack.codec_id}`);
             alert(`Sorry, only H.264 and HEVC (H.265) video tracks are supported!`);
             throw new Error("Unsupported video codec.");
+        }
+
+        if (!isMseTypeSupported(`video/mp4; codecs="${videoTrack.codec_string}"`)) {
+            const error = new Error(`This browser/device cannot play ${videoTrack.codec_string} video (${videoTrack.width}x${videoTrack.height}). Try a compatible H.264 file; this player does not convert video.`);
+            // Keep probe details available to the UI after feed() cleans up.
+            error.videoTrack = videoTrack;
+            throw error;
         }
 
         this.audioTracks = this.mkvHeader.tracks.filter(t => t.track_type === "audio");
         const { track: audioTrack, canPlayNatively } = await this._selectInitialAudioTrack(videoTrack);
-
-        if (videoTrack.codec_id !== "V_MPEG4/ISO/AVC" && videoTrack.codec_id !== "V_MPEGH/ISO/HEVC") {
-            this.log(`Critical: Unsupported video codec ${videoTrack.codec_id}`);
-            alert(`Sorry, only H.264 and HEVC (H.265) video tracks are supported!`);
-            throw new Error("Unsupported video codec.");
-        }
 
         if (this.mkvHeader.cues_position) {
             const pos = this.segmentPayloadStart + Number(this.mkvHeader.cues_position);
@@ -971,17 +1026,16 @@ class CoreEngine {
         if (this._retryingAudio || this._destroying) return;
         const mediaError = this.video?.error;
         const diagnostic = mediaError?.message || '';
-        const error = new Error(`Media playback failed${mediaError ? ` (code ${mediaError.code})` : ''}${diagnostic ? `: ${diagnostic}` : '.'}`);
+        const codec = this.videoTrack?.codec_string;
+        const error = new Error(`Media playback failed${mediaError ? ` (code ${mediaError.code})` : ''}${diagnostic ? `: ${diagnostic}` : '.'}${codec ? ` Video: ${codec}.` : ''}`);
         const audioDecoderFailure = (mediaError?.code === 3 || mediaError?.code === 4) &&
             /\baudio\b/i.test(diagnostic) && !/\bvideo\b/i.test(diagnostic);
         if (audioDecoderFailure && this.audioTrack && !this.needsAudioTranscode && !this._audioFallbackAttempted) {
             this._retryAudioAsAac(error).catch(failure => {
-                this._streamError = failure;
-                console.error('AAC retry failed:', failure);
+                this._reportError(failure, 'AAC retry failed:');
             });
         } else if (!this._destroying) {
-            this._streamError = error;
-            console.error('Playback failed:', error);
+            this._reportError(error, 'Playback failed:');
         }
     }
 
@@ -1029,6 +1083,8 @@ class CoreEngine {
             this._sourceStartTime = resumeTime;
             this._eof = false;
             this._streamError = null;
+            this._videoKeyframes = [];
+            this._lastEviction = 0;
             this.mediaSource = new MSE();
             this._sourceOpenHandler = () => this._onSourceOpen();
             this.mediaSource.addEventListener('sourceopen', this._sourceOpenHandler);
@@ -1100,13 +1156,11 @@ class CoreEngine {
             if (source !== this.mediaSource || this._retryingAudio || this._destroying) return;
             if (nativeAudioTypeRejected && !this._audioFallbackAttempted) {
                 this._retryAudioAsAac(error).catch(failure => {
-                    this._streamError = failure;
-                    console.error('AAC retry failed:', failure);
+                    this._reportError(failure, 'AAC retry failed:');
                 });
                 return;
             }
-            this._streamError = error;
-            console.error("Engine Crash in _onSourceOpen:", error);
+            this._reportError(error, 'Engine Crash in _onSourceOpen:');
         }
     }
 
@@ -1119,6 +1173,13 @@ class CoreEngine {
                 return ranges.end(i) - time;
         }
         return 0;
+    }
+
+    _bufferedReadAhead() {
+        // A gap at the playhead does not mean later buffered media is free.
+        // Keep the contiguous query above for seek decisions only.
+        const ranges = this.sourceBuffer?.buffered;
+        return ranges?.length ? Math.max(0, ranges.end(ranges.length - 1) - (this.video?.currentTime || 0)) : 0;
     }
 
     _alignStartupPosition() {
@@ -1138,6 +1199,7 @@ class CoreEngine {
 
     async _stopStream() {
         ++this.currentStreamId;
+        for (const wake of this._bufferWaiters) wake();
         this.abortController?.abort();
         await this._streamPromise;
         this.isFetching = false;
@@ -1151,24 +1213,22 @@ class CoreEngine {
             !this.sourceBuffer || !this.sourceInput || this.mediaSource?.readyState === 'closed')
             return Promise.resolve();
         if (!this.isRecording && this.currentOffset < this.sourceInput.size &&
-            this._bufferedAhead() > STREAM_BUFFER_RESUME_SECONDS)
+            this._bufferedReadAhead() > Math.min(STREAM_BUFFER_RESUME_SECONDS, this._bufferTarget / 2))
             return Promise.resolve();
         const id = this.currentStreamId;
         this.isFetching = true;
         this._streamPromise = this._runStream(id).catch(error => {
-            if (id === this.currentStreamId && error?.name !== 'AbortError') {
+            if (id === this.currentStreamId) {
                 if (error.requiresAudioTranscode && !this.needsAudioTranscode &&
                     !this.isRecording && !this._audioFallbackAttempted) {
                     // Do not await here: the retry first waits for this stream
                     // promise to settle before destroying its demuxer.
                     this._retryAudioAsAac(error).catch(failure => {
-                        this._streamError = failure;
-                        console.error('AAC retry failed:', failure);
+                        this._reportError(failure, 'AAC retry failed:');
                     });
                     return;
                 }
-                this._streamError = error;
-                console.error('Stream error:', error);
+                this._reportError(error, 'Stream error:');
             }
         }).finally(() => {
             this._streamPromise = null;
@@ -1186,8 +1246,8 @@ class CoreEngine {
                 await this._completeInput(id);
                 return;
             }
-            const ahead = this._bufferedAhead();
-            if (!this.isRecording && ahead >= STREAM_BUFFER_TARGET_SECONDS) return;
+            const ahead = this._bufferedReadAhead();
+            if (!this.isRecording && ahead >= this._bufferTarget) return;
             const start = this.currentOffset;
             const end = Math.min(this._getOptimalChunkBoundary(start, ahead), this.sourceInput.size);
             if (!(end > start)) throw new Error('Input range made no progress.');
@@ -1221,7 +1281,7 @@ class CoreEngine {
                         if (this.demuxer.should_emit_segment()) {
                             await this._emitSegment(id);
                             if (id !== this.currentStreamId) return;
-                            if (!this.isRecording && this._bufferedAhead() >= STREAM_BUFFER_TARGET_SECONDS) return;
+                            if (!this.isRecording && this._bufferedReadAhead() >= this._bufferTarget) return;
                         }
                         if (this.isRecording && this.onDownloadProgress && Number.isFinite(this.sourceInput.size)) {
                             const progress = Math.min(99, Math.floor(this.currentOffset / this.sourceInput.size * 100));
@@ -1421,10 +1481,10 @@ class CoreEngine {
             this.currentOffset = this._audioSeekOffset(this.video.currentTime);
             this.demuxer.reset();
             this._lastEviction = 0;
+            this._videoKeyframes = [];
             if (this.needsAudioTranscode) await this._bootAudioEncoder(this.audioTrack);
         } catch (error) {
-            this._streamError = error;
-            console.error('Seek failed:', error);
+            this._reportError(error, 'Seek failed:');
         } finally { this.isSeeking = false; }
         this._streamLoop();
     }
@@ -1471,9 +1531,9 @@ class CoreEngine {
             if (this._destroying || id !== this.currentStreamId) return;
             this.currentOffset = this._audioSeekOffset(time);
             this._lastEviction = 0;
+            this._videoKeyframes = [];
         } catch (error) {
-            this._streamError = error;
-            console.error('Audio track change failed:', error);
+            this._reportError(error, 'Audio track change failed:');
             throw error;
         } finally { this.isSeeking = false; }
         this._streamLoop();
@@ -1530,22 +1590,93 @@ class CoreEngine {
         return task;
     }
 
-    _appendToBuffer(data, id = this.currentStreamId) {
-        return this._queueBufferOperation(buffer => buffer.appendBuffer(data), id);
+    async _appendToBuffer(data, id = this.currentStreamId) {
+        const sourceBuffer = this.sourceBuffer;
+        const keys = videoKeyframes(data);
+        while (id === this.currentStreamId && sourceBuffer === this.sourceBuffer && !this._destroying) {
+            try {
+                await this._queueBufferOperation(buffer => {
+                    if (this.video?.error) {
+                        this._onPlaybackError();
+                        throw this._streamError || new Error('The media element has failed.');
+                    }
+                    buffer.appendBuffer(data);
+                }, id);
+                if (id === this.currentStreamId && sourceBuffer === this.sourceBuffer)
+                    this._videoKeyframes.push(...keys);
+                return;
+            } catch (error) {
+                if (id !== this.currentStreamId || this._destroying) return;
+                if (this.video?.error) this._onPlaybackError();
+                if (this._streamError || error.name !== 'QuotaExceededError') throw this._streamError || error;
+                this._bufferTarget = Math.max(2, Math.min(this._bufferTarget / 2, this._bufferedReadAhead() / 2));
+                // Keep this exact fragment pending. Retrying it must neither
+                // advance the parser nor hold the SourceBuffer operation queue.
+                if (!await this._runGarbageCollector(true))
+                    await this._waitForBufferSpace(id, sourceBuffer);
+            }
+        }
     }
 
-    async _runGarbageCollector() {
-        if (this._gcPending || this.isSeeking || this.isRecording || this._destroying || !this.sourceBuffer) return;
-        const cutoff = (this.video?.currentTime || 0) - 30;
-        if (cutoff < this._lastEviction + 5) return;
-        const ranges = this.sourceBuffer.buffered;
-        if (!ranges.length || ranges.start(0) >= cutoff) return;
-        this._gcPending = true;
-        try {
-            await this._queueBufferOperation(buffer => buffer.remove(0, cutoff));
+    _waitForBufferSpace(id, buffer) {
+        const time = this.video?.currentTime || 0;
+        const source = this.mediaSource;
+        const snapshot = () => Array.from({ length: buffer.buffered.length }, (_, i) =>
+            `${buffer.buffered.start(i)}:${buffer.buffered.end(i)}`).join(',');
+        const ranges = snapshot();
+        return new Promise(resolve => {
+            const done = () => {
+                clearInterval(timer);
+                this.video?.removeEventListener('timeupdate', check);
+                source?.removeEventListener('sourceclose', done);
+                this._bufferWaiters.delete(done);
+                resolve();
+            };
+            const check = () => {
+                if (id !== this.currentStreamId || this._destroying || buffer !== this.sourceBuffer ||
+                    source.readyState === 'closed' || this.video?.error ||
+                    Math.abs((this.video?.currentTime || 0) - time) >= 0.25 || snapshot() !== ranges) done();
+            };
+            const timer = setInterval(check, 250);
+            this._bufferWaiters.add(done);
+            this.video?.addEventListener('timeupdate', check);
+            source?.addEventListener('sourceclose', done, { once: true });
+            check();
+        });
+    }
+
+    _runGarbageCollector(underPressure = false) {
+        if (this._gcPending) return this._gcPending;
+        if (this.isSeeking || this.isRecording || this._destroying || !this.sourceBuffer) return Promise.resolve(false);
+        const id = this.currentStreamId;
+        let cutoff = 0;
+        const task = this._queueBufferOperation(buffer => {
+            // Re-read the playhead and ranges AFTER earlier appends/removes.
+            // remove() may extend to the next RAP, so retain a known keyframe
+            // behind the playhead rather than cutting at an arbitrary time.
+            const before = (this.video?.currentTime || 0) - (underPressure ? 5 : 30);
+            const ranges = buffer.buffered;
+            for (const key of this._videoKeyframes) {
+                if (key.time > before || key.cutoff <= cutoff) continue;
+                for (let i = 0; i < ranges.length; i++) {
+                    if (ranges.start(i) <= key.time && key.time < ranges.end(i)) {
+                        cutoff = key.cutoff;
+                        break;
+                    }
+                }
+            }
+            if (cutoff <= this._lastEviction || (!underPressure && cutoff < this._lastEviction + 5) ||
+                !ranges.length || ranges.start(0) >= cutoff) { cutoff = 0; return; }
+            buffer.remove(0, cutoff);
+        }, id).then(() => {
+            if (!cutoff || id !== this.currentStreamId) return false;
             this._lastEviction = cutoff;
-        } catch (error) { console.warn('Buffer eviction failed:', error); }
-        finally { this._gcPending = false; }
+            this._videoKeyframes = this._videoKeyframes.filter(key => key.cutoff >= cutoff);
+            return true;
+        }).catch(error => { console.warn('Buffer eviction failed:', error); return false; })
+            .finally(() => { if (this._gcPending === task) this._gcPending = null; });
+        this._gcPending = task;
+        return task;
     }
 
     destroy() {
@@ -1629,6 +1760,7 @@ class CoreEngine {
             this.downloadBuffer = [];
             this.textTracks = {};
             this.onDownloadProgress = null;
+            this.onError = null;
             this._streamError = null;
             this._gcPending = false;
             this._bufferQueue = Promise.resolve();
@@ -1690,6 +1822,7 @@ export class MKVPlayer {
         if (!videoElement) throw new Error("MKVPlayer requires a <video> element!");
         this.video = videoElement;
         this.engine = null;
+        this.onError = null;
     }
 
     async load(source) {
@@ -1706,6 +1839,7 @@ export class MKVPlayer {
         if (cached) { await cached.destroy(); streamDictionary.delete(key); }
         await feed(source);
         this.engine = streamDictionary.get(key);
+        this.engine.onError = error => this.onError?.(error);
         this.engine.attachVideo(this.video);
     }
 
@@ -1716,7 +1850,7 @@ export class MKVPlayer {
             this.engine._needsPlaybackReset = false;
         }
         return this.video.play().catch(e => {
-            if (e.name !== 'AbortError') console.error("Play prevented:", e);
+            if (e.name !== 'AbortError') throw e;
         });
     }
 
@@ -1724,6 +1858,7 @@ export class MKVPlayer {
     seek(timeInSeconds) { this.video.currentTime = timeInSeconds; }
     getAudioTracks() { return this.engine ? this.engine.audioTracks : []; }
     getSelectedAudioTrack() { return this.engine?.audioTrack || null; }
+    getVideoTrack() { return this.engine?.videoTrack || null; }
     getPerformanceStats() { return this.engine?.getPerformanceStats() || null; }
     setAudioTrack(trackNumber) { return this.engine?.switchAudioTrack(trackNumber); }
 
