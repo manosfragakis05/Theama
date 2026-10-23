@@ -85,6 +85,11 @@ export function startPlayer(url, name, localFileObject = null, queueUid = null, 
     if (queueUid) setQueuePlaybackStatus(queueUid, 'loading');
 
     const generation = playbackGeneration;
+    const openCurrentInExternalPlayer = () => {
+        if (!art || generation !== playbackGeneration) return;
+        art.pause();
+        openExternalPlayer(url, name, localFileObject);
+    };
 
     const wrapper = document.getElementById('player-wrapper');
     if (wrapper) wrapper.classList.remove('hidden');
@@ -153,13 +158,11 @@ export function startPlayer(url, name, localFileObject = null, queueUid = null, 
                 },
             ] : []),
             {
+                name: 'external-player',
                 position: 'right',
                 html: '<svg style="width:22px;height:22px;margin-top:2px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>',
                 tooltip: 'Open in External Player',
-                click: function () {
-                    if (art && generation === playbackGeneration) art.pause();
-                    openExternalPlayer(url, name, localFileObject);
-                },
+                click: openCurrentInExternalPlayer,
             }
         ],
 
@@ -267,19 +270,24 @@ export function startPlayer(url, name, localFileObject = null, queueUid = null, 
     };
     if (media) document.addEventListener('visibilitychange', onVisibilityChange);
     playerArt.on('video:pause', saveCurrentProgress);
+    const closePlayerButton = document.getElementById('close-player-btn');
+    const externalPlayerButton = document.getElementById('external-player-btn');
+    externalPlayerButton?.addEventListener('click', openCurrentInExternalPlayer);
     playerArt.on('destroy', () => {
         removeResumeListeners();
         clearInterval(progressInterval);
         document.removeEventListener('visibilitychange', onVisibilityChange);
+        externalPlayerButton?.removeEventListener('click', openCurrentInExternalPlayer);
+        externalPlayerButton?.classList.add('hidden');
         if (saveActiveProgress === saveProgress) saveActiveProgress = null;
     });
-    const closePlayerButton = document.getElementById('close-player-btn');
-    const syncCloseButton = () => {
+    const syncPlayerButtons = () => {
         if (art !== playerArt || generation !== playbackGeneration) return;
         closePlayerButton?.classList.toggle('hidden', !playerArt.controls.show);
+        externalPlayerButton?.classList.toggle('hidden', !playerArt.controls.show);
     };
-    playerArt.on('control', syncCloseButton);
-    syncCloseButton();
+    playerArt.on('control', syncPlayerButtons);
+    syncPlayerButtons();
 
     // Auto skip when video ends
     playerArt.on('video:ended', () => {
@@ -301,7 +309,7 @@ export function startPlayer(url, name, localFileObject = null, queueUid = null, 
 
     // 1. HIDE THE NATIVE GEAR ICON IMMEDIATELY ON BOOT
     playerArt.on('ready', () => {
-        syncCloseButton();
+        syncPlayerButtons();
         // Target the actual gear button on the bottom control bar
         const gearBtn = playerArt.template.$bottom.querySelector('.art-control-setting');
         if (gearBtn) gearBtn.style.display = 'none';

@@ -110,6 +110,12 @@ async function removeFromAppLibrary(mediaIds, {
 let libraryLoadId = 0;
 let appLibraryGrid = null;
 let renderedUserId = null;
+let loadedLibraryItems = [];
+
+export function searchAppLibrary() {
+    if (renderedUserId !== appState.currentUser?.id || !appState.currentUser) return;
+    renderAppLibrary(loadedLibraryItems);
+}
 
 export async function loadAppLibrary() {
     const loadId = ++libraryLoadId;
@@ -119,6 +125,7 @@ export async function loadAppLibrary() {
     if (!list || !info) return;
 
     if (userId !== renderedUserId) {
+        loadedLibraryItems = [];
         appLibraryGrid?.destroy();
         appLibraryGrid = null;
         list.replaceChildren();
@@ -158,10 +165,12 @@ async function fetchAppLibraryData() {
             )
         `)
         .eq('user_id', userId)
-        .eq('added_via_app', true);
+        .eq('added_via_app', true)
+        .order('created_at', { ascending: false });
 
     if (error) throw error;
 
+    // Map insertion order keeps titles sorted by their most recently added source.
     const groupedLibrary = new Map();
 
     for (const row of data || []) {
@@ -210,10 +219,13 @@ async function fetchAppLibraryData() {
 }
 
 export function renderAppLibrary(items) {
+    loadedLibraryItems = items;
+    const query = document.getElementById('library-search-input')?.value.trim().toLowerCase() || '';
+    items = items.filter(item => (item.title || '').toLowerCase().includes(query));
     const list = document.getElementById('app-library-list');
     const info = document.getElementById('app-library-info-text');
     appLibraryGrid?.destroy();
-    info.textContent = 'Your library is empty.';
+    info.textContent = query ? 'No saved titles match your search.' : 'Your library is empty.';
     info.classList.toggle('hidden', items.length > 0);
 
     const torrentsByHash = new Map(appState.allTorrents.map(torrent => [torrent.hash, torrent]));

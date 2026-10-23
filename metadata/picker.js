@@ -498,6 +498,7 @@ function mapAbsoluteToTmdbRelative(absoluteEp, tmdbSeasons) {
 
 export function closePicker() {
     pickerGeneration++;
+    closeEpisodeMenus();
     pickerHeaderListeners?.abort();
     document.getElementById('file-picker').classList.add('hidden');
 }
@@ -505,6 +506,11 @@ export function closePicker() {
 
 //#region UI Rendering
 let pickerHeaderListeners = null;
+
+function closeEpisodeMenus() {
+    document.querySelectorAll('#file-picker .picker-episode-menu:popover-open')
+        .forEach(menu => menu.hidePopover());
+}
 
 function preparePickerQueue(torrent, franchiseGroups, cleanName, tmdbId, fallbackImage = '') {
     const typePriority = {
@@ -644,8 +650,11 @@ export async function buildRemainingTorrentQueue(torrent, tmdbId, fileId, title,
 }
 
 function renderPickerUI(torrent, franchiseGroups, listElement, cleanName, tmdbId, watchProgress) {
+    closeEpisodeMenus();
     pickerHeaderListeners?.abort();
     pickerHeaderListeners = new AbortController();
+    listElement.addEventListener('scroll', closeEpisodeMenus, { passive: true, signal: pickerHeaderListeners.signal });
+    window.addEventListener('resize', closeEpisodeMenus, { signal: pickerHeaderListeners.signal });
     const titleElement = document.getElementById('picker-title');
     const watchedCounts = watchProgress?.watched_counts || {};
     const position = Number(watchProgress?.position_seconds);
@@ -705,6 +714,7 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName, tmdbId
         actionsMenu.classList.toggle('flex', open);
     };
     actionsToggle.addEventListener('click', () => {
+        closeEpisodeMenus();
         setActionsOpen(actionsToggle.getAttribute('aria-expanded') !== 'true');
     });
     actionsMenu.addEventListener('click', event => {
@@ -799,22 +809,51 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName, tmdbId
             }
             if (queueItem.thumbnail) card.querySelector('img').src = queueItem.thumbnail;
 
+            const optionsToggle = card.querySelector('.picker-episode-options');
+            const optionsMenu = card.querySelector('.picker-episode-menu');
+            optionsMenu.id = `picker-episode-actions-${crypto.randomUUID()}`;
+            optionsToggle.setAttribute('popovertarget', optionsMenu.id);
+            optionsToggle.setAttribute('aria-controls', optionsMenu.id);
+            optionsToggle.setAttribute('aria-label', `Options for ${queueItem.title}`);
+            optionsMenu.addEventListener('beforetoggle', event => {
+                const open = event.newState === 'open';
+                optionsToggle.setAttribute('aria-expanded', String(open));
+                if (open) setActionsOpen(false);
+            });
+            optionsToggle.addEventListener('click', () => {
+                // Native popovers escape the scrolling panel; position before the next paint.
+                requestAnimationFrame(() => {
+                    if (!optionsMenu.matches(':popover-open')) return;
+                    const anchor = optionsToggle.getBoundingClientRect();
+                    const menu = optionsMenu.getBoundingClientRect();
+                    const left = Math.max(8, Math.min(anchor.right - menu.width,
+                        document.documentElement.clientWidth - menu.width - 8));
+                    const below = anchor.bottom + 6;
+                    const top = below + menu.height <= window.innerHeight - 8
+                        ? below : Math.max(8, anchor.top - menu.height - 6);
+                    optionsMenu.style.left = `${left}px`;
+                    optionsMenu.style.top = `${top}px`;
+                });
+            });
+
             card.onclick = (e) => {
                 const btn = e.target.closest('button');
 
-                if (btn?.dataset.action === 'download') {
+                if (btn?.dataset.action === 'download' || btn?.dataset.action === 'queue') {
                     e.stopPropagation();
-                    downloadFile(queueItem.tid, queueItem.fid, queueItem.fileName);
+                    if (optionsMenu.matches(':popover-open')) {
+                        optionsMenu.hidePopover();
+                        optionsToggle.focus({ preventScroll: true });
+                    }
+                    if (btn.dataset.action === 'download') {
+                        downloadFile(queueItem.tid, queueItem.fid, queueItem.fileName);
+                    } else {
+                        addToQueue(queueItem);
+                    }
                     return;
                 }
 
-                if (btn?.dataset.action === 'queue') {
-                    e.stopPropagation();
-                    addToQueue(queueItem);
-                    return;
-                }
-
-                if (btn) return;
+                if (btn || e.target.closest('.picker-episode-menu')) return;
 
                 // Start from the clicked episode; all remaining episodes in this season + next seasons are queued
                 if (activeGroupKey !== groupKey) stageGroup(groupKey);
@@ -835,6 +874,7 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName, tmdbId
         franchiseGroups[seasonGroups.get(a)[0]].seasonOrder - franchiseGroups[seasonGroups.get(b)[0]].seasonOrder);
 
     const renderSeason = (seasonKey) => {
+        closeEpisodeMenus();
         listElement.replaceChildren();
         listElement.scrollTop = 0;
         const sources = seasonSources.get(seasonKey);

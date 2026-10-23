@@ -13,14 +13,35 @@ function clearHomeRecommendations(root) {
     root.replaceChildren();
 }
 
-export function renderHomeRecommendations(root, recommendations) {
+function createHomeStatus(message) {
+    const status = document.createElement('p');
+    status.className = 'home-empty-state text-sm text-slate-400';
+    status.setAttribute('role', 'status');
+    status.textContent = message;
+    return status;
+}
+
+export function renderHomeRecommendations(root, recommendations, message = null) {
     clearHomeRecommendations(root);
     initGlobalDrag();
     initGlobalClickListener();
-    root.hidden = true;
+    root.hidden = false;
     for (const type of ['movie', 'tv']) {
         const items = (recommendations[type] || []).map(item => formatCatalogItem(item, type));
-        if (!items.length) continue;
+        if (!items.length) {
+            const section = document.createElement('section');
+            section.className = 'catalog-section';
+            const heading = document.createElement('h2');
+            heading.className = 'mb-4 text-white';
+            heading.id = `home-recommended-${type}-heading`;
+            heading.textContent = type === 'movie' ? 'Recommended movies' : 'Recommended series';
+            section.setAttribute('aria-labelledby', heading.id);
+            section.append(heading, createHomeStatus(message || (type === 'movie'
+                ? 'Add movies to your library to discover your next favourite.'
+                : 'Add series to your library to find your next binge-worthy show.')));
+            root.appendChild(section);
+            continue;
+        }
         const containerId = `home-recommended-${type}-row`;
         const catalog = {
             containerId, type, title: type === 'movie' ? 'Recommended movies' : 'Recommended series',
@@ -37,13 +58,7 @@ export function renderHomeRecommendations(root, recommendations) {
 }
 
 export function renderHomeRecommendationsMessage(root, message) {
-    clearHomeRecommendations(root);
-    root.hidden = false;
-    const status = document.createElement('p');
-    status.className = 'text-sm text-slate-400';
-    status.setAttribute('role', 'status');
-    status.textContent = message;
-    root.appendChild(status);
+    renderHomeRecommendations(root, {}, message);
 }
 
 function cloneTemplate(id) {
@@ -243,9 +258,13 @@ function createWatchProgressCard(item, onPlay, onHide) {
 }
 
 export function renderWatchProgress(root, items, onPlay, { onHide, onRestore, hiddenCount = 0 } = {}) {
-    root.hidden = items.length === 0 && hiddenCount === 0;
+    root.hidden = false;
     const row = root.querySelector('#home-watch-row');
-    root.querySelector('.home-watch-message').classList.add('hidden');
+    const status = root.querySelector('.home-watch-message');
+    status.textContent = hiddenCount > 0
+        ? 'Your recently watched titles are hidden. Select Show hidden to bring them back.'
+        : 'Start watching to track your movies and series.';
+    status.classList.toggle('hidden', items.length > 0);
     root.querySelector('.home-watch-header').classList.remove('hidden');
     const restoreButton = root.querySelector('.home-watch-restore');
     restoreButton.classList.toggle('hidden', hiddenCount === 0);
@@ -256,7 +275,8 @@ export function renderWatchProgress(root, items, onPlay, { onHide, onRestore, hi
 
 export function renderWatchProgressMessage(root, message) {
     root.hidden = false;
-    root.querySelector('.home-watch-header').classList.add('hidden');
+    root.querySelector('.home-watch-header').classList.remove('hidden');
+    root.querySelector('.home-watch-restore').classList.add('hidden');
     const row = root.querySelector('#home-watch-row');
     row.classList.add('hidden');
     row.replaceChildren();

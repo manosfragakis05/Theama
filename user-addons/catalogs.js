@@ -115,8 +115,14 @@ export async function fetchTMDBEndpoint(endpoint, page = 1, signal) {
     return await response.json();
 }
 
+// Ignore responses from a search that has since been replaced or cleared.
+let searchVersion = 0;
+
 // Global search
 export async function searchTMDB(query) {
+    const version = ++searchVersion;
+    const isCurrent = () => version === searchVersion
+        && document.getElementById('discover-search-input')?.value.trim().toLowerCase() === query;
     const containerId = 'global-search-grid';
     const container = document.getElementById('global-search-results');
     const row = document.getElementById(containerId);
@@ -137,6 +143,8 @@ export async function searchTMDB(query) {
     try {
         const endpoint = `search/multi?query=${encodeURIComponent(query)}&include_adult=false`;
         const data = await fetchTMDBEndpoint(endpoint, 1);
+
+        if (!isCurrent()) return;
 
         row.replaceChildren();
 
@@ -167,11 +175,12 @@ export async function searchTMDB(query) {
         renderRow(prunedItems, state);
 
     } catch (e) {
+        if (!isCurrent()) return;
         console.error("Search failed:", e);
         showRowMessage(containerId, "Error");
         state.hasMore = false;
     } finally {
-        state.loading = false;
+        if (version === searchVersion) state.loading = false;
     }
 }
 //#endregion

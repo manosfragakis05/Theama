@@ -2,6 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+    color-scheme: dark;
+    --ui-canvas: #10131b;
+    --ui-surface: #181d28;
+    --ui-border: rgba(160, 171, 189, 0.12);
+    --ui-accent: #93bbff;
+}
+
 html,
 body {
     width: 100%;
@@ -53,7 +61,7 @@ select::picker-icon {
 
 /* 2. Style the popup menu box */
 ::picker(select) {
-    background-color: #0f172a;
+    background-color: var(--ui-canvas);
     /* slate-900 */
     border: 1px solid #334155;
     /* slate-700 */
@@ -91,7 +99,7 @@ option:hover {
     height: 100%;
 
     /* Completely covers the native broken image icon */
-    background-color: #1e293b;
+    background-color: var(--ui-surface);
 
     /* The color of your title text */
     color: #e2e8f0;
@@ -290,4 +298,362 @@ option:hover {
 
 .custom-toggle-sm:checked::after {
     transform: translateX(1.25rem);
+}
+
+/* Shared app chrome. Keep the existing page structure and media interactions. */
+body {
+    -webkit-font-smoothing: antialiased;
+}
+
+#app-layout :is(button, select):focus-visible {
+    outline: 2px solid var(--ui-accent);
+    outline-offset: 3px;
+}
+
+.sidebar-brand {
+    padding: max(28px, env(safe-area-inset-top)) 24px 12px;
+}
+
+#desktop-sidebar.collapsed .sidebar-brand {
+    padding-inline: 0;
+    text-align: center;
+}
+
+.page-search {
+    flex-shrink: 0;
+}
+
+#library-page > .page-search {
+    margin-bottom: 24px;
+}
+
+#home-logo-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 23px;
+    font-weight: 700;
+    letter-spacing: -0.9px;
+}
+
+.brand-mark {
+    flex-shrink: 0;
+    display: block;
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+    border-radius: 11px;
+}
+
+#library-search-input,
+#discover-search-input {
+    min-height: 44px;
+    background: var(--ui-surface);
+    border-color: var(--ui-border);
+    border-radius: 14px;
+    box-shadow: none;
+}
+
+#library-search-input::placeholder,
+#discover-search-input::placeholder {
+    color: #a0abbd;
+}
+
+#library-search-input:focus,
+#discover-search-input:focus {
+    border-color: rgba(147, 187, 255, 0.6);
+    --tw-ring-color: rgba(147, 187, 255, 0.12);
+}
+
+#desktop-sidebar {
+    width: 232px;
+    background: var(--ui-canvas);
+    border-color: var(--ui-border);
+}
+
+#desktop-sidebar .nav-link {
+    position: relative;
+    width: calc(100% - 24px);
+    margin-inline: 12px;
+    padding: 13px 16px;
+    gap: 14px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 550;
+    transition: color 160ms ease, background-color 160ms ease;
+}
+
+#desktop-sidebar .nav-link svg {
+    width: 21px;
+    height: 21px;
+}
+
+#desktop-sidebar .nav-link.active {
+    color: #c4d8ff;
+    background: rgba(59, 130, 246, 0.13);
+    box-shadow: inset 0 0 0 1px rgba(147, 187, 255, 0.1);
+}
+
+#desktop-sidebar .nav-link.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    width: 3px;
+    height: 18px;
+    border-radius: 4px;
+    background: var(--ui-accent);
+}
+
+#desktop-sidebar .sidebar-footer {
+    border-color: var(--ui-border);
+}
+
+#desktop-sidebar .following-title {
+    letter-spacing: 0.12em;
+    font-size: 10px;
+}
+
+#app-main {
+    background: #121620;
+}
+
+.catalog-section > h2,
+.home-watch-heading {
+    font-size: 20px;
+    font-weight: 650;
+    letter-spacing: -0.45px;
+}
+
+.catalog-section > h2 {
+    justify-content: space-between;
+    gap: 12px;
+    padding-left: 0;
+}
+
+.catalog-show-options {
+    flex-shrink: 0;
+    font-size: 12px;
+    font-weight: 500;
+    color: #a0abbd;
+}
+
+#discover-page .catalog-section > h2 {
+    flex-wrap: wrap;
+    row-gap: 8px;
+}
+
+#discover-page .catalog-show-options {
+    margin-left: auto;
+    font-size: 14px;
+}
+
+.catalog-row {
+    padding-left: 0;
+    padding-bottom: 8px;
+}
+
+.poster-card > div:first-child,
+.library-card > div:first-child {
+    border-radius: 14px;
+    border-color: var(--ui-border);
+    box-shadow: 0 4px 12px rgb(0 0 0 / 12%);
+}
+
+.poster-card:hover,
+.library-card:hover {
+    /* A small lift keeps neighbouring titles stable and avoids clipped posters. */
+    transform: translateY(-3px);
+}
+
+.poster-card:hover > div:first-child,
+.library-card:hover > div:first-child {
+    border-color: rgba(147, 187, 255, 0.5);
+    box-shadow: 0 8px 18px rgb(0 0 0 / 25%);
+}
+
+.poster-title,
+.library-title {
+    font-size: 13px;
+    line-height: 1.45;
+    font-weight: 550;
+}
+
+.poster-year {
+    font-size: 11px;
+}
+
+.home-watch-card {
+    background: var(--ui-surface);
+    border-color: var(--ui-border);
+    border-radius: 16px;
+}
+
+.home-empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 128px;
+    padding: 28px;
+    text-align: center;
+    line-height: 1.6;
+    background: rgba(28, 33, 45, 0.4);
+    border: 1px dashed var(--ui-border);
+    border-radius: 16px;
+}
+
+.home-empty-state.hidden {
+    display: none;
+}
+
+#library-page [aria-label="Library sections"] {
+    width: fit-content;
+    padding: 5px;
+    gap: 4px;
+    border: 1px solid var(--ui-border);
+    border-radius: 14px;
+    background: var(--ui-canvas);
+}
+
+#library-page [data-library-tab] {
+    min-height: 42px;
+    font-size: 14px;
+    font-weight: 550;
+    border-radius: 9px;
+}
+
+#library-page [data-library-tab][aria-selected="true"] {
+    background: #293449;
+    color: #dbe8ff;
+    box-shadow: 0 2px 6px rgb(0 0 0 / 15%);
+}
+
+#discover-filters > div {
+    background: var(--ui-surface);
+    border-color: var(--ui-border);
+    box-shadow: none;
+    border-radius: 14px;
+}
+
+.home-hero-cta {
+    box-shadow: 0 4px 16px rgb(0 0 0 / 15%);
+    transition: background-color 160ms ease;
+}
+
+.home-hero-slide:has(.home-hero-details:hover) .home-hero-cta,
+.home-hero-slide:has(.home-hero-details:focus-visible) .home-hero-cta {
+    background: #dbe8ff;
+}
+
+.home-hero-controls {
+    border-top: 0;
+}
+
+.home-hero-previous,
+.home-hero-next {
+    width: 44px;
+    border-radius: 50%;
+    backdrop-filter: blur(12px);
+}
+
+@media (min-width: 768px) {
+    .page-view {
+        padding: max(36px, env(safe-area-inset-top)) clamp(24px, 3vw, 48px) 40px;
+    }
+
+    #home-page {
+        padding: 0 0 40px;
+    }
+
+    #home-hero {
+        min-height: clamp(32rem, 66svh, 44rem);
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+    }
+
+    .home-hero-slide > div.relative {
+        padding-left: clamp(24px, 3vw, 48px);
+    }
+
+    .home-hero-controls {
+        left: clamp(24px, 3vw, 48px);
+        right: clamp(24px, 3vw, 48px);
+        bottom: 24px;
+    }
+
+    #home-watch-progress,
+    #home-recommendations {
+        padding: 24px clamp(24px, 3vw, 48px) 0;
+    }
+}
+
+#home-hero::after {
+    content: '';
+    position: absolute;
+    inset: auto 0 0;
+    height: 120px;
+    background: linear-gradient(transparent, #121620);
+    pointer-events: none;
+}
+
+@media (max-width: 767px) {
+    #player-wrapper .art-control-external-player {
+        display: none;
+    }
+
+    .page-view {
+        padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+    }
+
+    #library-page:has(#library-panel:not(.hidden)) {
+        flex-shrink: 0;
+        padding-bottom: calc(7rem + env(safe-area-inset-bottom));
+    }
+
+    #mobile-nav {
+        padding: 6px 8px max(8px, env(safe-area-inset-bottom));
+        background: rgba(16, 19, 27, 0.94);
+        border-color: var(--ui-border);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+    }
+
+    #mobile-nav > div {
+        height: 56px;
+        gap: 6px;
+    }
+
+    #mobile-nav .nav-link {
+        border-radius: 12px;
+        font-size: 10px;
+        font-weight: 550;
+        gap: 5px;
+    }
+
+    #mobile-nav .nav-link.active {
+        background: rgba(59, 130, 246, 0.12);
+        color: #b5d0ff;
+    }
+
+    #mobile-nav .nav-link svg {
+        width: 21px;
+        height: 21px;
+    }
+
+    .home-hero-title {
+        font-size: clamp(2rem, 8vw, 3.5rem);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #app-layout *,
+    #app-layout *::before {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+    }
+
+    .poster-card:hover,
+    .library-card:hover {
+        transform: none;
+    }
 }

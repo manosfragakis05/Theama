@@ -17,8 +17,8 @@ export default defineConfig({
                 "description": "Your cloud media, unblocked.",
                 "start_url": "/",
                 "display": "standalone",
-                "background_color": "#0f172a",
-                "theme_color": "#0f172a",
+                "background_color": "#10131b",
+                "theme_color": "#10131b",
                 "orientation": "any",
                 "icons": [
                     {

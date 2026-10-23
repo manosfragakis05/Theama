@@ -227,7 +227,17 @@ export function removeFromQueue(uid) {
 }
 
 export function clearQueue() {
-    queueState = emptyQueue();
+    // Keep the active selection so clearing the queue does not stop playback.
+    const current = ['loading', 'playing'].includes(queueState.playbackStatus)
+        ? queueState.entries.find(entry => entry.item.uid === queueState.currentUid)
+        : null;
+    if (current) {
+        queueState.entries = [current];
+        queueState.nextIndex = 1;
+        queueState.isShuffled = false;
+    } else {
+        queueState = emptyQueue();
+    }
     saveQueue();
 }
 

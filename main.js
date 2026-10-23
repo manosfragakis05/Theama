@@ -19,7 +19,7 @@ import {
     sendPasswordResetEmail
 } from './user-data/db.js';
 
-import { goHome, toggleProfile, switchTab, handleSearch, toggleSidebar, updateProfileDropdown } from './utils/ui.js';
+import { goHome, switchTab, handleSearch, toggleSidebar } from './utils/ui.js';
 
 import { deleteTorrent, initializeLibraryTabs } from './pages/library.js';
 import { loadAppLibrary } from './pages/app-library.js';
@@ -69,12 +69,15 @@ function setupStaticEventListeners() {
         accountForm.addEventListener('submit', changeAuthState);
     }
 
-    // Attach pc and mobile listeners
-    const searchInput = document.getElementById('search-input');
+    // Each page owns its search; submitting must not reload the app.
+    document.querySelectorAll('.page-search').forEach(form => {
+        form.addEventListener('submit', event => event.preventDefault());
+    });
+    const searchInput = document.getElementById('library-search-input');
     if (searchInput) {
         searchInput.addEventListener('input', handleSearch);
     }
-    const mobileSearch = document.getElementById('search-input-mobile');
+    const mobileSearch = document.getElementById('discover-search-input');
     if (mobileSearch) {
         mobileSearch.addEventListener('input', handleSearch);
     }
@@ -118,7 +121,6 @@ function setupStaticEventListeners() {
 
 
     // UI.js
-    document.getElementById('profile-dropdown-login')?.addEventListener('click', () => switchTab('settings-page'));
     document.getElementById('profile-settings-btn')?.addEventListener('click', () => switchTab('settings-page'));
     let settingsCreditsScrollTop = 0;
     document.getElementById('open-licenses-credits-btn')?.addEventListener('click', () => {
@@ -133,11 +135,9 @@ function setupStaticEventListeners() {
         document.getElementById('app-main').scrollTop = settingsCreditsScrollTop;
         document.getElementById('open-licenses-credits-btn').focus({ preventScroll: true });
     });
-    document.getElementById('header-profile-toggle')?.addEventListener('click', toggleProfile);
     document.getElementById('home-logo-btn')?.addEventListener('click', goHome);
     document.getElementById('sidebar-collapse-btn')?.addEventListener('click', toggleSidebar);
 
-    document.getElementById('dropdown-profile-btn')?.addEventListener('click', () => switchTab('profile-page'));
 
     //Network.js
     document.getElementById('profile-follow-btn')?.addEventListener('click', async event => {
@@ -182,7 +182,6 @@ function setupStaticEventListeners() {
     document.getElementById('submit-new-list-btn')?.addEventListener('click', createNewList);
 
     //Db.js
-    document.getElementById('dropdown-logout-btn')?.addEventListener('click', logOutUser);
     document.getElementById('settings-logout-btn')?.addEventListener('click', logOutUser);
     document.getElementById('forgot-password-btn')?.addEventListener('click', sendPasswordResetEmail);
     document.getElementById('toggle-auth-mode-btn')?.addEventListener('click', toggleAuthMode);
@@ -276,7 +275,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let appBooted = false;
 
     window.addEventListener('auth-state-changed', () => {
-        updateProfileDropdown();
         const user = appState.currentUser;
         const authKey = JSON.stringify([user?.id, user?.email, user?.user_metadata?.username]);
         if (authKey === lastAuthKey) return;

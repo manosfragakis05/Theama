@@ -6,7 +6,7 @@
     <meta name="description" content="Theama — a polished media library and discovery interface.">
     <meta name="viewport"
         content="width=device-width, height=device-height, initial-scale=1, shrink-to-fit=no, user-scalable=no, viewport-fit=cover">
-    <meta name="theme-color" content="#0f172a">
+    <meta name="theme-color" content="#10131b">
 
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -109,76 +109,18 @@
 
     <div id="app-layout" class="flex flex-col w-full h-full overflow-hidden">
 
-        <header id="app-header"
-            class="hidden md:flex items-center justify-between px-6 shrink-0 w-full z-40 bg-slate-900/95 backdrop-blur border-b border-slate-800 min-h-[72px] pt-[env(safe-area-inset-top)]">
-            <div class="flex items-center gap-4 shrink-0">
-                <button id="home-logo-btn" class="text-2xl font-extrabold text-white">Theama</button>
-            </div>
-
-            <div class="flex-1 max-w-md px-4 z-10">
-                <form class="relative w-full">
-                    <input id="search-input" type="text" placeholder="Search or Filter.."
-                        class="w-full bg-slate-800 border border-slate-700 text-white pl-10 pr-4 py-2.5 rounded-xl text-sm focus:ring-2 focus:ring-blue-600 outline-none transition-all shadow-inner">
-
-                    <svg class="absolute left-3 top-3 w-5 h-5 text-slate-400 pointer-events-none" fill="none"
-                        stroke="currentColor">
-                        <use href="#icon-search"></use>
-                    </svg>
-
-                </form>
-            </div>
-
-            <div class="relative z-20 shrink-0 flex items-center justify-end">
-                <button id="header-profile-toggle"
-                    class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold border-2 border-slate-800 focus:outline-none hover:bg-blue-500 transition shadow-lg shadow-blue-900/20">
-                    <svg class="absolute w-5 h-5 pointer-events-none" fill="none" stroke="currentColor">
-                        <use href="#icon-profile"></use>
-                    </svg>
-                </button>
-
-                <div id="profile-dropdown"
-                    class="hidden absolute top-full right-0 mt-2 w-64 bg-slate-800 rounded-xl shadow-2xl border border-slate-700 z-50 p-4">
-
-                    <!-- Logged In State -->
-                    <div id="profile-logged-in" class="hidden">
-                        <div class="mb-4">
-                            <p class="font-bold text-white text-lg truncate">Welcome <span
-                                    id="dropdown-username"></span>!
-                            </p>
-                            <p id="dropdown-email" class="text-xs text-slate-400 truncate"></p>
-                        </div>
-                        <hr class="border-slate-700 my-2">
-                        <button id="dropdown-profile-btn"
-                            class="w-full text-left px-3 py-2 hover:bg-slate-700 rounded-lg text-sm text-slate-300 transition-colors">
-                            Public Profile
-                        </button>
-                        <button id="dropdown-logout-btn"
-                            class="w-full text-left px-3 py-2 hover:bg-red-500/20 hover:text-red-400 rounded-lg text-sm text-slate-400 transition-colors mt-1">
-                            Log Out
-                        </button>
-                    </div>
-
-                    <!-- Logged Out State -->
-                    <div id="profile-logged-out" class="hidden">
-                        <div class="mb-4">
-                            <p class="font-bold text-white text-lg">Guest</p>
-                            <p class="text-xs text-slate-400">Not logged in</p>
-                        </div>
-                        <button id="profile-dropdown-login"
-                            class="w-full text-center bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold transition-all shadow-lg">
-                            Log In / Sign Up
-                        </button>
-                    </div>
-
-                </div>
-            </div>
-        </header>
-
         <div id="main-wrapper" class="flex flex-1 min-h-0 overflow-hidden">
 
             <!--PC-->
-            <nav id="desktop-sidebar"
+            <nav id="desktop-sidebar" aria-label="Main navigation"
                 class="hidden md:flex flex-col w-64 h-full bg-slate-900/95 border-r border-slate-800 z-30 shrink-0 transition-[width] duration-300">
+
+                <div class="sidebar-brand shrink-0">
+                    <button id="home-logo-btn" class="text-2xl font-extrabold text-white" aria-label="Theama home">
+                        <img class="brand-mark" src="/pwa-icon.png" width="40" height="40" alt="">
+                        <span class="sidebar-text">Theama</span>
+                    </button>
+                </div>
 
                 <div class="flex-1 min-h-0 flex flex-col mt-4">
 
@@ -244,8 +186,8 @@
                     </div>
                 </div>
 
-                <div class="sidebar-footer mt-auto border-t border-slate-800 p-4 flex justify-end shrink-0">
-                    <button id="sidebar-collapse-btn"
+                <div class="sidebar-footer mt-auto border-t border-slate-800 p-4 flex items-center justify-end shrink-0">
+                    <button id="sidebar-collapse-btn" aria-label="Toggle sidebar" title="Toggle sidebar"
                         class="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-all focus:outline-none">
                         <svg class="w-5 h-5 rotate-90 transition-transform duration-300" fill="none"
                             stroke="currentColor" viewBox="0 0 24 24">
@@ -262,6 +204,14 @@
                     class="hidden flex-none w-full bg-black pt-[env(safe-area-inset-top)] shadow-2xl transition-all duration-300 z-30 relative">
                     <div class="max-w-5xl mx-auto relative">
                         <div class="artplayer-app w-full aspect-video"></div>
+                        <button id="external-player-btn" type="button" aria-label="Open in external player" title="Open in external player"
+                            class="hidden absolute top-3 right-14 z-40 flex h-11 w-11 items-center justify-center text-white drop-shadow-md transition-colors hover:text-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 md:!hidden">
+                            <svg class="h-6 w-6" aria-hidden="true" fill="none" stroke="currentColor"
+                                viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                            </svg>
+                        </button>
                         <button id="close-player-btn" type="button" aria-label="Close player" title="Close player"
                             class="hidden absolute top-3 right-3 z-40 flex h-11 w-11 items-center justify-center text-white drop-shadow-md transition-colors hover:text-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
                             <svg class="h-6 w-6" aria-hidden="true" fill="none" stroke="currentColor"
@@ -326,12 +276,12 @@
                         </div>
                     </section>
                     <section id="home-watch-progress" class="min-w-0 px-4 pt-8 md:px-0" aria-labelledby="home-watch-heading"
-                        aria-busy="false" hidden>
+                        aria-busy="false">
                         <div class="home-watch-header mb-4 flex items-center justify-between gap-3">
                             <h2 id="home-watch-heading" class="home-watch-heading text-xl font-bold">Recently watched</h2>
                             <button type="button" class="home-watch-restore hidden shrink-0 rounded px-2 py-1 text-xs text-slate-400 hover:text-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400">Show hidden</button>
                         </div>
-                        <p class="home-watch-message hidden text-sm text-slate-400" role="status"></p>
+                        <p class="home-watch-message home-empty-state text-sm text-slate-400" role="status">Start watching to track your movies and series.</p>
                         <div id="home-watch-row" class="draggable-row scrollbar-hide flex gap-4 overflow-x-auto pb-3 cursor-grab"
                             tabindex="0" role="list" aria-labelledby="home-watch-heading"></div>
                     </section>
@@ -340,6 +290,14 @@
                 </div>
 
                 <div id="library-page" class="page-view hidden min-h-[50vh]">
+                    <div class="library-heading mb-7">
+                        <h1 class="text-3xl md:text-4xl font-bold text-white tracking-tight">Your library</h1>
+                        <p class="text-sm text-slate-400 mt-2">Your favourites, saved titles, and cloud collection.</p>
+                    </div>
+                    <form role="search" class="page-search relative w-full max-w-xl" aria-label="Search your library">
+                        <input id="library-search-input" type="search" placeholder="Search your library" aria-label="Search your library" autocomplete="off" class="w-full bg-slate-800 border border-slate-700 text-white pl-10 pr-4 py-3 rounded-xl text-sm focus:ring-2 focus:ring-blue-600 outline-none transition-all">
+                        <svg class="absolute left-3 top-3.5 w-5 h-5 text-slate-400 pointer-events-none" fill="none" stroke="currentColor" aria-hidden="true"><use href="#icon-search"></use></svg>
+                    </form>
                     <div aria-label="Library sections" class="flex gap-2 mb-6 border-b border-slate-800 pb-3">
                         <button id="library-tab" type="button" aria-selected="false" tabindex="-1"
                             aria-controls="library-panel" data-library-tab="library-panel"
@@ -394,24 +352,17 @@
                 </div>
 
                 <div id="discover-page" class="page-view hidden flex flex-col gap-10">
-                    <!-- Mobile-Only Search Bar -->
-                    <div class="md:hidden w-full mb-2">
-                        <form class="relative w-full">
-                            <input id="search-input-mobile" type="text" placeholder="Search..."
-                                class="w-full bg-slate-800 border border-slate-700 text-white pl-10 pr-4 py-3 rounded-xl text-sm focus:ring-2 focus:ring-blue-600 outline-none transition-all shadow-inner">
-                            <svg class="absolute left-3 top-3.5 w-5 h-5 text-slate-400 pointer-events-none" fill="none"
-                                stroke="currentColor">
-                                <use href="#icon-search"></use>
-                            </svg>
+                    <div class="space-y-5">
+                        <h1 class="text-3xl md:text-4xl font-bold text-white tracking-tight">Discover</h1>
+                        <form role="search" class="page-search relative w-full max-w-xl" aria-label="Search movies and series">
+                            <input id="discover-search-input" type="search" placeholder="Search movies and series" aria-label="Search movies and series" autocomplete="off" class="w-full bg-slate-800 border border-slate-700 text-white pl-10 pr-4 py-3 rounded-xl text-sm focus:ring-2 focus:ring-blue-600 outline-none transition-all">
+                            <svg class="absolute left-3 top-3.5 w-5 h-5 text-slate-400 pointer-events-none" fill="none" stroke="currentColor" aria-hidden="true"><use href="#icon-search"></use></svg>
                         </form>
                     </div>
 
                     <!-- Discover Header & Filter Row -->
                     <div class="flex flex-col md:flex-row md:items-center gap-4 md:gap-6">
-                        <h1
-                            class="hidden md:block text-3xl md:text-4xl font-extrabold text-white tracking-tight shrink-0">
-                            Discover
-                        </h1>
+
 
                         <!-- Independent Dropdowns Container -->
                         <div id="discover-filters" class="flex flex-col sm:flex-row gap-3.5 w-full sm:w-auto">
@@ -974,7 +925,7 @@
                         class="w-full flex flex-col items-center justify-center opacity-60 hover:opacity-100 transition-opacity select-none">
                         <span
                             class="text-[10px] font-bold tracking-widest uppercase text-slate-500 mb-0.5">Theama</span>
-                        <span id="app-version-text" class="text-[10px] font-mono text-slate-600">v0.5.9</span>
+                        <span id="app-version-text" class="text-[10px] font-mono text-slate-600">v0.6.0</span>
                     </div>
                 </div>
 
@@ -1102,7 +1053,7 @@
         </div>
 
         <!-- Mobile bottom nav bar -->
-        <nav
+        <nav id="mobile-nav" aria-label="Mobile navigation"
             class="md:hidden fixed bottom-0 left-0 w-full bg-slate-800/25 backdrop-blur border-t border-slate-800 z-[100] touch-none select-none pb-[calc(env(safe-area-inset-bottom)-23px)]">
 
             <div class="flex items-center justify-around h-16">
@@ -1173,7 +1124,7 @@
             </div>
 
             <div id="picker-list"
-                class="flex-1 overflow-y-auto p-4 sm:p-6 grid grid-cols-2 md:grid-cols-3 gap-4 auto-rows-max content-start custom-scrollbar overscroll-contain bg-slate-900/50">
+                class="flex-1 overflow-y-auto p-4 sm:p-6 grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 auto-rows-max content-start custom-scrollbar overscroll-contain bg-slate-900/50">
             </div>
 
         </div>
@@ -1219,7 +1170,7 @@
 
         <div id="detail-backdrop" class="relative h-[45vh] md:h-[65vh] w-full bg-cover bg-[center_top_20%]">
             <div
-                class="absolute bottom-0 left-0 w-full h-[50%] bg-gradient-to-t from-[#0f172a] via-[#0f172a]/60 to-transparent">
+                class="absolute bottom-0 left-0 w-full h-[50%] bg-gradient-to-t from-slate-900 via-slate-900/60 to-transparent">
             </div>
         </div>
 
@@ -1387,6 +1338,10 @@
                 </div>
                 <h1 class="home-hero-title mb-4 text-balance text-[clamp(2rem,4.5vw,4rem)] font-extrabold leading-[1.08] tracking-[-.035em] text-white [overflow-wrap:anywhere] [text-shadow:0_2px_24px_rgb(0_0_0_/_30%)]"></h1>
                 <p class="home-hero-overview line-clamp-3 max-w-[35rem] text-sm leading-relaxed text-slate-300 md:text-[15px]"></p>
+                <span class="home-hero-cta mt-6 inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-slate-950" aria-hidden="true">
+                    Explore title
+                    <svg class="h-4 w-4 -rotate-90" fill="none" stroke="currentColor"><use href="#icon-arrow"></use></svg>
+                </span>
             </div>
             <button type="button" class="home-hero-details absolute inset-0 z-10 cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-blue-400"></button>
         </article>
@@ -1420,13 +1375,13 @@
     </template>
 
     <template id="picker-episode-card-template">
-        <div class="relative flex w-full flex-col overflow-hidden rounded-xl border-2 border-slate-700 bg-slate-800 cursor-pointer transition-all hover:border-blue-500 group select-none">
-            <div class="relative aspect-video overflow-hidden border-b border-slate-700 bg-slate-900">
-                <img loading="lazy" draggable="false" class="h-full w-full object-cover opacity-60 transition-opacity group-hover:opacity-40" alt="">
+        <div class="relative flex min-h-24 w-full min-w-0 overflow-hidden rounded-xl border border-slate-700/50 bg-slate-800/40 cursor-pointer transition-all hover:border-blue-500 group select-none md:min-h-0 md:flex-col md:border-2 md:border-slate-700 md:bg-slate-800">
+            <div class="relative w-24 shrink-0 self-stretch overflow-hidden border-r border-slate-700 bg-slate-900 sm:w-28 md:aspect-video md:w-full md:border-r-0 md:border-b">
+                <img loading="lazy" draggable="false" class="absolute inset-0 h-full w-full object-cover md:opacity-60 transition-opacity md:group-hover:opacity-40" alt="">
                 <span class="picker-episode-watched pointer-events-none absolute right-2 top-2 z-20 hidden h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg flex" role="img" aria-label="Watched" title="Watched">
                     <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></svg>
                 </span>
-                <div class="absolute inset-0 z-10 flex items-center justify-center gap-3 opacity-0 transition-opacity group-hover:opacity-100">
+                <div class="absolute inset-0 z-10 hidden items-center justify-center gap-3 opacity-0 transition-opacity group-hover:opacity-100 md:flex">
                     <button type="button" data-action="download" class="flex h-10 w-10 items-center justify-center rounded-full border border-slate-600 bg-slate-800/90 text-white shadow-xl backdrop-blur-md transition-colors hover:bg-slate-700" title="Download to Device">
                         <svg class="h-[22px] w-[22px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                     </button>
@@ -1434,9 +1389,9 @@
                         <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
                     </button>
                 </div>
-                <div class="picker-episode-size pointer-events-none absolute bottom-2 right-2 rounded bg-black/80 px-2 py-1 text-[11px] font-bold text-white"></div>
+                <div class="picker-episode-size pointer-events-none absolute bottom-1 right-1 rounded bg-black/80 px-1.5 py-0.5 text-[9px] font-bold text-white md:bottom-2 md:right-2 md:px-2 md:py-1 md:text-[11px]"></div>
             </div>
-            <div class="pointer-events-none flex flex-col gap-1 p-3">
+            <div class="pointer-events-none flex min-w-0 flex-1 flex-col justify-center gap-1 px-3 py-2 md:p-3">
                 <div class="picker-episode-progress mb-1 hidden h-1 w-full overflow-hidden rounded-full bg-slate-700" role="progressbar" aria-label="Playback progress" aria-valuemin="0" aria-valuemax="100">
                     <div class="picker-episode-progress-fill h-full bg-blue-500"></div>
                 </div>
@@ -1444,7 +1399,26 @@
                     <span class="picker-episode-badge w-max rounded px-2 py-0.5 text-[10px] font-bold text-white"></span>
                     <span class="picker-episode-extended hidden w-max rounded bg-rose-600 px-2 py-0.5 text-[10px] font-bold text-white">Extended</span>
                 </div>
-                <p class="picker-episode-title mt-1 line-clamp-2 text-xs text-slate-300 group-hover:text-white"></p>
+                <p class="picker-episode-title mt-1 line-clamp-2 text-xs font-medium leading-tight text-slate-200 group-hover:text-white md:font-normal md:leading-4 md:text-slate-300"></p>
+            </div>
+            <div class="flex shrink-0 items-center pr-1 md:hidden">
+                <button type="button" class="picker-episode-options flex h-11 w-11 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-700/40 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" aria-label="Episode options" aria-expanded="false">
+                    <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+                        <circle cx="12" cy="5" r="1.75"></circle>
+                        <circle cx="12" cy="12" r="1.75"></circle>
+                        <circle cx="12" cy="19" r="1.75"></circle>
+                    </svg>
+                </button>
+                <div popover="auto" class="picker-episode-menu fixed inset-auto m-0 w-48 rounded-xl border border-slate-700 bg-slate-900 p-1.5 text-slate-200 shadow-xl md:!hidden" role="group" aria-label="Episode actions">
+                    <button type="button" data-action="download" class="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
+                        <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                        Download
+                    </button>
+                    <button type="button" data-action="queue" class="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
+                        <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+                        Queue episode
+                    </button>
+                </div>
             </div>
         </div>
     </template>
@@ -1713,7 +1687,7 @@
     </template>
 
     <template id="library-card-template">
-        <div class="relative flex-col cursor-pointer transition-transform hover:scale-105 select-none group">
+        <div class="library-card relative flex-col cursor-pointer transition-transform hover:scale-105 select-none group">
             <div
                 class="relative w-full aspect-[2/3] bg-slate-800 rounded-lg shadow-lg overflow-hidden border border-slate-700/50">
                 <img class="library-poster absolute inset-0 w-full h-full object-cover hidden" loading="lazy"

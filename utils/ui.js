@@ -5,8 +5,8 @@
  * ==========================================
  */
 
-import { appState, showToast } from '../services/config.js';
 import { searchLibrary } from '../pages/library.js';
+import { searchAppLibrary } from '../pages/app-library.js';
 import { stopPlayback } from '../streaming/player.js';
 import { loadDiscover, searchTMDB } from '../user-addons/catalogs.js';
 import { returnToMyProfile } from '../user-data/profile.js';
@@ -20,7 +20,6 @@ export function goHome() {
     returnToMyProfile();
     
     document.getElementById('player-wrapper').classList.add('hidden');
-    document.getElementById('search-input').value = '';
     switchTab('home-page');
 }
 
@@ -69,81 +68,23 @@ function handlePageSpecificLogic(pageId) {
     }
 }
 
-// Profile Dropdown
-export function toggleProfile(event) {
-    if (event) event.stopPropagation();
-    const menu = document.getElementById('profile-dropdown');
-    menu.classList.toggle('hidden');
-}
-
-export function updateProfileDropdown() {
-    const loggedInContainer = document.getElementById('profile-logged-in');
-    const loggedOutContainer = document.getElementById('profile-logged-out');
-
-    // Ensure elements exist before trying to modify them
-    if (!loggedInContainer || !loggedOutContainer) return;
-
-    if (appState.currentUser) {
-        // Logged In State: Update Text Values
-        const username = appState.currentUser.user_metadata?.username || 'User';
-        const email = appState.currentUser.email || '';
-
-        document.getElementById('dropdown-username').textContent = username;
-
-        const emailEl = document.getElementById('dropdown-email');
-        if (email) {
-            emailEl.textContent = email;
-            emailEl.classList.remove('hidden');
-        } else {
-            emailEl.classList.add('hidden');
-        }
-
-        // Toggle Visibility
-        loggedInContainer.classList.remove('hidden');
-        loggedOutContainer.classList.add('hidden');
-    } else {
-        // Logged Out State: Toggle Visibility
-        loggedInContainer.classList.add('hidden');
-        loggedOutContainer.classList.remove('hidden');
-    }
-}
-
-// Close profile dropdown when clicking outside
-window.addEventListener('click', function (event) {
-    if (!event.target.closest('.w-10') && !event.target.closest('#profile-dropdown')) {
-        const dropdown = document.getElementById('profile-dropdown');
-        if (dropdown) {
-            dropdown.classList.add('hidden');
-        }
-    }
-});
-
 // --- SEARCH LOGIC ---
 
 let searchTimeout = null;
 
 export function handleSearch(event) {
-    const desktopSearch = document.getElementById('search-input');
-    const mobileSearch = document.getElementById('search-input-mobile');
-
-    const rawValue = event.target.value;
-    const query = rawValue.toLowerCase().trim();
-
-    if (event.target === desktopSearch && mobileSearch) {
-        mobileSearch.value = rawValue;
-    } else if (event.target === mobileSearch && desktopSearch) {
-        desktopSearch.value = rawValue;
+    const query = event.target.value.toLowerCase().trim();
+    if (event.target.id === 'library-search-input') {
+        searchLibrary(query);
+        searchAppLibrary();
+        return;
     }
-
-    // Search library
-    searchLibrary(query);
 
     clearTimeout(searchTimeout);
 
     // 800ms debounce
     if (query.length >= 3) {
         searchTimeout = setTimeout(() => {
-            switchTab('discover-page');
             searchTMDB(query);
         }, 800);
     } else {

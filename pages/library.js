@@ -248,11 +248,7 @@ export function getMediaText(torrent, mediaInfo = parseMediaData(torrent.name)) 
 
 export async function searchLibrary(searchString) {
     getMetadataContext();
-    const torrents = appState.allTorrents;
-    const query = searchString.toLowerCase();
-    const filtered = torrents.filter(t => t.name.toLowerCase().includes(query));
-
-    renderList(filtered);
+    renderList(appState.allTorrents, searchString.trim().toLowerCase());
 }
 
 async function fetchTorrentMetadata(torrent) {
@@ -280,7 +276,8 @@ let libraryRenderId = 0;
 let cloudGrid = null;
 let renderedCloudTorrents = [];
 
-export function renderList(torrents) {
+export function renderList(torrents, query = document.getElementById('library-search-input')?.value.trim().toLowerCase() || '') {
+    torrents = torrents.filter(t => t.name.toLowerCase().includes(query));
     cloudGrid?.destroy();
     cloudGrid = null;
     renderedCloudTorrents = torrents;
@@ -292,7 +289,7 @@ export function renderList(torrents) {
     list.replaceChildren();
 
     if (torrents.length === 0) {
-        libraryText.textContent = "No files added yet.";
+        libraryText.textContent = query ? 'No cloud files match your search.' : 'No files added yet.';
         libraryText.classList.remove("hidden");
         return;
     }

@@ -195,7 +195,11 @@ export function loadWatchProgress() {
         progressItems = [];
         renderVisibleWatchProgress();
     }
-    if (!userId || Date.now() - progressLoadedAt < PROGRESS_CACHE_MS) return Promise.resolve();
+    if (!userId) {
+        renderVisibleWatchProgress();
+        return Promise.resolve();
+    }
+    if (Date.now() - progressLoadedAt < PROGRESS_CACHE_MS) return Promise.resolve();
     if (progressRequest) return progressRequest;
     const version = ++progressVersion;
     const isCurrent = () => version === progressVersion && appState.currentUser?.id === userId;
@@ -284,7 +288,11 @@ export function loadHomeRecommendations() {
         renderHomeRecommendations(root, {});
         root.setAttribute('aria-busy', 'false');
     }
-    if (!userId || Date.now() - recommendationsLoadedAt < PROGRESS_CACHE_MS) return Promise.resolve();
+    if (!userId) {
+        renderHomeRecommendations(root, {});
+        return Promise.resolve();
+    }
+    if (Date.now() - recommendationsLoadedAt < PROGRESS_CACHE_MS) return Promise.resolve();
     if (recommendationsRequest) return recommendationsRequest;
     const version = ++recommendationsVersion;
     const isCurrent = () => version === recommendationsVersion && appState.currentUser?.id === userId;
@@ -307,12 +315,12 @@ export function loadHomeRecommendations() {
             const failed = recommendations.some(row => row.results.some(result => result.status === 'rejected'));
             if (recommendations.some(row => row.items.length)) {
                 renderHomeRecommendations(root, Object.fromEntries(types.map((type, index) => [type, recommendations[index].items])));
+            } else if (!failed && seeds.every(ids => ids.length === 0)) {
+                renderHomeRecommendations(root, {});
             } else {
                 renderHomeRecommendationsMessage(root, failed
                     ? "Couldn't load recommendations. Try visiting Home again."
-                    : seeds.every(ids => ids.length === 0)
-                        ? 'Add movies or series to your library to get recommendations.'
-                        : 'No recommendations found for your recent library additions yet.');
+                    : 'No recommendations found for your recent library additions yet.');
             }
             if (!failed) recommendationsLoadedAt = Date.now();
         } catch (error) {
