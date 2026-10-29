@@ -1,12 +1,8 @@
 import { openMasterDetail, openCollectionGrid } from "../api";
 import { addonState, rowState, fetchNextBatch, getActiveState } from "./catalogs";
+import { isDragging } from './row-drag.js';
+export { isDragging, initGlobalDrag } from './row-drag.js';
 
-export let isDragging = false;
-let isDown = false;
-let activeSlider = null;
-let startX;
-let scrollLeft;
-let isTicking = false;
 let activeGridCatalogId = null;
 let previousScrollTop = 0; // Add this line
 
@@ -17,69 +13,6 @@ const FETCH_COOLDOWN_MS = 350;
 const lastFetchTime = {};
 
 //#region Row Controllers
-
-let isDragInitialized = false;
-export function initGlobalDrag() {
-    if (isDragInitialized) return;
-    isDragInitialized = true;
-
-    document.addEventListener("mousedown", (e) => {
-        const slider = e.target.closest(".draggable-row");
-        if (!slider) return;
-
-        isDown = true;
-        isDragging = false;
-        activeSlider = slider;
-
-        slider.classList.add("cursor-grabbing");
-        document.body.classList.add("select-none");
-
-        startX = e.pageX - slider.offsetLeft;
-        scrollLeft = slider.scrollLeft;
-    });
-
-    window.addEventListener("mousemove", (e) => {
-        if (!isDown || !activeSlider) return;
-        e.preventDefault();
-
-        const x = e.pageX - activeSlider.offsetLeft;
-        const walk = (x - startX) * 2;
-
-        if (Math.abs(walk) > 5) {
-            isDragging = true;
-            activeSlider.classList.add("pointer-events-none");
-            document.body.classList.add("cursor-grabbing");
-        }
-
-        if (!isTicking) {
-            window.requestAnimationFrame(() => {
-                activeSlider.scrollLeft = scrollLeft - walk;
-                isTicking = false;
-            });
-            isTicking = true;
-        }
-    });
-
-    // CONSOLIDATED STOP LOGIC
-    const stopDrag = () => {
-        if (!isDown || !activeSlider) return;
-
-        const finishedSlider = activeSlider;
-        isDown = false;
-
-        finishedSlider.classList.remove("cursor-grabbing", "pointer-events-none");
-        document.body.classList.remove("select-none", "cursor-grabbing");
-
-        setTimeout(() => {
-            isDragging = false;
-            activeSlider = null;
-        }, 50);
-    };
-
-    // Bind both events to the single helper function
-    window.addEventListener("mouseup", stopDrag);
-    window.addEventListener("mouseleave", stopDrag);
-}
 
 // Row observers
 const rowObservers = {};
