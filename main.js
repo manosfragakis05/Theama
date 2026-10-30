@@ -7,7 +7,7 @@
 
 import { registerSW } from 'virtual:pwa-register';
 
-import { authenticateTorboxUser, logoutTorBox, closeStreamPicker } from './services/torbox.js';
+import { authenticateTorboxUser, initializeTorboxPairing, logoutTorBox, closeStreamPicker } from './services/torbox.js';
 import { appState, showToast } from './services/config.js';
 
 import {
@@ -48,10 +48,19 @@ import {
 import { renderFriendsSidebar, renderProfileFriends, renderPublicProfile, setFollowButton } from './user-data/profile-renderer.js';
 
 import { triggerLocalFilePicker, processLocalFile } from './services/offline.js';
+import { initializeHelpPage } from './pages/help.js';
 
 // Setup Static Event Listeners
 function setupStaticEventListeners() {
+    initializeHelpPage();
+    initializeTorboxPairing();
     initializeLibraryTabs();
+    document.querySelectorAll('[data-library-settings]').forEach(button => {
+        button.addEventListener('click', () => {
+            switchTab('settings-page');
+            document.getElementById('app-main').scrollTop = 0;
+        });
+    });
     initializeQueueRenderer();
     document.getElementById('close-player-btn')?.addEventListener('click', stopPlayback);
 
@@ -285,7 +294,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (appState.currentUser) {
                 await Promise.all([syncLocalFavouritesToCloud(), updatePublicProfile()]);
             }
-            await Promise.all([handleProfileRouting(), refreshFriendsLists(), initializeSettings(), /*loadAppLibrary()*/]);
+            await Promise.all([handleProfileRouting(), refreshFriendsLists(), initializeSettings()]);
+            if (!document.getElementById('library-page').classList.contains('hidden')
+                && document.getElementById('library-tab').getAttribute('aria-selected') === 'true') {
+                await loadAppLibrary();
+            }
             if (appBooted) {
                 await initCustomAddons();
                 await authenticateTorboxUser();

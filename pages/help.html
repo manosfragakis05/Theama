@@ -1,0 +1,244 @@
+<button type="button" data-help-page="settings-page" data-help-focus="open-help-btn" class="help-back">
+    <svg class="w-4 h-4" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m15 18-6-6 6-6"></path>
+    </svg>
+    Back to Settings
+</button>
+
+<header class="help-header">
+    <span class="help-eyebrow">A little guidance, a lot to explore</span>
+    <h1 id="help-title" tabindex="-1">Setup &amp; Help</h1>
+    <p>Set up your first stream, bring Theama to your home screen, and make room for your friends.</p>
+</header>
+
+<section class="help-start" aria-labelledby="help-start-title">
+    <div class="help-section-heading">
+        <span class="help-eyebrow">Start here</span>
+        <h2 id="help-start-title">Your first three steps</h2>
+        <p>Theama is a player. You bring the media through your connected service and add-ons.</p>
+    </div>
+    <ol class="help-start-grid">
+        <li>
+            <span class="help-step-number" aria-hidden="true">01</span>
+            <h3>Connect TorBox</h3>
+            <p>Pair your account in Settings. Keep Theama open while you approve access on TorBox’s page.</p>
+            <button type="button" data-help-page="settings-page" data-help-focus="torbox-settings" class="help-action">Set up TorBox <span aria-hidden="true">&rarr;</span></button>
+        </li>
+        <li>
+            <span class="help-step-number" aria-hidden="true">02</span>
+            <h3>Add a stream provider</h3>
+            <p>Install a compatible add-on using its manifest URL. The built-in TMDB catalog helps you browse titles.</p>
+            <button type="button" data-help-page="settings-page" data-help-focus="show-addon-input-btn" class="help-action">Manage add-ons <span aria-hidden="true">&rarr;</span></button>
+        </li>
+        <li>
+            <span class="help-step-number" aria-hidden="true">03</span>
+            <h3>Find something to watch</h3>
+            <p>Open Discover, choose a title, and select a source from an installed stream provider.</p>
+            <button type="button" data-help-page="discover-page" class="help-action">Open Discover <span aria-hidden="true">&rarr;</span></button>
+        </li>
+    </ol>
+</section>
+
+<div class="help-layout">
+    <nav class="help-topics" aria-label="Help topics">
+        <span class="help-eyebrow">In this guide</span>
+        <button type="button" data-help-topic="help-install">Install Theama</button>
+        <button type="button" data-help-topic="help-navigation">Find your way around</button>
+        <button type="button" data-help-topic="help-torbox">Connect TorBox</button>
+        <button type="button" data-help-topic="help-addons">Install add-ons</button>
+        <button type="button" data-help-topic="help-friends">Friends &amp; sharing</button>
+        <button type="button" data-help-topic="help-watchlists">Watchlists &amp; favourites</button>
+        <button type="button" data-help-topic="help-playback">Playback &amp; queues</button>
+        <button type="button" data-help-topic="help-account">Account &amp; saved settings</button>
+        <button type="button" data-help-topic="help-troubleshooting">Troubleshooting</button>
+    </nav>
+
+    <div class="help-articles">
+        <section aria-labelledby="help-install">
+            <span class="help-eyebrow">Keep it close</span>
+            <h2 id="help-install" tabindex="-1">Install Theama</h2>
+            <p>Add Theama to your home screen or app launcher so you can open it like an app, with its own window.</p>
+            <button id="help-install-btn" type="button" hidden class="help-primary-action">Install Theama</button>
+            <p id="help-install-status" class="help-note" role="status" aria-live="polite"></p>
+
+            <details class="help-disclosure" data-install-guide="ios">
+                <summary>iPhone &amp; iPad <span>Safari</span></summary>
+                <div>
+                    <ol>
+                        <li>Open Theama in <strong>Safari</strong>. If you opened it inside another app, copy the address into Safari first.</li>
+                        <li>Open the <strong>Share</strong> menu, then choose <strong>Add to Home Screen</strong>. You may need to scroll through the actions.</li>
+                        <li>If shown, leave <strong>Open as Web App</strong> enabled, then tap <strong>Add</strong>.</li>
+                        <li>Launch Theama using its new home-screen icon.</li>
+                    </ol>
+                    <p class="help-note">If the action is missing, use <strong>Edit Actions</strong> in the share menu. You may need to sign in or connect TorBox again in the installed app.</p>
+                    <a href="https://support.apple.com/guide/iphone/iphea86e5236/ios" target="_blank" rel="noopener noreferrer">Apple’s installation guide <span aria-hidden="true">↗</span></a>
+                </div>
+            </details>
+            <details class="help-disclosure" data-install-guide="android">
+                <summary>Android <span>Chrome</span></summary>
+                <div>
+                    <ol>
+                        <li>Open Theama in <strong>Chrome</strong>.</li>
+                        <li>Open the <strong>three-dot menu</strong> and look for <strong>Install</strong> or <strong>Add to Home screen</strong>. Some versions put this under <strong>Install and create shortcut</strong>.</li>
+                        <li>Confirm installation, then open Theama from your home screen or app drawer.</li>
+                    </ol>
+                    <a href="https://support.google.com/chrome/answer/9658361?hl=en&amp;co=GENIE.Platform%3DAndroid" target="_blank" rel="noopener noreferrer">Chrome’s Android guide <span aria-hidden="true">↗</span></a>
+                </div>
+            </details>
+            <details class="help-disclosure" data-install-guide="desktop">
+                <summary>Computer <span>Chrome, Edge &amp; Safari</span></summary>
+                <div>
+                    <p><strong>Chrome:</strong> use the install icon in the address bar, or open the menu &rarr; <strong>Cast, save, and share</strong> &rarr; <strong>Install page as app</strong>.</p>
+                    <p><strong>Edge:</strong> use the install icon, or look under the menu &rarr; <strong>More tools</strong> &rarr; <strong>Apps</strong> &rarr; <strong>Install this site as an app</strong>.</p>
+                    <p><strong>Safari on Mac:</strong> choose <strong>File</strong> &rarr; <strong>Add to Dock</strong>, or find <strong>Add to Dock</strong> in the Share menu on supported macOS versions.</p>
+                    <p class="help-note">If installation is unavailable, you can keep using Theama in your browser.</p>
+                    <div class="help-inline-links">
+                        <a href="https://support.google.com/chrome/answer/9658361?hl=en" target="_blank" rel="noopener noreferrer">Chrome guide ↗</a>
+                        <a href="https://support.microsoft.com/en-us/edge/install-manage-or-uninstall-apps-in-microsoft-edge" target="_blank" rel="noopener noreferrer">Edge guide ↗</a>
+                        <a href="https://support.apple.com/104996" target="_blank" rel="noopener noreferrer">Safari guide ↗</a>
+                    </div>
+                </div>
+            </details>
+            <p class="help-note">Installing the app doesn’t download your cloud media. Browsing online catalogs and streaming still need an internet connection.</p>
+        </section>
+
+        <section aria-labelledby="help-navigation">
+            <h2 id="help-navigation" tabindex="-1">Find your way around</h2>
+            <p>Use the sidebar on a computer or the navigation bar at the bottom on your phone.</p>
+            <dl class="help-feature-list">
+                <div><dt>Home</dt><dd>Pick up where you left off and find recommendations.</dd></div>
+                <div><dt>Library</dt><dd>Browse your TorBox files and your app library.</dd></div>
+                <div><dt>Discover</dt><dd>Explore catalogs or search for a movie or series. Open a title for details and available sources.</dd></div>
+                <div><dt>Profile</dt><dd>See your favourites and watchlists, share your profile, and find people you follow.</dd></div>
+                <div><dt>Settings</dt><dd>Connect TorBox, install add-ons, choose a player, and manage your account.</dd></div>
+            </dl>
+            <p class="help-note">This guide is always available from <strong>Settings &rarr; Setup &amp; Help</strong>.</p>
+        </section>
+
+        <section aria-labelledby="help-torbox">
+            <h2 id="help-torbox" tabindex="-1">Connect your TorBox account</h2>
+            <ol>
+                <li>Go to <strong>Settings &rarr; Integrations</strong> and select <strong>Pair with TorBox</strong>.</li>
+                <li>Choose <strong>Open TorBox pairing page</strong> and enter the temporary code if it isn’t already filled in.</li>
+                <li>Sign in to TorBox and finish approving access. Keep Theama open in its original tab or app window.</li>
+                <li>Return to Theama. It checks for approval automatically and shows <strong>Connected</strong> when pairing finishes.</li>
+            </ol>
+            <p>You can enter the code at <a href="https://tor.box/link" target="_blank" rel="noopener noreferrer">tor.box/link</a> on another device. If it expires, choose <strong>Generate new code</strong> and use the latest one.</p>
+            <p>Prefer manual setup? Expand <strong>Use an API key instead</strong> in the TorBox card. To remove the connection later, choose <strong>Disconnect TorBox</strong>.</p>
+            <button type="button" data-help-page="settings-page" data-help-focus="torbox-settings" class="help-action">Open TorBox settings <span aria-hidden="true">&rarr;</span></button>
+        </section>
+
+        <section aria-labelledby="help-addons">
+            <h2 id="help-addons" tabindex="-1">Install an add-on</h2>
+            <p>Catalog add-ons help you browse. Stream add-ons provide sources to play. The included TMDB catalog provides title information; it doesn’t supply streams.</p>
+            <aside class="help-important" aria-labelledby="help-addon-important">
+                <h3 id="help-addon-important">Important</h3>
+                <p><strong>HTML add-ons are not supported yet.</strong> Use a compatible Stremio add-on with a JSON manifest URL ending in <code>/manifest.json</code>. Add-ons that rely on an embedded website or HTML video page are not currently supported.</p>
+                <p>An add-on may have a website for configuration. Finish setup there, then copy its manifest URL into Theama.</p>
+            </aside>
+            <h3>Where to find add-ons</h3>
+            <p>Look for developer announcements and setup discussions in <a href="https://www.reddit.com/r/StremioAddons/" target="_blank" rel="noopener noreferrer">r/StremioAddons</a>. The <a href="https://stremio.zendesk.com/hc/en-us/articles/360021348391-How-to-install-uninstall-Add-ons" target="_blank" rel="noopener noreferrer">Stremio add-on guide</a> also explains how to browse its Official and Community catalogs in Stremio.</p>
+            <p>Once you find an add-on, visit its developer’s page, check its requirements, and copy the generated manifest URL. Stremio install buttons don’t install add-ons into Theama automatically.</p>
+            <p class="help-note">These are third-party resources, and a listing does not guarantee compatibility with Theama. Use add-ons you trust and only access content you’re authorized to watch.</p>
+            <ol>
+                <li>Get a compatible add-on’s <strong>manifest URL</strong>, usually ending in <code>/manifest.json</code>. Complete any configuration on the provider’s site first.</li>
+                <li>In <strong>Settings &rarr; Scrapers &amp; Add-ons</strong>, select <strong>+ Add New Add-On</strong>.</li>
+                <li>Paste the URL, choose <strong>Install Add-on</strong>, and wait for it to appear under <strong>Installed Add-ons</strong>.</li>
+                <li>Open <strong>Discover</strong> to browse its catalogs or select a title to check its stream results.</li>
+            </ol>
+            <p class="help-note">Use add-ons you trust. Their configuration and source availability are managed by their providers.</p>
+            <button type="button" data-help-page="settings-page" data-help-focus="show-addon-input-btn" class="help-action">Open add-on settings <span aria-hidden="true">&rarr;</span></button>
+        </section>
+
+        <section aria-labelledby="help-friends">
+            <h2 id="help-friends" tabindex="-1">Add friends &amp; share your profile</h2>
+            <p>Friends in Theama are people you follow. Connect through a shared profile link.</p>
+            <ol>
+                <li>Sign in to a <strong>Theama account</strong> in Settings. This is separate from your TorBox account.</li>
+                <li>Open <strong>Profile</strong> and tap the <strong>Share Profile</strong> icon beside Settings. Send or copy your profile link using the share menu.</li>
+                <li>Ask a friend to share their profile link. Open it and choose <strong>Follow</strong> on their profile.</li>
+                <li>Find them under <strong>Following</strong> in the desktop sidebar, or <strong>My Friends</strong> on your own Profile on mobile.</li>
+            </ol>
+            <p>Open a friend’s profile to see their public watchlists. Following is one-way: your friend can follow you back using your link. Private lists stay off your public profile.</p>
+            <button type="button" data-help-page="profile-page" data-help-focus="profile-share-btn" class="help-action">Open my profile <span aria-hidden="true">&rarr;</span></button>
+        </section>
+
+        <section aria-labelledby="help-watchlists">
+            <h2 id="help-watchlists" tabindex="-1">Keep watchlists &amp; favourites</h2>
+            <p>Open a movie or series, then use its save/watchlist button to add it to <strong>Favourites</strong> or one of your lists. Find your saved titles in <strong>Profile</strong>.</p>
+            <p>For a custom list, sign in, open <strong>Profile &rarr; New List</strong>, give it a name, and choose its privacy. Public lists can appear on your shared profile; private lists are for you.</p>
+            <p class="help-note">Guest favourites stay in this browser. Sign in to keep your profile and lists available across devices.</p>
+            <button type="button" data-help-page="profile-page" class="help-action">See my watchlists <span aria-hidden="true">&rarr;</span></button>
+        </section>
+
+        <section aria-labelledby="help-playback">
+            <h2 id="help-playback" tabindex="-1">Playback, your library &amp; queues</h2>
+            <p><strong>Library</strong> brings together your TorBox files and the media you’ve added to your app library. Use its search and filters to find a title or episode.</p>
+            <p>During playback, use <strong>Queue</strong> to see upcoming items, select another item, remove an entry, or shuffle. Clearing the queue removes its entries; it doesn’t delete your TorBox files.</p>
+            <p>The <strong>Internal</strong> player plays inside Theama. You can choose a different default under <strong>Settings &rarr; Default Player</strong>. External players need to be installed on your device, and supported options depend on your platform.</p>
+            <aside class="help-important" aria-labelledby="help-playback-important">
+                <h3 id="help-playback-important">Important</h3>
+                <p><strong>Some devices can’t play every video link in the built-in player.</strong> Supported video formats, audio formats, and streaming methods vary by device and browser.</p>
+                <p>If videos repeatedly fail to start, stop during playback, or have no picture or sound, you may need an <strong>external player</strong>. Install a supported player on your device, then select it under <strong>Settings &rarr; Default Player</strong>.</p>
+                <p class="help-note">An external player can help with format compatibility. An unavailable source or a network problem may still require another link.</p>
+            </aside>
+            <div class="help-inline-links">
+                <button type="button" data-help-page="library-page" class="help-action">Open Library &rarr;</button>
+                <button type="button" data-help-page="settings-page" data-help-focus="select-player-btn" class="help-action">Choose a player &rarr;</button>
+            </div>
+        </section>
+
+        <section aria-labelledby="help-account">
+            <h2 id="help-account" tabindex="-1">Your account &amp; saved settings</h2>
+            <p>A <strong>Theama account</strong> enables profile sharing, following friends, and custom watchlists. <strong>TorBox</strong> is the separate service connected for your cloud media.</p>
+            <dl class="help-feature-list">
+                <div><dt>Trust this device</dt><dd>Keeps settings in this browser between sessions. Turn it off when you want session-only settings.</dd></div>
+                <div><dt>Link API Key to Theama Account</dt><dd>Lets your signed-in Theama account sync your TorBox key. This is optional.</dd></div>
+                <div><dt>Save Addons to Theama Account</dt><dd>Lets your signed-in account sync your installed add-on links.</dd></div>
+                <div><dt>Default Player</dt><dd>Is saved on the current device, so each device can use the player that suits it.</dd></div>
+            </dl>
+            <p class="help-note">A different browser or installed app may have separate local storage. If a connection or add-on is missing there, reconnect it or enable the relevant account sync setting.</p>
+            <div class="help-inline-links">
+                <button type="button" data-help-page="settings-page" data-help-focus="account-form" class="help-action">Open account settings &rarr;</button>
+                <a href="/privacy" target="_blank" rel="noopener noreferrer">Read the Privacy Policy ↗</a>
+            </div>
+        </section>
+
+        <section aria-labelledby="help-troubleshooting">
+            <h2 id="help-troubleshooting" tabindex="-1">When something needs a nudge</h2>
+            <details class="help-disclosure">
+                <summary>I can browse titles, but there are no streams</summary>
+                <div><p>Check that you installed an add-on that provides streams. TMDB only supplies catalog information. Try another title, check your add-on’s configuration, and confirm TorBox shows <strong>Connected</strong>.</p></div>
+            </details>
+            <details class="help-disclosure">
+                <summary>TorBox accepted my code, but Theama is still waiting</summary>
+                <div><p>Finish signing in and approving access on the TorBox page, then return to the original Theama tab. Entering the code is only part of approval. Keep that tab open while it checks. If the code expires or an error appears, generate a new code and complete approval again.</p></div>
+            </details>
+            <details class="help-disclosure">
+                <summary>I can’t find the install option</summary>
+                <div><p>Open Theama in your device’s main browser instead of an in-app browser. Check the installation steps above for your device. If you already installed it, look for its icon on your home screen or app launcher. You can also use Theama directly in the browser.</p></div>
+            </details>
+            <details class="help-disclosure">
+                <summary>My friend’s lists are missing</summary>
+                <div><p>Only public lists appear on a shared profile. Ask your friend to check the list’s privacy. To follow someone, sign in to your Theama account and open their profile link.</p></div>
+            </details>
+            <details class="help-disclosure">
+                <summary>My settings disappeared on another device</summary>
+                <div><p>Sign in to the same Theama account and check the API-key and add-on sync options. Local settings belong to the browser or app where you saved them. Clearing browser data can remove local settings and guest favourites.</p></div>
+            </details>
+            <details class="help-disclosure">
+                <summary>Playback buffers, fails, or has no audio</summary>
+                <div><p>Check your connection, try a different source or a smaller file, and confirm the file is available in TorBox. For a format your device struggles with, try an installed external player from Settings.</p></div>
+            </details>
+            <div class="help-support">
+                <h3>Still need a hand?</h3>
+                <p>When reporting a problem, include your device, browser, and what you were doing. Leave out API keys and private add-on URLs.</p>
+                <div class="help-inline-links">
+                    <a href="mailto:support@theama.app" class="help-action">Email support@theama.app</a>
+                    <a href="https://discord.gg/SmpPxmptH2" target="_blank" rel="noopener noreferrer" class="help-action">Join our Discord <span aria-hidden="true">↗</span></a>
+                    <a href="https://github.com/manosfragakis05/Theama/issues" target="_blank" rel="noopener noreferrer" class="help-action">Report an issue on GitHub <span aria-hidden="true">↗</span></a>
+                </div>
+            </div>
+        </section>
+    </div>
+</div>

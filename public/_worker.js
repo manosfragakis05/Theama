@@ -137,6 +137,8 @@ export default {
 // Keep this list in step with the TorBox operations used by the app.
 const TORBOX_ROUTES = new Map([
   ['/v1/api/user/me', 'GET'],
+  ['/v1/api/user/auth/device/start', 'GET'],
+  ['/v1/api/user/auth/device/token', 'POST'],
   ['/v1/api/torrents/mylist', 'GET'],
   ['/v1/api/torrents/requestdl', 'GET'],
   ['/v1/api/torrents/createtorrent', 'POST'],

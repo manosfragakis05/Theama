@@ -6,6 +6,7 @@
     "wrangler:dev": "wrangler pages dev public --port 8788 --binding VITE_DEV_ORIGIN=http://127.0.0.1:5173 --compatibility-date=2026-06-18",
     "dev": "npm-run-all --parallel vite:dev wrangler:dev",
     "build": "vite build",
+    "test:torbox": "node --experimental-vm-modules --test tests/torbox*.test.js",
     "preview": "vite preview"
   },
   "devDependencies": {

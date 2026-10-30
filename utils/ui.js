@@ -5,8 +5,8 @@
  * ==========================================
  */
 
-import { searchLibrary } from '../pages/library.js';
-import { searchAppLibrary } from '../pages/app-library.js';
+import { searchLibrary, fetchLibrary } from '../pages/library.js';
+import { searchAppLibrary, loadAppLibrary } from '../pages/app-library.js';
 import { stopPlayback } from '../streaming/player.js';
 import { loadDiscover, searchTMDB } from '../user-addons/catalogs.js';
 import { returnToMyProfile } from '../user-data/profile.js';
@@ -57,10 +57,18 @@ function handlePageSpecificLogic(pageId) {
             loadHome();
             break;
         case 'library-page':
-            // E.g., refresh library or reset views
+            if (document.getElementById('library-tab').getAttribute('aria-selected') === 'true') {
+                loadAppLibrary();
+            } else {
+                fetchLibrary();
+            }
             break;
         case 'discover-page':
             loadDiscover();
+            break;
+        case 'help-page':
+            document.getElementById('app-main').scrollTop = 0;
+            document.getElementById('help-title')?.focus({ preventScroll: true });
             break;
         case 'settings-tab':
             // E.g., load user preferences

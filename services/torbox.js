@@ -6,16 +6,109 @@
  */
 
 
-import { smartFetch, showToast } from './config.js';
+import { smartFetch, showToast, appState } from './config.js';
 import { getCurrentUserSettings, saveTorboxKey, deleteTorboxKey } from '../user-data/user-settings.js';
 
 import { mediaStore } from '../api.js';
 
 import { fetchLibrary } from '../pages/library.js';
 import { addToAppLibrary, linkHashToMedia } from '../pages/app-library.js';
+import { requestTorboxDeviceCode, waitForTorboxDeviceToken } from './torbox-device-auth.js';
+
+let pairingController = null;
+let pairingUserId;
+let manualAuthenticationPending = false;
+
+function cancelTorboxPairing() {
+    pairingController?.abort();
+    pairingController = null;
+    pairingUserId = undefined;
+    document.getElementById('torbox-pairing').classList.add('hidden');
+    document.getElementById('torbox-pair-code').textContent = '';
+    document.getElementById('torbox-pair-link').removeAttribute('href');
+    document.getElementById('torbox-pair-status').classList.add('hidden');
+    document.getElementById('torbox-pair-cancel').disabled = false;
+    document.getElementById('login-btn').disabled = manualAuthenticationPending;
+    const button = document.getElementById('torbox-pair-btn');
+    button.disabled = manualAuthenticationPending;
+    button.textContent = 'Pair with TorBox';
+}
+
+export function initializeTorboxPairing() {
+    document.getElementById('torbox-pair-btn').addEventListener('click', startTorboxPairing);
+    document.getElementById('torbox-pair-cancel').addEventListener('click', cancelTorboxPairing);
+    window.addEventListener('pagehide', cancelTorboxPairing);
+    window.addEventListener('auth-state-changed', () => {
+        // Supabase also emits auth events on tab focus and token refresh.
+        // Only an account change should discard an active TorBox authorization.
+        if (pairingController && pairingUserId !== (appState.currentUser?.id ?? null)) {
+            cancelTorboxPairing();
+        }
+    });
+}
+
+async function startTorboxPairing() {
+    if (manualAuthenticationPending) return;
+    cancelTorboxPairing();
+    const controller = new AbortController();
+    pairingController = controller;
+    pairingUserId = appState.currentUser?.id ?? null;
+    const button = document.getElementById('torbox-pair-btn');
+    const status = document.getElementById('torbox-pair-status');
+    const setStatus = message => {
+        status.textContent = message;
+        status.classList.remove('hidden');
+    };
+    button.disabled = true;
+    button.textContent = 'Generating code…';
+
+    // Bound the initial request too, so a failed connection leaves a retry action.
+    const startTimeout = setTimeout(() => controller.abort(new Error('TorBox took too long to respond. Please try again.')), 30000);
+    try {
+        const authorization = await requestTorboxDeviceCode(smartFetch, controller.signal);
+        clearTimeout(startTimeout);
+        controller.signal.throwIfAborted();
+        document.getElementById('torbox-pair-code').textContent = authorization.code;
+        document.getElementById('torbox-pair-expiry').textContent = `Expires at ${new Date(authorization.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        document.getElementById('torbox-pair-link').href = authorization.verificationUrl;
+        document.getElementById('torbox-pairing').classList.remove('hidden');
+        button.textContent = 'Generate new code';
+        button.disabled = false;
+        setStatus('Waiting for approval on TorBox…');
+
+        const key = await waitForTorboxDeviceToken(authorization, {
+            request: smartFetch,
+            signal: controller.signal,
+            onStatus: setStatus
+        });
+        controller.signal.throwIfAborted();
+        // Once authorized, finish saving before allowing another authentication attempt.
+        button.disabled = true;
+        document.getElementById('torbox-pair-cancel').disabled = true;
+        document.getElementById('login-btn').disabled = true;
+        setStatus('Connecting TorBox…');
+        await saveTorboxKey(key);
+        if (pairingController !== controller) return;
+        document.getElementById('api-input').value = '';
+        cancelTorboxPairing();
+        checkAuth();
+        showToast('TorBox connected successfully.', 'success');
+        fetchLibrary();
+    } catch (error) {
+        if (pairingController !== controller) return;
+        const message = controller.signal.aborted && controller.signal.reason instanceof Error
+            ? controller.signal.reason.message : error.message;
+        cancelTorboxPairing();
+        setStatus(message || 'Could not pair with TorBox. Please try again.');
+        button.textContent = 'Try pairing again';
+    } finally {
+        clearTimeout(startTimeout);
+    }
+}
 
 
 export async function authenticateTorboxUser() {
+    if (manualAuthenticationPending) return;
     const input = document.getElementById('api-input');
     const button = document.getElementById('login-btn');
 
@@ -25,10 +118,14 @@ export async function authenticateTorboxUser() {
     if (input.value) {
         key = input.value.trim();
         if (!key) return;
+        cancelTorboxPairing();
+        manualAuthenticationPending = true;
 
         button.innerText = "Verifying...";
         button.disabled = true;
         input.disabled = true;
+        input.classList.remove('border-red-500');
+        document.getElementById('torbox-pair-btn').disabled = true;
 
     } else {
         key = getCurrentUserSettings().user_preferences.torboxApiKey;
@@ -56,8 +153,7 @@ export async function authenticateTorboxUser() {
                 await saveTorboxKey(key);
             }
 
-            button.innerText = "Connected!";
-            button.classList.replace('bg-blue-600', 'bg-green-600');
+            input.value = '';
 
             fetchLibrary();
 
@@ -67,10 +163,13 @@ export async function authenticateTorboxUser() {
 
     } catch (e) {
         showToast("Authentication Failed: " + e.message, 'error');
-        button.innerText = "Log In";
+        input.classList.add('border-red-500');
+    } finally {
+        manualAuthenticationPending = false;
+        button.innerText = 'Connect with API key';
         button.disabled = false;
         input.disabled = false;
-        input.classList.add('border-red-500');
+        document.getElementById('torbox-pair-btn').disabled = false;
     }
     checkAuth();
 }
@@ -86,8 +185,10 @@ function checkAuth() {
     const connectedActions = document.getElementById('torbox-connected-actions');
 
     const libraryText = document.getElementById('library-info-text');
+    document.getElementById('link-torbox-btn')?.classList.toggle('hidden', Boolean(key));
 
     if (key) {
+        cancelTorboxPairing();
         // User is connected
         connectedBadge.classList.replace('hidden', 'flex');
         disconnectedBadge.classList.replace('flex', 'hidden');
@@ -100,7 +201,8 @@ function checkAuth() {
         authForm.classList.remove('hidden');
         connectedActions.classList.add('hidden');
 
-        libraryText.innerText = "No debrid service linked. \n You can add one in the settings.";
+        libraryText.innerText = 'Link TorBox to view your cloud library.';
+        libraryText.classList.remove('hidden');
     }
 }
 

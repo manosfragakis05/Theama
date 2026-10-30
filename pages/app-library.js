@@ -123,6 +123,7 @@ export async function loadAppLibrary() {
     const list = document.getElementById('app-library-list');
     const info = document.getElementById('app-library-info-text');
     if (!list || !info) return;
+    document.getElementById('app-library-login-btn')?.classList.toggle('hidden', Boolean(userId));
 
     if (userId !== renderedUserId) {
         loadedLibraryItems = [];

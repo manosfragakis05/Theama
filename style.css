@@ -2,6 +2,82 @@
 @tailwind components;
 @tailwind utilities;
 
+/* The guide shares the app shell; keep its reading styles scoped to this page. */
+#help-page {
+    --help-line: rgba(160, 171, 189, 0.15);
+    color: #c4ccda;
+    line-height: 1.75;
+}
+#help-page :is(button, a, summary):focus-visible {
+    outline: 2px solid #93bbff;
+    outline-offset: 4px;
+    border-radius: 6px;
+}
+#help-page :is(h1, h2, h3, strong, dt) { color: #f1f5f9; }
+#help-page :is(h1, h2)[tabindex="-1"] { outline: none; scroll-margin-top: 1.5rem; }
+#help-page h1 { font-size: clamp(2.25rem, 5vw, 3.5rem); font-weight: 800; line-height: 1.15; letter-spacing: -.045em; margin: .65rem 0 1rem; }
+#help-page h2 { font-size: clamp(1.35rem, 3vw, 1.65rem); font-weight: 750; line-height: 1.35; letter-spacing: -.025em; margin-bottom: .75rem; }
+#help-page h3 { font-weight: 700; font-size: 1rem; }
+#help-page p { margin: .75rem 0; }
+#help-page a { color: #93bbff; text-underline-offset: 4px; }
+#help-page a:hover { text-decoration: underline; }
+#help-page code { color: #b9cdf2; overflow-wrap: anywhere; }
+.help-back { display: inline-flex; align-items: center; gap: .4rem; min-height: 44px; font-size: .85rem; color: #a0abbd; margin-bottom: 1.5rem; }
+.help-back:hover { color: white; }
+.help-eyebrow { display: block; font-size: .68rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: #93bbff; }
+.help-header { padding: .5rem 0 2rem; max-width: 44rem; }
+.help-header > p { font-size: 1.05rem; color: #a0abbd; max-width: 35rem; }
+.help-start { padding: 1.75rem; background: linear-gradient(120deg, rgba(59, 130, 246, .09), rgba(28, 33, 45, .6)); border: 1px solid var(--help-line); border-radius: 1.5rem; margin: 0 0 3rem; }
+.help-section-heading h2 { margin: .4rem 0; }
+.help-section-heading p { font-size: .9rem; color: #a0abbd; }
+.help-start-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.75rem; margin-top: 1.75rem; }
+.help-start-grid li { display: flex; flex-direction: column; align-items: flex-start; }
+.help-step-number { font-size: .8rem; font-weight: 700; font-variant-numeric: tabular-nums; color: #93bbff; margin-bottom: .6rem; }
+.help-start-grid p { font-size: .85rem; color: #a0abbd; flex: 1; }
+.help-action { display: inline-flex; align-items: center; gap: .5rem; min-height: 44px; font-size: .85rem; font-weight: 650; color: #93bbff; text-align: left; }
+.help-action:hover { color: #c5d9ff; }
+.help-primary-action { min-height: 44px; margin: .5rem 0; padding: .6rem 1.1rem; border-radius: .8rem; background: #2563eb; color: white; font-size: .9rem; font-weight: 700; }
+.help-primary-action:hover { background: #3b82f6; }
+.help-layout { display: grid; grid-template-columns: 12rem minmax(0, 1fr); gap: 2.5rem; align-items: start; }
+.help-topics { display: flex; flex-direction: column; align-items: stretch; position: sticky; top: 1.5rem; padding-right: 1rem; }
+.help-topics .help-eyebrow { color: #7c899e; margin-bottom: .7rem; }
+.help-topics button { padding: .5rem 0; min-height: 44px; text-align: left; font-size: .8rem; line-height: 1.5; color: #a0abbd; }
+.help-topics button:hover { color: #93bbff; }
+.help-articles { min-width: 0; }
+.help-articles > section { padding-bottom: 2.5rem; margin-bottom: 2.5rem; border-bottom: 1px solid var(--help-line); font-size: .9rem; }
+.help-articles > section:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
+.help-articles section > .help-eyebrow { margin-bottom: .5rem; }
+.help-articles ol { list-style: decimal; padding-left: 1.3rem; margin: 1rem 0; }
+.help-articles li { padding-left: .3rem; margin: .65rem 0; }
+#help-page .help-note { font-size: .8rem; color: #a0abbd; }
+.help-disclosure { border: 1px solid var(--help-line); border-radius: 1rem; margin: .75rem 0; background: rgba(28, 33, 45, .4); }
+.help-disclosure summary { padding: 1rem 1.1rem; color: #e2e8f0; font-size: .85rem; font-weight: 600; cursor: pointer; }
+.help-disclosure summary span { color: #a0abbd; font-size: .75rem; font-weight: 400; margin-left: .4rem; }
+.help-disclosure > div { padding: 0 1.1rem 1rem; font-size: .85rem; }
+.help-disclosure > div > :last-child { margin-bottom: 0; }
+.help-feature-list { margin: 1rem 0; }
+.help-feature-list > div { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr); gap: 1.25rem; padding: .9rem 0; border-bottom: 1px solid var(--help-line); }
+.help-feature-list > div:last-child { border-bottom: 0; }
+.help-feature-list dt { font-size: .85rem; font-weight: 600; }
+.help-feature-list dd { font-size: .85rem; color: #a0abbd; }
+.help-inline-links { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1.5rem; margin-top: .75rem; font-size: .8rem; }
+.help-support { margin-top: 1.5rem; padding: 1.25rem; border: 1px solid var(--help-line); border-radius: 1rem; }
+.help-support p { color: #a0abbd; font-size: .85rem; }
+.help-important { margin: 1.25rem 0; padding: 1.1rem 1.25rem; border: 1px solid rgba(251, 191, 36, .25); border-left: 3px solid #fbbf24; border-radius: .8rem; background: rgba(251, 191, 36, .045); }
+#help-page .help-important h3 { color: #fcd34d; font-size: .85rem; }
+.help-important > p { font-size: .85rem; }
+.help-important > :last-child { margin-bottom: 0; }
+@media (max-width: 767px) {
+    .help-start { padding: 1.25rem; margin-bottom: 2rem; }
+    .help-start-grid { grid-template-columns: 1fr; gap: 1.25rem; }
+    .help-start-grid li + li { border-top: 1px solid var(--help-line); padding-top: 1.25rem; }
+    .help-layout { grid-template-columns: minmax(0, 1fr); gap: 2rem; }
+    .help-topics { position: static; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 1rem; border-bottom: 1px solid var(--help-line); padding: 0 0 1rem; }
+    .help-topics .help-eyebrow { grid-column: 1 / -1; }
+    .help-feature-list > div { grid-template-columns: minmax(0, 1fr); gap: .2rem; }
+    .help-disclosure summary span { display: block; margin-left: 1rem; }
+}
+
 :root {
     color-scheme: dark;
     --ui-canvas: #10131b;

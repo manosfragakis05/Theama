@@ -64,6 +64,12 @@
         </symbol>
 
         <!-- Arrow Icon -->
+        <symbol id="icon-help" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="9" stroke-width="2"></circle>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9.5 9a2.5 2.5 0 015 0c0 1.5-2.5 2-2.5 3.5M12 16h.01"></path>
+        </symbol>
+
         <symbol id="icon-arrow" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
         </symbol>
@@ -299,20 +305,24 @@
                         <svg class="absolute left-3 top-3.5 w-5 h-5 text-slate-400 pointer-events-none" fill="none" stroke="currentColor" aria-hidden="true"><use href="#icon-search"></use></svg>
                     </form>
                     <div aria-label="Library sections" class="flex gap-2 mb-6 border-b border-slate-800 pb-3">
-                        <button id="library-tab" type="button" aria-selected="false" tabindex="-1"
+                        <button id="library-tab" type="button" aria-selected="true" tabindex="0"
                             aria-controls="library-panel" data-library-tab="library-panel"
                             class="px-5 py-2 rounded-lg font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition-colors aria-selected:bg-blue-600 aria-selected:text-white">
                             Library
                         </button>
-                        <button id="cloud-tab" type="button" aria-selected="true" aria-controls="cloud-panel"
+                        <button id="cloud-tab" type="button" aria-selected="false" tabindex="-1" aria-controls="cloud-panel"
                             data-library-tab="cloud-panel"
                             class="px-5 py-2 rounded-lg font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition-colors aria-selected:bg-blue-600 aria-selected:text-white">
                             Cloud
                         </button>
                     </div>
 
-                    <div id="cloud-panel" aria-labelledby="cloud-tab" tabindex="0">
+                    <div id="cloud-panel" aria-labelledby="cloud-tab" tabindex="0" class="hidden">
                         <div id="library-info-text" class="text-center text-slate-500 mt-10">Loading your cloud...</div>
+                        <button id="link-torbox-btn" type="button" data-library-settings
+                            class="block mx-auto mt-4 mb-6 rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white transition-colors hover:bg-blue-500">
+                            Link TorBox
+                        </button>
 
                         <div id="file-list" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                         </div>
@@ -344,9 +354,13 @@
                         </div>
                     </div>
 
-                    <div id="library-panel" aria-labelledby="library-tab" tabindex="0" class="hidden">
+                    <div id="library-panel" aria-labelledby="library-tab" tabindex="0">
                         <div id="app-library-info-text" class="text-center text-slate-500 mt-10">Loading your library...
                         </div>
+                        <button id="app-library-login-btn" type="button" data-library-settings
+                            class="block mx-auto mt-4 mb-6 rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white transition-colors hover:bg-blue-500">
+                            Log In
+                        </button>
                         <div id="app-library-list" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4"></div>
                     </div>
                 </div>
@@ -583,6 +597,18 @@
                         <p class="text-slate-400 mt-2">Manage your integrations, accounts, and extensions.</p>
                     </div>
 
+                    <button id="open-help-btn" type="button" aria-controls="help-page"
+                        class="flex items-center gap-4 rounded-2xl border border-blue-500/20 bg-blue-500/5 p-5 text-left transition-colors hover:border-blue-500/40 hover:bg-blue-500/10">
+                        <svg class="w-6 h-6 shrink-0 text-blue-400" aria-hidden="true" fill="none" stroke="currentColor">
+                            <use href="#icon-help"></use>
+                        </svg>
+                        <span class="flex-1"><span class="block font-bold text-white">Setup &amp; Help</span>
+                            <span class="block mt-1 text-sm text-slate-400">Get started, install Theama, and find your way around.</span></span>
+                        <svg class="w-5 h-5 shrink-0 -rotate-90 text-slate-400" aria-hidden="true" fill="none" stroke="currentColor">
+                            <use href="#icon-arrow"></use>
+                        </svg>
+                    </button>
+
                     <section>
                         <h2 class="text-xl font-bold text-white mb-4 pl-1 flex items-center gap-2">
                             <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -765,7 +791,7 @@
 
                                 <div class="flex justify-between items-start">
                                     <div>
-                                        <h3 class="font-bold text-white text-lg">TorBox API</h3>
+                                        <h3 id="torbox-settings" class="font-bold text-white text-lg">TorBox API</h3>
                                         <p class="text-sm text-slate-400 mt-1">Your core cloud provider</p>
                                     </div>
 
@@ -781,14 +807,40 @@
                                 </div>
 
                                 <form id="torbox-auth-form" class="flex flex-col gap-3">
-                                    <input id="api-input" type="password" placeholder="Enter TorBox API Key"
-                                        autocomplete="off"
-                                        class="w-full bg-slate-900 border border-slate-700 p-3.5 rounded-xl text-sm text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600">
-
-                                    <button id="login-btn" type="submit"
-                                        class="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl transition-all font-bold text-sm shadow-[0_0_15px_rgba(37,99,235,0.2)]">
-                                        Connect TorBox
+                                    <button id="torbox-pair-btn" type="button"
+                                        class="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-wait text-white py-3 rounded-xl transition-all font-bold text-sm shadow-[0_0_15px_rgba(37,99,235,0.2)]">
+                                        Pair with TorBox
                                     </button>
+
+                                    <div id="torbox-pairing" class="hidden bg-slate-900/70 border border-slate-700 rounded-xl p-4 space-y-3">
+                                        <p class="text-sm text-slate-300">Open TorBox and enter this pairing code to connect your account.</p>
+                                        <p id="torbox-pair-code" aria-label="TorBox pairing code"
+                                            class="text-center text-3xl font-mono font-bold tracking-widest text-white select-all"></p>
+                                        <p id="torbox-pair-expiry" class="text-center text-xs text-slate-400"></p>
+                                        <a id="torbox-pair-link" target="_blank" rel="noopener noreferrer"
+                                            class="block w-full text-center bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl transition-all font-bold text-sm">
+                                            Open TorBox pairing page
+                                        </a>
+                                        <p class="text-xs text-slate-400">You can also enter the code at tor.box/link on another device. Keep Theama open; it will connect automatically after approval.</p>
+                                        <button id="torbox-pair-cancel" type="button"
+                                            class="w-full text-sm text-slate-400 hover:text-white py-2">Cancel pairing</button>
+                                    </div>
+                                    <p id="torbox-pair-status" role="status" aria-live="polite" class="hidden text-sm text-slate-300"></p>
+
+                                    <details id="torbox-manual-auth">
+                                        <summary class="cursor-pointer text-sm text-slate-400 hover:text-white py-1">Use an API key instead</summary>
+                                        <div class="flex flex-col gap-3 mt-3">
+                                            <input id="api-input" type="password" placeholder="Enter TorBox API Key"
+                                                aria-label="TorBox API key"
+                                                autocomplete="off"
+                                                class="w-full bg-slate-900 border border-slate-700 p-3.5 rounded-xl text-sm text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600">
+
+                                            <button id="login-btn" type="submit"
+                                                class="w-full bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-xl transition-all font-bold text-sm border border-slate-700">
+                                                Connect with API key
+                                            </button>
+                                        </div>
+                                    </details>
                                 </form>
 
                                 <div id="torbox-connected-actions" class="hidden">
@@ -928,6 +980,9 @@
                         <span id="app-version-text" class="text-[10px] font-mono text-slate-600">v0.6.0</span>
                     </div>
                 </div>
+
+                <div id="help-page" aria-labelledby="help-title"
+                    class="page-view hidden flex-none max-w-6xl mx-auto w-full !pb-[calc(7rem+env(safe-area-inset-bottom))] md:!pb-12"></div>
 
                 <div id="licenses-credits-page" aria-labelledby="licenses-credits-title"
                     class="page-view hidden flex-none max-w-4xl mx-auto w-full min-h-[60vh] !pb-[calc(7rem+env(safe-area-inset-bottom))] md:!pb-8">
