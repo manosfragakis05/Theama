@@ -11,6 +11,9 @@ let userSettings = {
         trustThisDevice: true,
         parseAddonLinks: false,
         playOnAdd: true,
+        playFirstSource: false,
+        playFirstSourceResolution: '1080p',
+        playFirstSourceMaxSizeGB: null,
         defaultPlayer: "Internal"
     }
 };
@@ -40,11 +43,24 @@ function updatePlayOnAddUI() {
     if (label) label.textContent = getLibraryActionLabel();
 }
 
+function updatePlayFirstSourceUI() {
+    const preferences = userSettings.user_preferences;
+    const toggle = document.getElementById('play-first-source-toggle');
+    if (toggle) toggle.checked = preferences.playFirstSource;
+    const options = document.getElementById('play-first-source-options');
+    if (options) options.disabled = !preferences.playFirstSource;
+    const resolution = document.getElementById('play-first-source-resolution');
+    if (resolution) resolution.value = preferences.playFirstSourceResolution;
+    const maxSize = document.getElementById('play-first-source-max-size');
+    if (maxSize) maxSize.value = preferences.playFirstSourceMaxSizeGB ?? '';
+}
+
 // 3. New Setter: Updates preferences and auto-saves
 export async function updateUserPreference(key, value) {
     if (key === 'playOnAdd' && !appState.currentUser) value = true;
     userSettings.user_preferences[key] = value;
     if (key === 'playOnAdd') updatePlayOnAddUI();
+    if (key.startsWith('playFirstSource')) updatePlayFirstSourceUI();
     await saveSettings();
 }
 
@@ -107,6 +123,16 @@ export async function initializeSettings() {
     // Existing saved settings may predate this preference. Guests always play on add.
     userSettings.user_preferences.playOnAdd = shouldPlayOnAdd();
     updatePlayOnAddUI();
+
+    // Supply defaults for accounts and devices saved before automatic selection existed.
+    const preferences = userSettings.user_preferences;
+    preferences.playFirstSource = preferences.playFirstSource === true;
+    if (!['4K', '1080p', 'other'].includes(preferences.playFirstSourceResolution)) {
+        preferences.playFirstSourceResolution = '1080p';
+    }
+    const maxSize = Number(preferences.playFirstSourceMaxSizeGB);
+    preferences.playFirstSourceMaxSizeGB = Number.isFinite(maxSize) && maxSize > 0 ? maxSize : null;
+    updatePlayFirstSourceUI();
 
     // Update UI
     if (userSettings.user_preferences) {
@@ -176,6 +202,25 @@ function attachSettingsListeners() {
 
     document.getElementById('play-on-add-toggle').addEventListener('change', (e) => {
         updateUserPreference('playOnAdd', e.target.checked);
+    });
+
+    document.getElementById('play-first-source-toggle').addEventListener('change', (e) => {
+        updateUserPreference('playFirstSource', e.target.checked);
+    });
+
+    document.getElementById('play-first-source-resolution').addEventListener('change', (e) => {
+        updateUserPreference('playFirstSourceResolution', e.target.value);
+    });
+
+    document.getElementById('play-first-source-max-size').addEventListener('change', (e) => {
+        const value = e.target.value.trim();
+        const maxSize = value === '' ? null : Number(value);
+        if (value !== '' && (!Number.isFinite(maxSize) || maxSize <= 0)) {
+            showToast('Enter a maximum size greater than zero, or leave it blank for no limit.', 'error');
+            updatePlayFirstSourceUI();
+            return;
+        }
+        updateUserPreference('playFirstSourceMaxSizeGB', maxSize);
     });
 }
 

@@ -913,6 +913,32 @@
                                 <input type="checkbox" id="play-on-add-toggle" class="custom-toggle disabled:opacity-50 disabled:cursor-not-allowed" aria-describedby="play-on-add-login-hint" checked disabled>
                             </label>
 
+                            <label class="flex items-center justify-between gap-3 py-3 cursor-pointer select-none">
+                                <span class="text-white font-medium text-base">Play first source
+                                    <span id="play-first-source-hint" class="block text-xs text-slate-400 mt-1">Play or Add automatically selects the first matching source in add-on order.</span>
+                                </span>
+                                <input type="checkbox" id="play-first-source-toggle" class="custom-toggle" aria-describedby="play-first-source-hint">
+                            </label>
+
+                            <fieldset id="play-first-source-options" class="pb-3 space-y-3 disabled:opacity-50" disabled>
+                                <legend class="sr-only">Automatic source selection</legend>
+                                <div class="flex items-center justify-between gap-3">
+                                    <label for="play-first-source-resolution" class="text-sm text-slate-300">Resolution bucket</label>
+                                    <select id="play-first-source-resolution" class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:border-blue-500">
+                                        <option value="4K">4K UHD</option>
+                                        <option value="1080p" selected>1080p HD</option>
+                                        <option value="other">720p / Others</option>
+                                    </select>
+                                </div>
+                                <div class="flex items-center justify-between gap-3">
+                                    <label for="play-first-source-max-size" class="text-sm text-slate-300">Max size for 2 hours (GB)</label>
+                                    <input id="play-first-source-max-size" type="number" min="0.01" step="any" inputmode="decimal" placeholder="No limit" aria-describedby="play-first-source-size-hint"
+                                        class="w-28 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:border-blue-500">
+                                </div>
+                                <p id="play-first-source-size-hint" class="text-xs text-slate-400">Scales with movie or episode duration: 6 GB for 2 hours allows 1 GB for 20 minutes. Leave blank for no limit. With a limit, unknown sizes or durations require manual selection.</p>
+                                <p class="text-xs text-slate-400">These preferences sync to your Theama account when signed in.</p>
+                            </fieldset>
+
                             <div class="flex items-center justify-between gap-3 py-3">
                                 <span id="default-player-label"
                                     class="text-white font-medium text-base">

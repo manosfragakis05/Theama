@@ -1,8 +1,9 @@
-import { showToast, MY_PROXY, TMDB_KEY, smartFetch } from './services/config.js';
+import { showToast, MY_PROXY, TMDB_KEY, smartFetch, appState } from './services/config.js';
 import { loadAllAddonsParallel } from './user-addons/scrapers.js';
-import { showStreamPicker } from './user-addons/scraper-renderer.js';
+import { showStreamPicker, submitStreamSource } from './user-addons/scraper-renderer.js';
 import { getTmdbId } from './metadata/metadata.js';
-import { getLibraryActionLabel } from './user-data/user-settings.js';
+import { getLibraryActionLabel, getCurrentUserSettings } from './user-data/user-settings.js';
+import { getMediaDurationMinutes, selectFirstSource } from './utils/auto-stream.js';
 
 //#region State and Data
 
@@ -375,7 +376,7 @@ export async function openCollectionGrid(collectionItem) {
     }
 }
 
-export function handlePlayAction(mediaObject) {
+export async function handlePlayAction(mediaObject) {
     if (!mediaObject || !mediaObject.id || !mediaObject.type) return;
 
     let id = "";
@@ -408,14 +409,31 @@ export function handlePlayAction(mediaObject) {
     </svg> Loading...`;
 
     try {
-        showStreamPicker(mediaObject.title, {
+        const selectedMedia = {
             ...mediaStore.get(),
             seasonNumber: mediaObject.activeSeason,
             episodeNumber: mediaObject.activeEpisode,
             kitsuEpisode: mediaObject.kitsuEpisode,
             streamId: id
-        });
-        loadAllAddonsParallel(type, id, season, episode);
+        };
+        const preferences = { ...getCurrentUserSettings().user_preferences };
+        if (preferences.playFirstSource) {
+            const userId = appState.currentUser?.id;
+            const durationMinutes = getMediaDurationMinutes(mediaObject);
+            const results = await loadAllAddonsParallel(type, id, season, episode, { render: false });
+            if (userId !== appState.currentUser?.id
+                || preferences.torboxApiKey !== getCurrentUserSettings().user_preferences.torboxApiKey) return;
+            const source = selectFirstSource(results, preferences, durationMinutes);
+            if (source) {
+                await submitStreamSource(source, selectedMedia);
+            } else {
+                showToast('No source matches your automatic selection settings. Choose a source manually.', 'info');
+                showStreamPicker(mediaObject.title, selectedMedia, results);
+            }
+        } else {
+            showStreamPicker(mediaObject.title, selectedMedia);
+            await loadAllAddonsParallel(type, id, season, episode);
+        }
     } catch (e) {
         console.error("Failed to load streams:", e);
         showToast("Error fetching streams.", "error");

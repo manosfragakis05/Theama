@@ -3,6 +3,7 @@ import { getCurrentUserSettings } from "../user-data/user-settings.js";
 import { parseFormated } from "../utils/parseMedia.js";
 import { getScrapingProviders } from "./scrapers.js";
 import { getStreamHash } from '../utils/streams.js';
+import { getResolutionBucket } from '../utils/auto-stream.js';
 
 
 //#region Parse Streams
@@ -37,14 +38,8 @@ export function filterAndSortStreams(streams, addonName) {
     const bucketOther = [];
 
     parsedStreams.forEach(stream => {
-        const res = stream.resolution;
-        if (res === "2160p" || res === "2160i" || res === "4320p" || res === "4320i" || res === "4K" || res === "4k HDR") {
-            bucket4K.push(stream);
-        } else if (res === "1080p" || res === "1080i" || res === "1440p") {
-            bucket1080p.push(stream);
-        } else {
-            bucketOther.push(stream);
-        }
+        const buckets = { bucket4K, bucket1080p, bucketOther };
+        buckets[getResolutionBucket(stream.resolution)].push(stream);
     });
 
     return { addonName: addonName, bucket4K, bucket1080p, bucketOther };
@@ -59,7 +54,7 @@ export const streamState = {
 };
 
 // Panel with streams from each addon
-export function showStreamPicker(mainTitle, selectedMedia) {
+export function showStreamPicker(mainTitle, selectedMedia, addonResults = []) {
     const modal = document.getElementById('stream-picker-modal');
     const tabsContainer = document.getElementById('addon-tabs-container');
     const list = document.getElementById('stream-picker-list');
@@ -137,6 +132,10 @@ export function showStreamPicker(mainTitle, selectedMedia) {
     }
 
     modal.classList.remove('hidden');
+    for (const result of addonResults) {
+        streamState.addons[result.addonName] = result;
+        renderAddonData(result);
+    }
 }
 
 // TAB SWITCHER
@@ -390,15 +389,15 @@ const renderLine = (lineData) => lineData.map(item => {
 
 
 //#region Main Card
+export async function submitStreamSource(raw, selectedMedia) {
+    const hash = getStreamHash(raw);
+    const finalLink = hash ? `magnet:?xt=urn:btih:${hash}` : raw.url;
+    await addStreamtoTorbox(finalLink, selectedMedia, raw);
+}
+
 function createStreamCard(stream, isRecommended) {
     const raw = stream.rawStream;
     const selectedMedia = streamState.selectedMedia;
-    const extractedHash = getStreamHash(raw);
-
-    const finalLink = extractedHash
-        ? `magnet:?xt=urn:btih:${extractedHash}`
-        : raw.url;
-
     const rawTitle = (raw.description || raw.title || '').replace(/(?:\r\n|\r|\n|\\n)/g, '<br>');
     const rawInfo = `${raw.name}<br>${rawTitle}`;
 
@@ -421,7 +420,7 @@ function createStreamCard(stream, isRecommended) {
         if (btn.disabled) return;
         btn.disabled = true;
         try {
-            await addStreamtoTorbox(finalLink, selectedMedia, raw);
+            await submitStreamSource(raw, selectedMedia);
         } finally {
             btn.disabled = false;
         }

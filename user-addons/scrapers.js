@@ -9,16 +9,19 @@ export function getScrapingProviders() {
     return userAddons.filter(addon => addon.capabilities && addon.capabilities.streams === true);
 }
 
-export async function loadAllAddonsParallel(type, streamId, season = null, episode = null) {
+export async function loadAllAddonsParallel(type, streamId, season = null, episode = null, { render = true } = {}) {
     const userAddons = getScrapingProviders();
     const pathId = getStreamPathId(type, streamId, season, episode);
 
-    await Promise.all(userAddons.map(async addon => {
+    return Promise.all(userAddons.map(async addon => {
         const streams = await fetchSingleAddon(addon, type, pathId);
         const shortName = addon.name.split(' ')[0];
         const packedData = filterAndSortStreams(streams || [], shortName);
-        streamState.addons[shortName] = packedData;
-        renderAddonData(packedData);
+        if (render) {
+            streamState.addons[shortName] = packedData;
+            renderAddonData(packedData);
+        }
+        return packedData;
     }));
 }
 
