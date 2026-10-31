@@ -6,6 +6,7 @@ import { resolveLibraryTorrents } from './app-library.js';
 import { buildSeriesQueue, startQueueFromEpisode, startQueueFromItem } from '../streaming/playlist.js';
 import { buildRemainingTorrentQueue } from '../metadata/picker.js';
 import { requestLink } from '../streaming/player.js';
+import { openAddonLibraryMedia } from './addon-library.js';
 import {
     renderHomeCarousel, renderHomeMessage, renderWatchProgress, renderWatchProgressMessage,
     renderHomeRecommendations, renderHomeRecommendationsMessage
@@ -137,15 +138,21 @@ export async function playWatchProgress(item) {
     const userId = appState.currentUser?.id;
     try {
         if (!userId || item.userId !== userId) throw new Error('Sign in to resume your watch history.');
-        if (!item.currentHash || item.fileId === null) {
+        if (!item.currentHash) {
             throw new Error('Play this title from your library once to enable direct resume.');
         }
         if (item.type === 'tv' && (!Number.isInteger(item.season) || !Number.isInteger(item.episode))) {
             throw new Error('Choose this episode from your library to save its playback details.');
         }
         if (!getCurrentUserSettings().user_preferences.torboxApiKey) {
-            throw new Error('Link TorBox in settings to resume this title.');
+            await openAddonLibraryMedia({
+                id: String(item.id), tmdb_id: item.id, media_type: item.type,
+                title: item.title, poster_path: item.image,
+                sources: [{ hash: item.currentHash }]
+            }, { resume: { season: item.season, episode: item.episode, positionSeconds: item.positionSeconds } });
+            return;
         }
+        if (item.fileId === null) throw new Error('Choose this episode from your library to refresh its playback details.');
         const [torrent] = await resolveLibraryTorrents([{ hash: item.currentHash }]);
         if (version !== resumeVersion || userId !== appState.currentUser?.id) return;
         const file = (torrent.files || []).find(candidate => String(candidate.id) === String(item.fileId));

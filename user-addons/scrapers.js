@@ -1,5 +1,6 @@
 import { streamState, renderAddonData, filterAndSortStreams } from './scraper-renderer.js';
 import { getAllAddons } from './user-addons.js';
+import { smartFetch } from '../services/config.js';
 
 //#region Fetch Streams
 export function getScrapingProviders() {
@@ -10,7 +11,27 @@ export function getScrapingProviders() {
 
 export async function loadAllAddonsParallel(type, streamId, season = null, episode = null) {
     const userAddons = getScrapingProviders();
+    const pathId = getStreamPathId(type, streamId, season, episode);
 
+    await Promise.all(userAddons.map(async addon => {
+        const streams = await fetchSingleAddon(addon, type, pathId);
+        const shortName = addon.name.split(' ')[0];
+        const packedData = filterAndSortStreams(streams || [], shortName);
+        streamState.addons[shortName] = packedData;
+        renderAddonData(packedData);
+    }));
+}
+
+// Library playback fetches fresh sources without opening the stream selection UI.
+export async function getAddonStreams(type, streamId, season = null, episode = null) {
+    const addons = getScrapingProviders();
+    if (!addons.length) throw new Error('Install a streaming add-on in Settings to play this title.');
+    const pathId = getStreamPathId(type, streamId, season, episode);
+    const results = await Promise.all(addons.map(addon => fetchSingleAddon(addon, type, pathId)));
+    return results.flatMap(streams => streams || []);
+}
+
+export function getStreamPathId(type, streamId, season = null, episode = null) {
     // Format the ID once for everyone
     const safeId = String(streamId);
     let pathId = safeId;
@@ -28,7 +49,7 @@ export async function loadAllAddonsParallel(type, streamId, season = null, episo
             }
         }
         else {
-            if (!safeId.includes(":")) {
+            if (!safeId.includes(":") || /^tmdb:\d+$/.test(safeId)) {
                 const baseTmdb = safeId.startsWith("tmdb:") ? safeId : `tmdb:${safeId}`;
                 pathId = `${baseTmdb}:${season}:${episode}`;
             }
@@ -42,35 +63,7 @@ export async function loadAllAddonsParallel(type, streamId, season = null, episo
         }
     }
 
-    // Fire all addons in parallel
-    userAddons.forEach(addon => {
-        fetchSingleAddon(addon, type, pathId)
-            .then(streams => {
-                const shortName = addon.name.split(' ')[0];
-
-                if (streams === null || streams.length === 0) {
-                    console.log(`${shortName} is offline or found 0 streams.`);
-
-                    // Manually trigger the empty state in the renderer
-                    renderAddonData({
-                        addonName: shortName,
-                        bucket4K: [],
-                        bucket1080p: [],
-                        bucketOther: []
-                    });
-                }
-                else {
-                    // 1. Filter and pack the data
-                    const packedData = filterAndSortStreams(streams, shortName);
-
-                    // 2. Cache it
-                    streamState.addons[shortName] = packedData;
-
-                    // 3. Draw it to the screen
-                    renderAddonData(packedData);
-                }
-            });
-    });
+    return pathId;
 }
 
 async function fetchSingleAddon(addon, type, pathId) {
@@ -78,7 +71,7 @@ async function fetchSingleAddon(addon, type, pathId) {
 
     try {
         const streamUrl = addon.url.replace('/manifest.json', `/stream/${type}/${pathId}.json`);
-        const res = await fetch(streamUrl);
+        const res = await smartFetch(streamUrl);
 
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
 

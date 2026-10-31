@@ -7,6 +7,9 @@
     "dev": "npm-run-all --parallel vite:dev wrangler:dev",
     "build": "vite build",
     "test:torbox": "node --experimental-vm-modules --test tests/torbox*.test.js",
+    "test:play-on-add": "node --experimental-vm-modules --test tests/play-on-add.test.js",
+    "test:media-requests": "node --experimental-vm-modules --test tests/media-requests.test.js",
+    "test:addon-library": "node --experimental-vm-modules --test tests/addon-library.test.js",
     "preview": "vite preview"
   },
   "devDependencies": {

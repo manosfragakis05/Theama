@@ -3,6 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
+    <meta name="referrer" content="no-referrer">
     <meta name="description" content="Theama — a polished media library and discovery interface.">
     <meta name="viewport"
         content="width=device-width, height=device-height, initial-scale=1, shrink-to-fit=no, user-scalable=no, viewport-fit=cover">
@@ -879,6 +880,13 @@
                                 <input type="checkbox" id="parse-links-toggle" class="custom-toggle" checked>
                             </label>
 
+                            <label class="flex items-center justify-between gap-3 py-3 cursor-pointer select-none">
+                                <span class="text-white font-medium text-base">Play immediately after adding to library
+                                    <span id="play-on-add-login-hint" class="block text-xs text-slate-400 mt-1">Sign in to turn this off.</span>
+                                </span>
+                                <input type="checkbox" id="play-on-add-toggle" class="custom-toggle disabled:opacity-50 disabled:cursor-not-allowed" aria-describedby="play-on-add-login-hint" checked disabled>
+                            </label>
+
                             <div class="flex items-center justify-between gap-3 py-3">
                                 <span id="default-player-label"
                                     class="text-white font-medium text-base">
@@ -1312,7 +1320,7 @@
                             <svg class="w-6 h-6 -rotate-90 fill-current" viewBox="0 0 24 24">
                                 <use href="#icon-arrow"></use>
                             </svg>
-                            Add to library
+                            <span id="add-library-label">Play</span>
                         </button>
                         <button id="btn-add-watchlist" title="Save to Watchlist"
                             class="bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white px-5 py-3.5 rounded-xl border border-slate-700/50 shadow-lg backdrop-blur transition-all group flex items-center justify-center">

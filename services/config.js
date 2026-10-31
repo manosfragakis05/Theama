@@ -30,7 +30,9 @@ export const appState = {
 //#region Core Utilities
 // Cloudflare Proxy Fetcher
 export async function smartFetch(targetUrl, options = {}) {
-    return fetch(MY_PROXY + encodeURIComponent(targetUrl), options);
+    const { proxyMode, ...fetchOptions } = options;
+    const mode = proxyMode ? `&mode=${encodeURIComponent(proxyMode)}` : '';
+    return fetch(MY_PROXY + encodeURIComponent(targetUrl) + mode, fetchOptions);
 }
 
 // GLOBAL NOTIFICATION UI

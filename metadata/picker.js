@@ -478,6 +478,38 @@ export async function openPicker(torrentOrTorrents, tmdbId, title) {
         appState.currentUser?.id === userId ? watchProgress : null);
 }
 
+// The existing picker can stage episode metadata when file listings are unavailable.
+export async function openAddonPicker(media, sources, seasons) {
+    const generation = ++pickerGeneration;
+    const userId = appState.currentUser?.id;
+    const picker = document.getElementById('file-picker');
+    const list = document.getElementById('picker-list');
+    picker.classList.remove('hidden');
+    list.replaceChildren();
+    const torrent = { id: `addon:${media.id}`, name: media.title,
+        hash: sources[0]?.hash || '', addonMedia: media, addonSources: sources };
+    const groups = {};
+    seasons.forEach((season, index) => {
+        const number = Number(season.seasonNumber);
+        const key = `S_${number}_TV`;
+        groups[key] = {
+            title: season.name || `Season ${number}`, seasonLabel: season.name || `Season ${number}`,
+            seasonKey: `S_${number}`, seasonNumber: number, seasonOrder: index + 1,
+            tmdbSeason: number, fileType: 'TV',
+            files: season.episodes.map(episode => ({
+                originalFile: { id: `addon:${number}:${episode.episodeNumber}`, name: episode.title || `Episode ${episode.episodeNumber}`, size: 0 },
+                episode: episode.episodeNumber, relativeEpisode: episode.episodeNumber,
+                tmdbSeason: number, watchSeason: number, watchEpisode: episode.episodeNumber,
+                displayTitle: episode.title, displayThumbnail: episode.thumbnail || media.poster,
+                streamId: episode.streamId, fileType: 'TV', fileTypeLabel: 'TV', sourceTorrent: torrent
+            }))
+        };
+    });
+    const progress = await fetchPickerWatchProgress(media.tmdbId, userId);
+    if (generation !== pickerGeneration || userId !== appState.currentUser?.id) return;
+    renderPickerUI(torrent, groups, list, media.title, media.tmdbId, progress);
+}
+
 function mapAbsoluteToTmdbRelative(absoluteEp, tmdbSeasons) {
     const normalSeasons = tmdbSeasons
         .filter(s => s.season_number > 0)
@@ -577,7 +609,7 @@ function preparePickerQueue(torrent, franchiseGroups, cleanName, tmdbId, fallbac
                                 ? `🎥 ${fileTypeLabel || 'Movie'}`
                                 : `Episode ${relativeEpisode ?? episode ?? (index + 1)}`;
 
-                const fileSize = (originalFile.size / 1073741824).toFixed(2) + ' GB';
+                const fileSize = sourceTorrent.addonMedia ? '' : (originalFile.size / 1073741824).toFixed(2) + ' GB';
                 const cardImage = displayThumbnail || fallbackImage;
 
                 return {
@@ -597,7 +629,12 @@ function preparePickerQueue(torrent, franchiseGroups, cleanName, tmdbId, fallbac
                     fileName: originalFile.name,
                     torrentName: sourceTorrent.name,
                     thumbnail: cardImage,
-                    size: fileSize
+                    size: fileSize,
+                    ...(sourceTorrent.addonMedia ? {
+                        sourceType: 'addon', sourceMediaId: String(sourceTorrent.addonMedia.id),
+                        sourceHashes: sourceTorrent.addonSources.map(source => source.hash).filter(Boolean),
+                        streamId: fileObj.streamId || String(sourceTorrent.addonMedia.streamId)
+                    } : {})
                 };
             });
 
@@ -647,6 +684,38 @@ export async function buildRemainingTorrentQueue(torrent, tmdbId, fileId, title,
     const items = getChainedMultiSeasonQueue(groupKey);
     const index = items.findIndex(item => String(item.fid) === String(fileId));
     return items.slice(index);
+}
+
+// Match the selected detail-view episode using the same numbering as the picker.
+export async function buildSelectedTorrentQueue(torrent, media) {
+    const franchiseGroups = await loadEpisodeGroups([torrent], media.tmdbId);
+    const { sortedGroupKeys, getSelectedGroup, getChainedMultiSeasonQueue } =
+        preparePickerQueue(torrent, franchiseGroups, media.title, media.tmdbId, media.poster);
+    const items = sortedGroupKeys.flatMap(key => getSelectedGroup(key)?.queueItems || []);
+    const season = Number(media.seasonNumber ?? 1);
+    const episode = Number(media.episodeNumber ?? 1);
+    let selected = items.find(item => item.fileType === 'TV'
+        && Number(item.seasonNumber) === season
+        && Number(item.watchEpisodeNumber) === episode);
+
+    // Kitsu providers can use absolute episode numbers instead of TMDB seasons.
+    if (!selected && media.kitsuEpisode != null) {
+        selected = items.find(item => item.fileType === 'TV'
+            && Number(item.episodeNumber) === Number(media.kitsuEpisode));
+    }
+    // A single episode may have no episode number in its filename.
+    if (!selected && items.length === 1 && items[0].fileType === 'TV') {
+        const file = torrent.files.find(file => String(file.id) === String(items[0].fid));
+        if (!parseMediaData(file.name).episodes?.length) selected = items[0];
+    }
+    if (!selected) return [];
+    const groupKey = sortedGroupKeys.find(key => getSelectedGroup(key)?.queueItems.includes(selected));
+    const queue = getChainedMultiSeasonQueue(groupKey);
+    const index = queue.indexOf(selected);
+    queue[index] = {
+        ...selected, seasonNumber: season, episodeNumber: episode, watchEpisodeNumber: episode
+    };
+    return queue.slice(index);
 }
 
 function renderPickerUI(torrent, franchiseGroups, listElement, cleanName, tmdbId, watchProgress) {
@@ -846,7 +915,10 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName, tmdbId
                         optionsToggle.focus({ preventScroll: true });
                     }
                     if (btn.dataset.action === 'download') {
-                        downloadFile(queueItem.tid, queueItem.fid, queueItem.fileName);
+                        if (queueItem.sourceType === 'addon') {
+                            import('../pages/addon-library.js').then(({ downloadAddonQueueItem }) => downloadAddonQueueItem(queueItem))
+                                .catch(error => showToast(error.message || 'Could not download this episode.', 'error'));
+                        } else downloadFile(queueItem.tid, queueItem.fid, queueItem.fileName);
                     } else {
                         addToQueue(queueItem);
                     }

@@ -21,7 +21,6 @@ import { loadAppLibrary, removeHashFromAppLibrary } from './app-library.js';
 
 export { downloadFile } from '../streaming/download.js';
 
-
 export function initializeLibraryTabs() {
     const tabs = [...document.querySelectorAll('[data-library-tab]')];
 

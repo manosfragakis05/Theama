@@ -6,8 +6,8 @@ export default {
         status: 204,
         headers: {
           "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
-          "Access-Control-Allow-Headers": "Authorization, Content-Type",
+          "Access-Control-Allow-Methods": "GET, HEAD, POST, PUT, OPTIONS",
+          "Access-Control-Allow-Headers": "Authorization, Content-Type, Range, If-Range",
           "Access-Control-Max-Age": "86400",
         }
       });
@@ -130,7 +130,7 @@ export default {
       return await env.ASSETS.fetch(request.clone());
     }
 
-    return fetchRestrictedJson(request, targetUrl, env);
+    return fetchProxy(request, targetUrl, url.searchParams.get('mode') || 'json');
   }
 };
 
@@ -146,8 +146,9 @@ const TORBOX_ROUTES = new Map([
   ['/v1/api/torrents/edittorrent', 'PUT']
 ]);
 const MAX_REQUEST_BYTES = 1024 * 1024;
-const MAX_MANIFEST_BYTES = 1024 * 1024;
+const MAX_ADDON_BYTES = 16 * 1024 * 1024;
 const MAX_TORBOX_BYTES = 16 * 1024 * 1024;
+const MAX_REDIRECTS = 5;
 
 class ProxyError extends Error {
   constructor(status, message) {
@@ -182,7 +183,7 @@ function isPublicHostname(hostname) {
     && hostname.split('.').every(label => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label));
 }
 
-function validateDestination(rawUrl, request, env) {
+function validateDestination(rawUrl, request) {
   let target;
   try {
     if (rawUrl.length > 8192) throw new Error();
@@ -206,19 +207,7 @@ function validateDestination(rawUrl, request, env) {
     if (!method) throw new ProxyError(403, 'TorBox endpoint is not permitted.');
     if (request.method !== method) throw new ProxyError(405, 'Method is not permitted for this TorBox endpoint.');
   } else {
-    // Operator-controlled exact hostnames, never a list provided by the client.
-    // Trust the DNS operator of each listed provider; this is not an arbitrary
-    // hostname proxy with a DNS check vulnerable to DNS rebinding.
-    const addonHosts = String(env.ADDON_PROXY_HOSTS || '')
-      .split(',')
-      .map(host => host.trim().toLowerCase());
-    if (!addonHosts.includes(target.hostname)) {
-      throw new ProxyError(403, 'Addon host is not enabled for proxy fallback.');
-    }
-    if (!target.pathname.endsWith('/manifest.json')) {
-      throw new ProxyError(403, 'Only addon manifest.json requests are permitted.');
-    }
-    if (request.method !== 'GET') throw new ProxyError(405, 'Addon manifests only support GET.');
+    if (!['GET', 'HEAD'].includes(request.method)) throw new ProxyError(405, 'Add-on requests only support GET and HEAD.');
   }
   return { target, isTorbox };
 }
@@ -266,14 +255,78 @@ async function readLimitedBody(message, maxBytes, status, signal) {
   return bytes;
 }
 
-async function fetchRestrictedJson(request, rawUrl, env) {
+function isMediaType(contentType) {
+  return !contentType || /^(?:video\/|audio\/|application\/(?:octet-stream|vnd\.apple\.mpegurl|x-mpegurl|dash\+xml)$)/i.test(contentType);
+}
+
+async function mediaResponse(request, target, upstream, signal) {
+  const headers = new Headers({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified',
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'; sandbox"
+  });
+  for (const name of ['Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges', 'ETag', 'Last-Modified']) {
+    if (upstream.headers.has(name)) headers.set(name, upstream.headers.get(name));
+  }
+  let body = upstream.body;
+  if (request.method === 'HEAD' || upstream.status === 416) {
+    await upstream.body?.cancel();
+    body = null;
+    if (upstream.status === 416) headers.delete('Content-Length');
+  } else if (/application\/(?:vnd\.apple\.mpegurl|x-mpegurl)/i.test(headers.get('Content-Type') || '')) {
+    const bytes = await readLimitedBody(upstream, MAX_REQUEST_BYTES, 502, signal);
+    const playlist = new TextDecoder().decode(bytes);
+    const relay = value => mediaProxyUrl(request, new URL(value, target), '');
+    body = playlist.replace(/URI="([^"]+)"/g, (_, value) => `URI="${relay(value)}"`)
+      .replace(/^(?!#)(\S.*)$/gm, line => relay(line.trim()));
+    headers.delete('Content-Length');
+  }
+  return new Response(body, {
+    status: upstream.status, headers
+  });
+}
+
+function resolvedMediaUrl(request, target, upstream, contentType) {
+  const origin = request.headers.get('Origin') || new URL(request.url).origin;
+  const allowedOrigin = upstream.headers.get('Access-Control-Allow-Origin');
+  if (allowedOrigin === '*' || allowedOrigin === origin) return target.href;
+
+  return mediaProxyUrl(request, target, contentType);
+}
+
+function mediaProxyUrl(request, target, contentType) {
+  // Relay media that cannot be read directly by the browser. Keep byte ranges
+  // and size headers available to the player without buffering the video.
+  const proxy = new URL(request.url);
+  let filename = target.pathname.split('/').pop() || 'video';
+  if (/matroska/i.test(contentType)) filename = 'video.mkv';
+  proxy.pathname = `/media/${encodeURIComponent(filename)}`;
+  proxy.search = '';
+  proxy.searchParams.set('url', target.href);
+  proxy.searchParams.set('mode', 'media');
+  return proxy.href;
+}
+
+async function fetchProxy(request, rawUrl, mode) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 30000);
   try {
-    const { target, isTorbox } = validateDestination(rawUrl, request, env);
-    const headers = new Headers({ Accept: 'application/json' });
+    if (!['json', 'resolve', 'media'].includes(mode)) throw new ProxyError(400, 'Invalid proxy mode.');
+    if (mode !== 'json' && !['GET', 'HEAD'].includes(request.method)) {
+      throw new ProxyError(405, 'Stream requests only support GET and HEAD.');
+    }
+    let { target, isTorbox } = validateDestination(rawUrl, request);
+    const headers = new Headers({ Accept: mode === 'json' ? 'application/json' : '*/*' });
     if (isTorbox && request.headers.has('Authorization')) {
       headers.set('Authorization', request.headers.get('Authorization'));
+    }
+    if (mode === 'resolve') headers.set('Range', 'bytes=0-0');
+    if (mode === 'media') {
+      for (const name of ['Range', 'If-Range']) {
+        if (request.headers.has(name)) headers.set(name, request.headers.get(name));
+      }
     }
     let body;
     if (request.method === 'POST' || request.method === 'PUT') {
@@ -285,55 +338,64 @@ async function fetchRestrictedJson(request, rawUrl, env) {
       body = await readLimitedBody(request, MAX_REQUEST_BYTES, 413, controller.signal);
     }
 
-    const upstream = await fetch(target.href, {
-      method: request.method,
-      headers,
-      body,
-      // Automatic redirects can forward TorBox credentials to a different host.
-      redirect: 'manual',
-      signal: controller.signal
-    });
-    if (upstream.status >= 300 && upstream.status < 400) {
-      await upstream.body?.cancel();
-      throw new ProxyError(502, 'Upstream redirects are not permitted. Use the final manifest URL.');
+    const visited = new Set();
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      if (mode === 'resolve' && isTorbox && target.pathname === '/v1/api/torrents/requestdl') {
+        target.searchParams.delete('redirect');
+        target.searchParams.set('zip', 'false');
+      }
+      if (visited.has(target.href)) throw new ProxyError(502, 'Upstream redirect loop.');
+      visited.add(target.href);
+      const upstream = await fetch(target.href, {
+        method: request.method, headers, body, redirect: 'manual', signal: controller.signal
+      });
+      if (upstream.status >= 300 && upstream.status < 400 && upstream.status !== 304) {
+        const location = upstream.headers.get('Location');
+        await upstream.body?.cancel();
+        if (!location) throw new ProxyError(502, 'Upstream redirect has no destination.');
+        if (!['GET', 'HEAD'].includes(request.method)) throw new ProxyError(502, 'Redirects are only permitted for read requests.');
+        ({ target, isTorbox } = validateDestination(new URL(location, target).href, request));
+        headers.delete('Authorization');
+        continue;
+      }
+      const contentType = upstream.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase();
+      if (mode === 'media' && (upstream.status === 416 || isMediaType(contentType))) {
+        return await mediaResponse(request, target, upstream, controller.signal);
+      }
+      if (mode === 'resolve' && upstream.ok && isMediaType(contentType)) {
+        await upstream.body?.cancel();
+        return jsonResponse({ success: true, data: resolvedMediaUrl(request, target, upstream, contentType) });
+      }
+      if (upstream.status === 204 || request.method === 'HEAD') {
+        await upstream.body?.cancel();
+        if (request.method === 'HEAD') return new Response(null, {
+          status: upstream.status, headers: jsonResponse(null).headers
+        });
+        return jsonResponse(null, upstream.status === 204 ? 200 : upstream.status);
+      }
+      if (contentType && contentType !== 'text/plain'
+          && !/^application\/(?:json|[a-z0-9!#$&^_.+-]+\+json)$/.test(contentType)) {
+        await upstream.body?.cancel();
+        throw new ProxyError(502, 'Upstream did not return JSON or playable media.');
+      }
+      const bytes = await readLimitedBody(upstream, isTorbox ? MAX_TORBOX_BYTES : MAX_ADDON_BYTES, 502, controller.signal);
+      let data;
+      try {
+        data = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+      } catch {
+        throw new ProxyError(502, 'Upstream returned invalid JSON.');
+      }
+      if (mode === 'resolve' && upstream.ok && data?.success !== false) {
+        const destination = typeof data === 'string' ? data
+          : typeof data?.data === 'string' ? data.data : data?.url || data?.data?.url;
+        if (typeof destination !== 'string') throw new ProxyError(502, 'The source did not return a playable URL.');
+        ({ target, isTorbox } = validateDestination(new URL(destination, target).href, request));
+        headers.delete('Authorization');
+        continue;
+      }
+      return jsonResponse(data, upstream.status, upstream.headers.get('Retry-After'));
     }
-    if (upstream.status === 204) {
-      if (!isTorbox) throw new ProxyError(502, 'Addon returned an empty manifest.');
-      return jsonResponse(null, 200);
-    }
-    const contentType = upstream.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase();
-    // Some addons label JSON as plain text. Parse it anyway, then serialize it
-    // ourselves. HTML, scripts, images, and other media types are rejected.
-    if (
-      contentType && contentType !== 'text/plain'
-      && !/^application\/(?:json|[a-z0-9!#$&^_.+-]+\+json)$/.test(contentType)
-    ) {
-      await upstream.body?.cancel();
-      throw new ProxyError(502, 'Upstream did not return JSON.');
-    }
-    const bytes = await readLimitedBody(
-      upstream,
-      isTorbox ? MAX_TORBOX_BYTES : MAX_MANIFEST_BYTES,
-      502,
-      controller.signal
-    );
-    let data;
-    try {
-      data = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
-    } catch {
-      throw new ProxyError(502, 'Upstream returned invalid JSON.');
-    }
-    if (
-      !isTorbox && upstream.ok
-      && (
-        !data || Array.isArray(data)
-        || typeof data.id !== 'string' || typeof data.name !== 'string'
-        || !Array.isArray(data.resources)
-      )
-    ) {
-      throw new ProxyError(502, 'Upstream did not return a valid addon manifest.');
-    }
-    return jsonResponse(data, upstream.status, upstream.headers.get('Retry-After'));
+    throw new ProxyError(502, 'Too many upstream redirects.');
   } catch (error) {
     if (error instanceof ProxyError) return jsonResponse({ error: error.message }, error.status);
     return jsonResponse(

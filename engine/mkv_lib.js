@@ -167,7 +167,9 @@ class MKVFetcher {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 3000);
         try {
-            const headRes = await fetch(this.source, { method: 'HEAD', signal: controller.signal });
+            const headRes = await fetch(this.source, {
+                method: 'HEAD', referrerPolicy: 'no-referrer', signal: controller.signal
+            });
 
             const length = parseInt(headRes.headers.get('content-length'));
             // Safety check: Ensure length is a valid number larger than 1 byte
@@ -184,6 +186,7 @@ class MKVFetcher {
             try {
                 const getRes = await fetch(this.source, {
                     headers: { 'Range': 'bytes=0-0' },
+                    referrerPolicy: 'no-referrer',
                     signal: watchdog.signal
                 });
                 const contentRange = getRes.headers.get('content-range');
@@ -206,7 +209,9 @@ class MKVFetcher {
             console.log("🌐 [Network] Range hidden. Falling back to aborted GET.");
             const watchdog = new FetchWatchdog(RANGE_FETCH_TIMEOUT_MS, null);
             try {
-                const getRes = await fetch(this.source, { signal: watchdog.signal });
+                const getRes = await fetch(this.source, {
+                    referrerPolicy: 'no-referrer', signal: watchdog.signal
+                });
                 const length = parseInt(getRes.headers.get('content-length'));
 
                 if (length && length > 1) finalSize = length;
@@ -261,6 +266,7 @@ class MKVFetcher {
                 this.stats.rangeBytesRequested += end - start;
                 response = await fetch(this.source, {
                     headers: { Range: `bytes=${start}-${end - 1}` },
+                    referrerPolicy: 'no-referrer',
                     signal: watchdog.signal
                 });
                 const range = response.headers.get('content-range');

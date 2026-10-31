@@ -30,7 +30,7 @@ export async function upsertWatchProgress(positionSeconds, durationSeconds, {
     const completed = positionSeconds >= durationSeconds * 0.9;
     const torrent = appState.allTorrents.find(item => String(item.id) === String(media.tid));
     const hash = media.hash || torrent?.hash;
-    const fileId = media.fid != null ? Number(media.fid) : NaN;
+    const fileId = media.sourceType !== 'addon' && media.fid != null ? Number(media.fid) : NaN;
 
     try {
         const payload = {

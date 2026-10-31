@@ -16,6 +16,7 @@ import { createLibraryCard } from './library-renderer.js';
 import { createLibraryGrid } from './library-grid.js';
 import { getMediaText } from './library.js';
 import { openPicker } from '../metadata/picker.js';
+import { openAddonLibraryMedia } from './addon-library.js';
 
 
 //#region Manage Library
@@ -275,6 +276,10 @@ export function renderAppLibrary(items) {
             const isCurrent = () => userId === appState.currentUser?.id
                 && key === getCurrentUserSettings().user_preferences.torboxApiKey;
             try {
+                if (!key) {
+                    await openAddonLibraryMedia(media, { download: action === 'download' });
+                    return;
+                }
                 const sourceTorrents = await resolveLibraryTorrents(media.sources, { refresh: true });
                 if (!isCurrent()) return;
                 const sourceTorrent = sourceTorrents[0];

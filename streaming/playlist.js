@@ -84,6 +84,10 @@ function createQueueItem(data, uid = crypto.randomUUID()) {
         tid: data.tid,
         fid: data.fid,
         hash: text(data.hash),
+        sourceType: data.sourceType === 'addon' ? 'addon' : 'torrent',
+        sourceMediaId: text(data.sourceMediaId),
+        sourceHashes: Array.isArray(data.sourceHashes) ? data.sourceHashes.filter(hash => typeof hash === 'string') : [],
+        streamId: text(data.streamId),
         tmdbId: Number.isSafeInteger(Number(data.tmdbId)) && Number(data.tmdbId) > 0
             ? Number(data.tmdbId) : null,
         mediaType: data.mediaType === 'movie' || data.mediaType === 'tv' ? data.mediaType : null,

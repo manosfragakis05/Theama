@@ -18,28 +18,35 @@ window.addEventListener('queue:updated', ({ detail }) => {
 });
 
 // LINK FETCHER
-export async function getTorboxLink(tid, fid) {
-    const key = getCurrentUserSettings().user_preferences.torboxApiKey; // CHANGE
-    const targetUrl = `https://api.torbox.app/v1/api/torrents/requestdl?token=${key}&torrent_id=${tid}&file_id=${fid}&zip=false`;
+export async function getTorboxLink(tid, fid, apiKey = getCurrentUserSettings().user_preferences.torboxApiKey, sourceUrl = null) {
+    const targetUrl = sourceUrl || `https://api.torbox.app/v1/api/torrents/requestdl?token=${encodeURIComponent(apiKey)}&torrent_id=${encodeURIComponent(tid)}&file_id=${encodeURIComponent(fid)}&zip=false`;
 
     try {
-        const res = await smartFetch(targetUrl);
+        const res = await smartFetch(targetUrl, sourceUrl ? { proxyMode: 'resolve' } : {});
         const data = await res.json();
 
-        if (!data.success) {
+        if (!res.ok || !data.success || typeof data.data !== 'string') {
             throw new Error(data.detail || "Unknown API Error");
         }
 
+        const resolvedUrl = new URL(data.data);
+        if (!['https:', 'http:'].includes(resolvedUrl.protocol)
+            || (resolvedUrl.hostname === 'api.torbox.app' && resolvedUrl.pathname === '/v1/api/torrents/requestdl')) {
+            throw new Error('TorBox did not return a direct video URL.');
+        }
         return data.data; // Returns just the raw CDN URL string
 
     } catch (e) {
-        console.error("API Fetch Error:", e);
-        showToast("Link Error: " + e.message, 'error');
+        // Add-on credentials are transient and must not appear in provider errors.
+        const message = sourceUrl ? 'Could not resolve the add-on stream. Check its configuration and try again.'
+            : apiKey ? e.message.split(apiKey).join('[redacted]') : e.message;
+        console.error("API Fetch Error:", message);
+        showToast("Link Error: " + message, 'error');
         return null;
     }
 }
 
-export async function requestLink(tid, fid, torrentName, fileName, queueUid = null, resumePosition = 0) {
+export async function requestLink(tid, fid, torrentName, fileName, queueUid = null, resumePosition = 0, { apiKey, sourceUrl } = {}) {
     if (queueUid && getQueueState().current?.uid !== queueUid) return;
     const generation = stopPlayback();
     queuePlaybackUid = queueUid;
@@ -51,15 +58,36 @@ export async function requestLink(tid, fid, torrentName, fileName, queueUid = nu
     const list = document.getElementById('file-list');
     while (generation === playbackGeneration) {
         if (list) list.style.opacity = '0.5';
-        const streamUrl = await getTorboxLink(tid, fid);
+        let playbackSource = sourceUrl;
+        const queued = queueUid ? getQueueState().current : null;
+        let playbackHash = queued?.hash;
+        if (!playbackSource && queued?.sourceType === 'addon') {
+            try {
+                const { resolveAddonQueueSource } = await import('../pages/addon-library.js');
+                const source = await resolveAddonQueueSource(queued);
+                playbackSource = source.url;
+                playbackHash = source.hash || playbackHash;
+                fileName = source.fileName || fileName;
+            } catch (error) {
+                if (generation === playbackGeneration) {
+                    if (list) list.style.opacity = '1';
+                    setQueuePlaybackStatus(queueUid, 'failed');
+                    showToast(error.message || 'Could not find this episode in your add-ons.', 'error');
+                }
+                return false;
+            }
+            if (generation !== playbackGeneration) return false;
+        }
+        const streamUrl = await getTorboxLink(tid, fid, apiKey, playbackSource);
         if (generation !== playbackGeneration) return;
         if (list) list.style.opacity = '1';
         if (streamUrl) {
-            startPlayer(streamUrl, fileName || torrentName || 'Untitled', null, queueUid, resumePosition);
-            return;
+            startPlayer(streamUrl, fileName || torrentName || 'Untitled', null, queueUid, resumePosition, playbackHash);
+            return true;
         }
         if (!queueUid) return;
         setQueuePlaybackStatus(queueUid, 'failed');
+        if (playbackSource) return false;
         const state = getQueueState();
         if (state.priority.length + state.context.length === 0) return;
 
@@ -74,7 +102,7 @@ export async function requestLink(tid, fid, torrentName, fileName, queueUid = nu
 }
 
 //#region Player
-export function startPlayer(url, name, localFileObject = null, queueUid = null, resumePosition = 0) {
+export function startPlayer(url, name, localFileObject = null, queueUid = null, resumePosition = 0, sourceHash = null) {
     stopPlayback();
     queuePlaybackUid = queueUid;
     const defaultPlayer = getCurrentUserSettings().user_preferences.defaultPlayer || 'Internal';
@@ -234,13 +262,14 @@ export function startPlayer(url, name, localFileObject = null, queueUid = null, 
     }
 
     const media = queueUid && getQueueState().current?.uid === queueUid
-        ? getQueueState().current : null;
+        ? { ...getQueueState().current, ...(sourceHash ? { hash: sourceHash } : {}) } : null;
 
     const completedForUsers = new Set();
+    const progressUserId = appState.currentUser?.id;
     let lastSavedSample = null;
     const saveProgress = () => {
         const userId = appState.currentUser?.id;
-        if (!media || !userId || resumePending) return;
+        if (!media || !userId || userId !== progressUserId || resumePending) return;
         if (!Number.isFinite(video.currentTime) || !Number.isFinite(video.duration)
             || video.currentTime < 0 || video.duration < 1) return;
         const duration = Math.floor(video.duration);

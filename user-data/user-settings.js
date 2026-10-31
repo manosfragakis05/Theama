@@ -10,6 +10,7 @@ let userSettings = {
         saveAddonsToCloud: false,
         trustThisDevice: true,
         parseAddonLinks: false,
+        playOnAdd: true,
         defaultPlayer: "Internal"
     }
 };
@@ -19,9 +20,31 @@ export function getCurrentUserSettings() {
     return userSettings;
 }
 
+export function shouldPlayOnAdd() {
+    return !appState.currentUser || userSettings.user_preferences.playOnAdd !== false;
+}
+
+export function getLibraryActionLabel() {
+    if (!userSettings.user_preferences.torboxApiKey) return 'Play';
+    return shouldPlayOnAdd() ? 'Add & Play' : 'Add to library';
+}
+
+function updatePlayOnAddUI() {
+    const toggle = document.getElementById('play-on-add-toggle');
+    if (toggle) {
+        toggle.checked = shouldPlayOnAdd();
+        toggle.disabled = !appState.currentUser;
+    }
+    document.getElementById('play-on-add-login-hint')?.classList.toggle('hidden', Boolean(appState.currentUser));
+    const label = document.getElementById('add-library-label');
+    if (label) label.textContent = getLibraryActionLabel();
+}
+
 // 3. New Setter: Updates preferences and auto-saves
 export async function updateUserPreference(key, value) {
+    if (key === 'playOnAdd' && !appState.currentUser) value = true;
     userSettings.user_preferences[key] = value;
+    if (key === 'playOnAdd') updatePlayOnAddUI();
     await saveSettings();
 }
 
@@ -63,7 +86,8 @@ export async function initializeSettings() {
                 ...localPrefs, // Keep local defaults
                 ...settings.user_preferences,      // Overwrite with cloud settings
 
-                torboxApiKey: settings.user_preferences.torboxApiKey || localPrefs.torboxApiKey,
+                playOnAdd: settings.user_preferences?.playOnAdd ?? true,
+                torboxApiKey: settings.user_preferences?.torboxApiKey || localPrefs.torboxApiKey,
                 defaultPlayer: localPrefs.defaultPlayer ?? 'Internal'
             };
         } else {
@@ -79,6 +103,10 @@ export async function initializeSettings() {
             userSettings = JSON.parse(storedSettings);
         }
     }
+
+    // Existing saved settings may predate this preference. Guests always play on add.
+    userSettings.user_preferences.playOnAdd = shouldPlayOnAdd();
+    updatePlayOnAddUI();
 
     // Update UI
     if (userSettings.user_preferences) {
@@ -145,10 +173,15 @@ function attachSettingsListeners() {
         userSettings.user_preferences.parseAddonLinks = e.target.checked;
         saveSettings();
     });
+
+    document.getElementById('play-on-add-toggle').addEventListener('change', (e) => {
+        updateUserPreference('playOnAdd', e.target.checked);
+    });
 }
 
 //#region Save Settings
 async function saveSettings() {
+    userSettings.user_preferences.playOnAdd = shouldPlayOnAdd();
     const storage = getStorage();
 
     // Store based on trustDevice
@@ -248,12 +281,14 @@ export async function saveTorboxKey(key) {
     if (!key) return;
 
     userSettings.user_preferences.torboxApiKey = key;
+    updatePlayOnAddUI();
 
     await saveSettings();
 }
 export async function deleteTorboxKey() {
     // Wipe the key from local memory
     userSettings.user_preferences.torboxApiKey = "";
+    updatePlayOnAddUI();
 
     await saveSettings();
 }

@@ -1,4 +1,4 @@
-import { showToast, MY_PROXY, appState } from '../services/config.js';
+import { showToast, smartFetch, appState } from '../services/config.js';
 import { getCurrentUserSettings, getStorage, saveAddons } from '../user-data/user-settings.js';
 import { renderAddonData } from './scraper-renderer.js';
 
@@ -230,15 +230,7 @@ async function detectAndValidateAddon(rawUrl) {
     if (!url.endsWith('manifest.json')) return { success: false, error: "URL must end with manifest.json" };
 
     try {
-        // Fetch the Manifest (With CORS Fallback)
-        let response;
-        try {
-            response = await fetch(url);
-        } catch (e) {
-            console.warn("Direct fetch blocked by CORS. Using proxy...");
-            const proxyUrl = MY_PROXY.replace('/?url=', '');
-            response = await fetch(`${proxyUrl}/?url=${encodeURIComponent(url)}`);
-        }
+        const response = await smartFetch(url);
 
         if (!response.ok) {
             throw new Error(`Server returned status: ${response.status}`);

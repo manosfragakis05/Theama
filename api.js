@@ -1,7 +1,8 @@
-import { showToast, MY_PROXY, TMDB_KEY } from './services/config.js';
+import { showToast, MY_PROXY, TMDB_KEY, smartFetch } from './services/config.js';
 import { loadAllAddonsParallel } from './user-addons/scrapers.js';
 import { showStreamPicker } from './user-addons/scraper-renderer.js';
 import { getTmdbId } from './metadata/metadata.js';
+import { getLibraryActionLabel } from './user-data/user-settings.js';
 
 //#region State and Data
 
@@ -175,7 +176,7 @@ async function checkFullData(mediaObject) {
         // --- STREMIO ADDON ROUTE ---
         try {
             const url = `${mediaObject.baseUrl}/meta/${mediaObject.type}/${mediaObject.id}.json`;
-            const res = await fetch(url);
+            const res = await smartFetch(url);
 
             if (!res.ok) throw new Error("Stremio Addon meta fetch failed");
             const data = await res.json();
@@ -317,7 +318,7 @@ export async function openCollectionGrid(collectionItem) {
     try {
         // 2. Fetch the metadata from the addon
         const url = `${collectionItem.baseUrl}/meta/${collectionItem.type}/${collectionItem.id}.json`;
-        const res = await fetch(url);
+        const res = await smartFetch(url);
 
         if (!res.ok) throw new Error("Failed to fetch collection");
         const data = await res.json();
@@ -407,7 +408,13 @@ export function handlePlayAction(mediaObject) {
     </svg> Loading...`;
 
     try {
-        showStreamPicker(mediaObject.title);
+        showStreamPicker(mediaObject.title, {
+            ...mediaStore.get(),
+            seasonNumber: mediaObject.activeSeason,
+            episodeNumber: mediaObject.activeEpisode,
+            kitsuEpisode: mediaObject.kitsuEpisode,
+            streamId: id
+        });
         loadAllAddonsParallel(type, id, season, episode);
     } catch (e) {
         console.error("Failed to load streams:", e);
@@ -475,6 +482,7 @@ function renderMasterDetailView(mediaObject) {
 
     const playBtn = document.getElementById('add-library-btn');
     if (playBtn) {
+        document.getElementById('add-library-label').textContent = getLibraryActionLabel();
         playBtn.onclick = () => {
             if (!playBtn.disabled) handlePlayAction(mediaObject);
         };

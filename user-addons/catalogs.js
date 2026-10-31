@@ -1,4 +1,4 @@
-import { TMDB_KEY } from "../services/config";
+import { TMDB_KEY, smartFetch } from "../services/config";
 import {
     initGlobalDrag,
     renderRow,
@@ -414,7 +414,7 @@ export async function fetchAddonCatalog(catalogObject, signal) {
     const url = `${baseUrl}/catalog/${type}/${urlId}${extraPath}.json`;
 
     try {
-        const response = await fetch(url, { signal });
+        const response = await smartFetch(url, { signal });
         if (!response.ok) throw new Error(`Status: ${response.status}`);
         const data = await response.json();
 

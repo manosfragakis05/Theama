@@ -2,6 +2,7 @@ import { addStreamtoTorbox } from "../services/torbox.js";
 import { getCurrentUserSettings } from "../user-data/user-settings.js";
 import { parseFormated } from "../utils/parseMedia.js";
 import { getScrapingProviders } from "./scrapers.js";
+import { getStreamHash } from '../utils/streams.js';
 
 
 //#region Parse Streams
@@ -53,11 +54,12 @@ export function filterAndSortStreams(streams, addonName) {
 //#region Render All Streams
 
 export const streamState = {
-    addons: {}
+    addons: {},
+    selectedMedia: null
 };
 
 // Panel with streams from each addon
-export function showStreamPicker(mainTitle) {
+export function showStreamPicker(mainTitle, selectedMedia) {
     const modal = document.getElementById('stream-picker-modal');
     const tabsContainer = document.getElementById('addon-tabs-container');
     const list = document.getElementById('stream-picker-list');
@@ -67,6 +69,7 @@ export function showStreamPicker(mainTitle) {
     const userAddons = getScrapingProviders();
 
     streamState.addons = {}; // Clean slate!
+    streamState.selectedMedia = { ...selectedMedia };
 
     // 2. --- PREPARE CONTAINERS ---
     tabsContainer.innerHTML = '';
@@ -389,19 +392,8 @@ const renderLine = (lineData) => lineData.map(item => {
 //#region Main Card
 function createStreamCard(stream, isRecommended) {
     const raw = stream.rawStream;
-    let extractedHash;
-
-    if (raw.infoHash) {
-        extractedHash = raw.infoHash;
-    } else if (raw.url) {
-        const urlMatch = raw.url.match(/\/([a-fA-F0-9]{40})\//);
-        if (urlMatch) extractedHash = urlMatch[1];
-    }
-
-    if (!extractedHash && raw.behaviorHints?.bingeGroup) {
-        const bingeMatch = raw.behaviorHints.bingeGroup.match(/\|([a-fA-F0-9]{40})/);
-        if (bingeMatch) extractedHash = bingeMatch[1];
-    }
+    const selectedMedia = streamState.selectedMedia;
+    const extractedHash = getStreamHash(raw);
 
     const finalLink = extractedHash
         ? `magnet:?xt=urn:btih:${extractedHash}`
@@ -425,8 +417,14 @@ function createStreamCard(stream, isRecommended) {
     btn.className = `${baseClasses} ${colorClasses}`;
 
     // Reusable submit function to prevent repeating logic
-    const handleSubmit = () => {
-        addStreamtoTorbox(finalLink);
+    const handleSubmit = async () => {
+        if (btn.disabled) return;
+        btn.disabled = true;
+        try {
+            await addStreamtoTorbox(finalLink, selectedMedia, raw);
+        } finally {
+            btn.disabled = false;
+        }
     };
 
     // Show Raw Data
