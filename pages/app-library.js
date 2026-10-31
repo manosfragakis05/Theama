@@ -70,6 +70,52 @@ export async function linkHashToMedia(mediaData, torboxHash, addedViaApp = false
     if (addedViaApp) await loadAppLibrary();
 }
 
+export async function addCloudItemToAppLibrary(item) {
+    const tmdbId = item.tmdbId?.id;
+    if (!Number.isSafeInteger(tmdbId) || tmdbId <= 0) return false;
+    const userId = appState.currentUser?.id;
+    if (!userId) throw new Error('Sign in to add cloud items to your library.');
+    const hash = item.torrent?.hash;
+    if (typeof hash !== 'string' || !hash.trim()) throw new Error('This cloud item has no source hash.');
+    const key = getCurrentUserSettings().user_preferences.torboxApiKey;
+    const isCurrent = () => userId === appState.currentUser?.id
+        && key === getCurrentUserSettings().user_preferences.torboxApiKey;
+    const type = item.mediaText === 'Series' || item.mediaText === 'Single Episode' ? 'tv' : 'movie';
+    // TMDB movie and TV IDs overlap; keep their database identities separate.
+    const mediaId = `tmdb:${type}:${tmdbId}`;
+    const { error: mediaError } = await supabase.from('global_media').upsert({
+        media_id: mediaId,
+        tmdb_id: tmdbId,
+        media_type: type,
+        title: item.name,
+        poster_path: item.poster || null,
+        base_url: null
+    }, { onConflict: 'media_id' });
+    if (mediaError) throw mediaError;
+    if (!isCurrent()) return false;
+
+    const { error } = await supabase.from('added_sources').insert({
+        user_id: userId,
+        media_id: mediaId,
+        added_hash: hash,
+        added_via_app: true
+    });
+    if (error?.code === '23505') {
+        if (!isCurrent()) return false;
+        // Promote a source already tracked in Cloud and keep its TMDB mapping.
+        const { error: updateError } = await supabase.from('added_sources')
+            .update({ media_id: mediaId, added_via_app: true })
+            .eq('user_id', userId)
+            .eq('added_hash', hash);
+        if (updateError) throw updateError;
+    } else if (error) {
+        throw error;
+    }
+    if (!isCurrent()) return false;
+    await loadAppLibrary();
+    return isCurrent();
+}
+
 export async function removeHashFromAppLibrary(hash, userId = appState.currentUser?.id) {
     if (!userId || !hash) return;
 
@@ -141,6 +187,7 @@ export async function loadAppLibrary() {
         const items = await fetchAppLibraryData();
         if (loadId !== libraryLoadId || userId !== appState.currentUser?.id) return;
         renderAppLibrary(items);
+        window.dispatchEvent(new CustomEvent('app-library:updated', { detail: { userId } }));
     } catch (error) {
         if (loadId !== libraryLoadId || userId !== appState.currentUser?.id) return;
         console.error('App library load failed:', error);
@@ -149,7 +196,7 @@ export async function loadAppLibrary() {
     }
 }
 
-async function fetchAppLibraryData() {
+export async function fetchAppLibraryData() {
     const userId = appState.currentUser?.id;
     if (!userId) return [];
 
@@ -158,6 +205,7 @@ async function fetchAppLibraryData() {
         .select(`
             media_id,
             added_hash,
+            created_at,
             global_media (
                 tmdb_id,
                 media_type,
@@ -213,7 +261,8 @@ async function fetchAppLibraryData() {
 
         group.sources.push({
             hash: row.added_hash,
-            media_id: row.media_id
+            media_id: row.media_id,
+            addedAt: row.created_at
         });
     }
 
@@ -329,10 +378,19 @@ export function renderAppLibrary(items) {
 
 export async function resolveLibraryTorrents(sources, { refresh = false } = {}) {
     const normalizeHash = hash => typeof hash === 'string' ? hash.trim().toLowerCase() : '';
+    const sourceOrder = new Map();
+    sources.forEach((source, index) => {
+        const hash = normalizeHash(source.hash);
+        if (hash && !sourceOrder.has(hash)) sourceOrder.set(hash, {
+            libraryAddedAt: source.addedAt || null,
+            librarySourceOrder: sources.length - index
+        });
+    });
+    const withLibraryOrder = torrents => torrents.map(torrent => ({ ...torrent, ...sourceOrder.get(normalizeHash(torrent.hash)) }));
     const hashes = new Set(sources.map(source => normalizeHash(source.hash)).filter(Boolean));
     if (hashes.size === 0) throw new Error('No valid source is linked to this item.');
     const cachedTorrents = appState.allTorrents.filter(torrent => hashes.has(normalizeHash(torrent.hash)) && torrent.download_finished);
-    if (!refresh && cachedTorrents.length === hashes.size && cachedTorrents.length > 0) return cachedTorrents;
+    if (!refresh && cachedTorrents.length === hashes.size && cachedTorrents.length > 0) return withLibraryOrder(cachedTorrents);
 
     const tbKey = getCurrentUserSettings().user_preferences.torboxApiKey;
     if (!tbKey) throw new Error('Link TorBox in settings to play or download this media.');
@@ -387,7 +445,7 @@ export async function resolveLibraryTorrents(sources, { refresh = false } = {}) 
         throw error;
     }
 
-    if (readyTorrents.length > 0) return readyTorrents;
+    if (readyTorrents.length > 0) return withLibraryOrder(readyTorrents);
     throw new Error('No source is ready yet. Check its download in TorBox.');
 }
 //#endregion

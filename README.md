@@ -18,8 +18,8 @@ Bypass WebKit's strict media limitations. Play **MKV files** and unsupported aud
 - **Metadata Matching:** Assigns high-quality posters and data, turning a raw file list into a polished UI.
 
 ### Profiles and Data
-- **Auto-Sync:** Any media watched is save on your profile so you can start where you left off and track anything across devices.
-- **App-Library:** Aside from your debrid library, anything added within Theama will be stored in your profile.
+- **Auto-Sync:** Sign in to a free Theama account to track recognised titles played in the built-in player and resume across devices.
+- **App-Library:** Save titles from compatible add-on playback to your Theama account, including when the provider key is configured only in the add-on.
 
 ### Playlists & Queues
 - **Custom Queues:** Mix and match any movie or specific TV episodes from your library into a single seamless playlist. 
@@ -35,8 +35,13 @@ Bypass WebKit's strict media limitations. Play **MKV files** and unsupported aud
 
 
 ## Getting Started
-- Currently only supports **TorBox** as a debrid service which is necessary for playback. But more will services will be added in the future.
-- Theama is only a **video player** it does **not** contain any media. Any content must be provided from **addons**.
+1. **Create a free Theama account.** It is optional for browsing and compatible add-on playback, but most features require one, including your saved app library, watch tracking, release calendar, custom watchlists, and social features.
+2. **Configure and install a compatible stream add-on.** If it requires a TorBox key, you can enter it in the add-on's own setup. You do not need to enter the key separately in Theama to play its compatible sources.
+3. **Open Discover and choose a playable source.** Sign in to save recognised titles and track watch progress in the built-in player.
+
+Connecting **TorBox in Theama is optional**. It lets you browse and organise files already in your TorBox cloud library. This connection is separate from your Theama account and any provider configuration in your add-ons.
+
+Theama is a **video player** and does **not** contain media. Bring your own sources through compatible add-ons or your connected cloud library.
 
 
 ## License and official project

@@ -17,7 +17,7 @@ import { startQueueFromItem } from '../streaming/playlist.js';
 import { downloadFile } from '../streaming/download.js';
 import { createLibraryCard } from './library-renderer.js';
 import { createLibraryGrid } from './library-grid.js';
-import { loadAppLibrary, removeHashFromAppLibrary } from './app-library.js';
+import { loadAppLibrary, removeHashFromAppLibrary, addCloudItemToAppLibrary } from './app-library.js';
 
 export { downloadFile } from '../streaming/download.js';
 
@@ -352,6 +352,17 @@ function updateCardMetadata(card, item) {
         image.classList.remove('hidden');
         fallback.classList.add('hidden');
     }
+    updateAddLibraryButton(card, item);
+}
+
+function updateAddLibraryButton(card, item) {
+    const button = card.querySelector('[data-action="add-library"]');
+    const id = item.tmdbId?.id;
+    button.classList.toggle('hidden', !Number.isSafeInteger(id) || id <= 0);
+    if (button.getAttribute('aria-busy') === 'true') return;
+    const label = button.dataset.added === 'true' ? 'Added to library' : `Add ${item.name} to library`;
+    button.title = label;
+    button.setAttribute('aria-label', label);
 }
 
 function renderItem(item) {
@@ -367,12 +378,43 @@ function renderItem(item) {
         item.mediaText,
         item.size
     );
+    updateAddLibraryButton(card, item);
 
     // Handle Clicks cleanly
     card.addEventListener('click', async (event) => {
         const btn = event.target.closest('button');
 
         // Handle Actions
+        if (btn?.dataset.action === 'add-library') {
+            event.stopPropagation();
+            if (btn.disabled || context !== getMetadataContext() || !card.isConnected) return;
+            if (!Number.isSafeInteger(item.tmdbId?.id) || item.tmdbId.id <= 0) return;
+            if (!appState.currentUser) {
+                showToast('Sign in to add cloud items to your library.', 'error');
+                return;
+            }
+            btn.disabled = true;
+            btn.title = 'Adding to library…';
+            btn.setAttribute('aria-label', 'Adding to library');
+            btn.setAttribute('aria-busy', 'true');
+            try {
+                const saved = await addCloudItemToAppLibrary(item);
+                if (saved && context === getMetadataContext() && card.isConnected) {
+                    btn.dataset.added = 'true';
+                    btn.querySelector('path').setAttribute('d', 'M5 12l4 4L19 6');
+                    btn.classList.remove('text-white');
+                    btn.classList.add('text-emerald-300');
+                    showToast('Added to your library.', 'success');
+                }
+            } catch (error) {
+                if (context === getMetadataContext()) showToast(error.message || 'Could not add this item to your library.', 'error');
+            } finally {
+                btn.removeAttribute('aria-busy');
+                btn.disabled = btn.dataset.added === 'true';
+                updateAddLibraryButton(card, item);
+            }
+            return;
+        }
         if (btn?.dataset.action === 'delete') {
             event.stopPropagation();
 

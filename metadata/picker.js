@@ -544,6 +544,54 @@ function closeEpisodeMenus() {
         .forEach(menu => menu.hidePopover());
 }
 
+const MERGED_SOURCE = 'merged';
+
+function pickerEpisodeNumber(file) {
+    const value = file.relativeEpisode ?? file.episode;
+    if (value == null || value === '') return null;
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+function comparePickerSources(a, b) {
+    const libraryDateA = Date.parse(a.libraryAddedAt);
+    const libraryDateB = Date.parse(b.libraryAddedAt);
+    if (Number.isFinite(libraryDateA) && Number.isFinite(libraryDateB) && libraryDateA !== libraryDateB) {
+        return libraryDateA - libraryDateB;
+    }
+    if (Number.isFinite(a.librarySourceOrder) || Number.isFinite(b.librarySourceOrder)) {
+        return (a.librarySourceOrder || 0) - (b.librarySourceOrder || 0);
+    }
+    const dateA = Date.parse(a.created_at);
+    const dateB = Date.parse(b.created_at);
+    return (Number.isFinite(dateA) ? dateA : 0) - (Number.isFinite(dateB) ? dateB : 0);
+}
+
+function duplicateEpisodeNumber(file) {
+    // Openings, endings, trailers and movies have their own labels, not episode badges.
+    if (['Theme', 'Trailer', 'Movie'].includes(file.fileType)) return null;
+    return pickerEpisodeNumber(file);
+}
+
+function uniquePickerFiles(files, torrent) {
+    const unique = new Map();
+    for (const file of files) {
+        const source = file.sourceTorrent || torrent;
+        const episode = duplicateEpisodeNumber(file);
+        const key = episode == null ? `file:${getTorrentKey(source)}:${file.originalFile.id}` : `episode:${episode}`;
+        const previous = unique.get(key);
+        if (!previous || comparePickerSources(source, previous.sourceTorrent || torrent) >= 0) unique.set(key, file);
+    }
+    return [...unique.values()].sort((a, b) => {
+        const numberA = pickerEpisodeNumber(a);
+        const numberB = pickerEpisodeNumber(b);
+        if (numberA == null && numberB == null) return a.originalFile.name.localeCompare(b.originalFile.name);
+        if (numberA == null) return 1;
+        if (numberB == null) return -1;
+        return numberA - numberB;
+    });
+}
+
 function preparePickerQueue(torrent, franchiseGroups, cleanName, tmdbId, fallbackImage = '') {
     const typePriority = {
         'TV': 1,
@@ -563,40 +611,44 @@ function preparePickerQueue(torrent, franchiseGroups, cleanName, tmdbId, fallbac
         return (groupA.seasonOrder || 0) - (groupB.seasonOrder || 0);
     });
 
-    // Keep alternate torrents separate, including their episode numbering.
+    // Merge distinct episodes by default and retain each source as an alternative.
     const preparedGroups = {};
     const seasonSources = new Map();
     const selectedSources = new Map();
+    const overlappingSeasons = new Set();
     sortedGroupKeys.forEach(key => {
         const groupData = franchiseGroups[key];
         const variants = new Map();
         if (!seasonSources.has(groupData.seasonKey)) seasonSources.set(groupData.seasonKey, new Map());
         const sources = seasonSources.get(groupData.seasonKey);
+        const episodeSources = new Map();
         for (const file of groupData.files || []) {
             const sourceTorrent = file.sourceTorrent || torrent;
             const sourceKey = getTorrentKey(sourceTorrent);
             if (!variants.has(sourceKey)) variants.set(sourceKey, { sortedFiles: [], queueItems: [] });
             variants.get(sourceKey).sortedFiles.push(file);
             sources.set(sourceKey, sourceTorrent);
-            if (!selectedSources.has(groupData.seasonKey)) selectedSources.set(groupData.seasonKey, sourceKey);
+            const episode = duplicateEpisodeNumber(file);
+            if (episode != null) {
+                if (episodeSources.has(episode) && episodeSources.get(episode) !== sourceKey) overlappingSeasons.add(groupData.seasonKey);
+                episodeSources.set(episode, sourceKey);
+            }
         }
+        selectedSources.set(groupData.seasonKey, MERGED_SOURCE);
+        variants.set(MERGED_SOURCE, { sortedFiles: groupData.files || [], queueItems: [] });
 
         for (const variant of variants.values()) {
-            const sortedFiles = variant.sortedFiles.sort((a, b) => {
-                const valA = parseInt(a.episode);
-                const valB = parseInt(b.episode);
-                if (isNaN(valA) && isNaN(valB)) {
-                    return a.originalFile.name.localeCompare(b.originalFile.name);
-                }
-                return (isNaN(valA) ? 9999 : valA) - (isNaN(valB) ? 9999 : valB);
-            });
+            const sortedFiles = uniquePickerFiles(variant.sortedFiles, torrent);
+            variant.sortedFiles = sortedFiles;
+            let nextEpisode = Math.max(0, ...sortedFiles.map(file => pickerEpisodeNumber(file) ?? 0)) + 1;
 
-            const queueItems = sortedFiles.map((fileObj, index) => {
-                const { originalFile, episode, relativeEpisode, displayTitle, displayThumbnail, fileType, fileTypeLabel, isExtra } = fileObj;
+            const queueItems = sortedFiles.map(fileObj => {
+                const { originalFile, displayTitle, displayThumbnail, fileType, fileTypeLabel, isExtra } = fileObj;
                 const sourceTorrent = fileObj.sourceTorrent || torrent;
                 const isThemeFile = fileType === 'Theme';
                 const isOvaFile = fileType === 'OVA' || fileType === 'Special';
                 const isMovieFile = fileType === 'Movie';
+                const displayEpisode = pickerEpisodeNumber(fileObj) ?? nextEpisode++;
 
                 const finalCardTitle = displayTitle || originalFile.short_name || originalFile.name.split(/[\\/]/).at(-1);
                 const badgeText = isThemeFile
@@ -607,7 +659,7 @@ function preparePickerQueue(torrent, franchiseGroups, cleanName, tmdbId, fallbac
                             ? `⭐ ${fileTypeLabel || fileType}`
                             : isMovieFile
                                 ? `🎥 ${fileTypeLabel || 'Movie'}`
-                                : `Episode ${relativeEpisode ?? episode ?? (index + 1)}`;
+                                : `Episode ${displayEpisode}`;
 
                 const fileSize = sourceTorrent.addonMedia ? '' : (originalFile.size / 1073741824).toFixed(2) + ' GB';
                 const cardImage = displayThumbnail || fallbackImage;
@@ -619,11 +671,11 @@ function preparePickerQueue(torrent, franchiseGroups, cleanName, tmdbId, fallbac
                     tmdbId: fileType === 'TV' ? tmdbId : null,
                     mediaType: 'tv',
                     seasonNumber: fileObj.watchSeason ?? fileObj.tmdbSeason,
-                    watchEpisodeNumber: fileObj.watchEpisode ?? relativeEpisode ?? episode ?? (index + 1),
+                    watchEpisodeNumber: fileObj.watchEpisode ?? displayEpisode,
                     seriesTitle: cleanName,
                     season: groupData.title,
                     fileType: groupData.fileType,
-                    episodeNumber: relativeEpisode ?? episode ?? (index + 1),
+                    episodeNumber: displayEpisode,
                     badge: badgeText,
                     title: finalCardTitle,
                     fileName: originalFile.name,
@@ -670,7 +722,7 @@ function preparePickerQueue(torrent, franchiseGroups, cleanName, tmdbId, fallbac
         return chainedQueue;
     };
 
-    return { sortedGroupKeys, seasonSources, selectedSources, getSelectedGroup, getChainedMultiSeasonQueue };
+    return { sortedGroupKeys, seasonSources, selectedSources, overlappingSeasons, getSelectedGroup, getChainedMultiSeasonQueue };
 }
 
 // Resolve by file identity: TMDB numbering can differ from torrent episode numbering.
@@ -732,7 +784,7 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName, tmdbId
         ? Math.max(0, Math.min(position / duration * 100, 100)) : null;
 
     const fallbackImage = document.getElementById(`img-${torrent.id}`)?.src || '';
-    const { sortedGroupKeys, seasonSources, selectedSources, getSelectedGroup, getChainedMultiSeasonQueue } =
+    const { sortedGroupKeys, seasonSources, selectedSources, overlappingSeasons, getSelectedGroup, getChainedMultiSeasonQueue } =
         preparePickerQueue(torrent, franchiseGroups, cleanName, tmdbId, fallbackImage);
 
     titleElement.innerHTML = `
@@ -951,7 +1003,7 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName, tmdbId
         listElement.scrollTop = 0;
         const sources = seasonSources.get(seasonKey);
         const groupKeys = seasonGroups.get(seasonKey).filter(key => getSelectedGroup(key));
-        if (sources.size > 1) {
+        if (sources.size > 1 && overlappingSeasons.has(seasonKey)) {
             const sourceSelect = document.createElement('select');
             sourceSelect.id = 'library-torrent-select';
             sourceSelect.setAttribute('aria-label', `Torrent for ${franchiseGroups[groupKeys[0]].seasonLabel}`);
@@ -964,6 +1016,10 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName, tmdbId
                     </svg>
                 </button>
             `;
+            const mergedOption = document.createElement('option');
+            mergedOption.value = MERGED_SOURCE;
+            mergedOption.textContent = 'All torrents (merged)';
+            sourceSelect.appendChild(mergedOption);
             const labels = [...sources.values()].map(source => {
                 const size = Number.isFinite(source.size) ? ` · ${(source.size / 1073741824).toFixed(1)} GB` : '';
                 return `${source.name || 'Torrent'}${size}`;
@@ -978,7 +1034,7 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName, tmdbId
             });
             sourceSelect.value = selectedSources.get(seasonKey);
             sourceSelect.addEventListener('change', event => {
-                if (!sources.has(event.target.value)) return;
+                if (event.target.value !== MERGED_SOURCE && !sources.has(event.target.value)) return;
                 selectedSources.set(seasonKey, event.target.value);
                 renderSeason(seasonKey);
                 document.getElementById('library-torrent-select')?.focus({ preventScroll: true });

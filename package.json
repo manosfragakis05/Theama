@@ -10,6 +10,9 @@
     "test:play-on-add": "node --experimental-vm-modules --test tests/play-on-add.test.js",
     "test:media-requests": "node --experimental-vm-modules --test tests/media-requests.test.js",
     "test:addon-library": "node --experimental-vm-modules --test tests/addon-library.test.js",
+    "test:calendar": "node --experimental-vm-modules --test tests/calendar.test.js",
+    "test:cloud-library": "node --experimental-vm-modules --test tests/cloud-library.test.js",
+    "test:picker": "node --experimental-vm-modules --test tests/picker.test.js",
     "preview": "vite preview"
   },
   "devDependencies": {

@@ -121,6 +121,7 @@ export function startPlayer(url, name, localFileObject = null, queueUid = null, 
 
     const wrapper = document.getElementById('player-wrapper');
     if (wrapper) wrapper.classList.remove('hidden');
+    document.getElementById('full-detail-view')?.classList.add('hidden', 'translate-y-full');
 
     const isMkv = name.toLowerCase().endsWith('.mkv') || url.toLowerCase().split('?')[0].endsWith('.mkv');
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -508,7 +509,7 @@ export function startPlayer(url, name, localFileObject = null, queueUid = null, 
         }
     });
 
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    document.getElementById('app-main')?.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 export function stopPlayback() {

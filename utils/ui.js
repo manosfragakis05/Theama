@@ -11,6 +11,7 @@ import { stopPlayback } from '../streaming/player.js';
 import { loadDiscover, searchTMDB } from '../user-addons/catalogs.js';
 import { returnToMyProfile } from '../user-data/profile.js';
 import { loadHome } from '../pages/home.js';
+import { loadCalendar } from '../pages/calendar.js';
 
 // --- NAVIGATION & TABS ---
 
@@ -65,6 +66,9 @@ function handlePageSpecificLogic(pageId) {
             break;
         case 'discover-page':
             loadDiscover();
+            break;
+        case 'calendar-page':
+            loadCalendar();
             break;
         case 'help-page':
             document.getElementById('app-main').scrollTop = 0;

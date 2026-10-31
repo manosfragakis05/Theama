@@ -55,6 +55,12 @@
                 d="M4 6a2 2 0 012-2h2l2 2h8a2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V6z"></path>
         </symbol>
 
+        <!-- Calendar Icon -->
+        <symbol id="icon-calendar" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M8 3v4m8-4v4M4 10h16M5 5h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z"></path>
+        </symbol>
+
         <!-- Settings Icon -->
         <symbol id="icon-settings" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -148,6 +154,15 @@
                                 <use href="#icon-library"></use>
                             </svg>
                             <span class="sidebar-text whitespace-nowrap">Library</span>
+                        </button>
+
+                        <!-- Calendar (desktop only) -->
+                        <button data-target="calendar-page" type="button" title="Release calendar"
+                            class="nav-link w-full flex items-center gap-4 px-6 py-3 font-bold transition-all text-slate-400 hover:bg-slate-800 hover:text-white [&.active]:bg-blue-600 [&.active]:text-white">
+                            <svg class="w-6 h-6 shrink-0" fill="none" stroke="currentColor" aria-hidden="true">
+                                <use href="#icon-calendar"></use>
+                            </svg>
+                            <span class="sidebar-text whitespace-nowrap">Calendar</span>
                         </button>
 
                         <!-- Discover -->
@@ -277,6 +292,13 @@
                         class="relative isolate min-h-[clamp(34rem,150vw,56rem)] overflow-hidden bg-slate-800 select-none [-webkit-touch-callout:none] md:min-h-[clamp(32rem,68svh,43rem)] md:rounded-xl [&_*]:select-none"
                         aria-label="Trending this week"
                         aria-roledescription="carousel" aria-busy="true">
+                        <button id="home-calendar-btn" type="button" data-target="calendar-page"
+                            aria-label="Open release calendar" title="Release calendar"
+                            class="nav-link absolute right-4 top-[max(1rem,env(safe-area-inset-top))] z-30 grid h-11 w-11 place-items-center rounded-full border border-white/20 bg-slate-900/50 text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-white/20 md:hidden">
+                            <svg class="h-6 w-6" fill="none" stroke="currentColor" aria-hidden="true">
+                                <use href="#icon-calendar"></use>
+                            </svg>
+                        </button>
                         <div class="flex [min-height:inherit] flex-col items-start justify-center gap-3 bg-gradient-to-bl from-slate-700 to-slate-900 p-8 text-slate-300" role="status">
                             <span class="text-[11px] font-extrabold uppercase tracking-[.2em] text-blue-200">Trending this week</span>
                             <p>Loading this week's picks...</p>
@@ -365,6 +387,10 @@
                         <div id="app-library-list" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4"></div>
                     </div>
                 </div>
+
+                <section id="calendar-page" class="page-view hidden flex-none" aria-labelledby="calendar-title">
+                    <div id="calendar-root" class="calendar-shell"></div>
+                </section>
 
                 <div id="discover-page" class="page-view hidden flex flex-col gap-10">
                     <div class="space-y-5">
@@ -604,7 +630,7 @@
                             <use href="#icon-help"></use>
                         </svg>
                         <span class="flex-1"><span class="block font-bold text-white">Setup &amp; Help</span>
-                            <span class="block mt-1 text-sm text-slate-400">Get started, install Theama, and find your way around.</span></span>
+                            <span class="block mt-1 text-sm text-slate-400">Create a free account, set up add-ons, and find your way around.</span></span>
                         <svg class="w-5 h-5 shrink-0 -rotate-90 text-slate-400" aria-hidden="true" fill="none" stroke="currentColor">
                             <use href="#icon-arrow"></use>
                         </svg>
@@ -793,7 +819,7 @@
                                 <div class="flex justify-between items-start">
                                     <div>
                                         <h3 id="torbox-settings" class="font-bold text-white text-lg">TorBox API</h3>
-                                        <p class="text-sm text-slate-400 mt-1">Your core cloud provider</p>
+                                        <p class="text-sm text-slate-400 mt-1">Optional: browse and organise your existing TorBox cloud library</p>
                                     </div>
 
                                     <span id="tb-status-connected"
@@ -1758,6 +1784,12 @@
                 <div
                     class="library-fallback absolute inset-0 flex items-center justify-center p-4 text-center text-slate-500 font-bold text-sm bg-slate-800">
                 </div>
+                <button type="button" data-action="add-library" title="Add to library" aria-label="Add to library"
+                    class="hidden absolute top-2 left-2 z-10 flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-black/65 text-white shadow-lg backdrop-blur-sm transition hover:bg-blue-600 disabled:opacity-70">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 5v14m-7-7h14"></path>
+                    </svg>
+                </button>
                 <div
                     class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3">
                     <div class="flex justify-between items-center mb-1">

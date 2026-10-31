@@ -71,6 +71,11 @@ function imageUrl(path, size) {
 
 let carouselListeners = null;
 
+function replaceHeroContent(root, content) {
+    const calendarButton = root.querySelector('#home-calendar-btn');
+    root.replaceChildren(content, ...(calendarButton ? [calendarButton] : []));
+}
+
 export function renderHomeMessage(root, message, onRetry = null) {
     carouselListeners?.abort();
     const container = cloneTemplate('home-hero-message-template');
@@ -78,7 +83,7 @@ export function renderHomeMessage(root, message, onRetry = null) {
     const retry = container.querySelector('.home-hero-retry');
     retry.classList.toggle('hidden', !onRetry);
     if (onRetry) retry.addEventListener('click', onRetry);
-    root.replaceChildren(container);
+    replaceHeroContent(root, container);
 }
 
 function createSlide(item, index, count) {
@@ -203,7 +208,7 @@ export function renderHomeCarousel(root, items) {
     track.append(...slides);
     dots.append(...dotButtons);
     controls.classList.toggle('hidden', items.length < 2);
-    root.replaceChildren(carousel);
+    replaceHeroContent(root, carousel);
     selectSlide(0);
 }
 
