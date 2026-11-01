@@ -36,9 +36,12 @@ export default {
 
     if (url.pathname === '/map') {
       const tmdbIdParam = url.searchParams.get("tmdb_id");
+      const anilistIdParam = url.searchParams.get('anilist_id');
+      const mappingId = anilistIdParam || tmdbIdParam;
 
-      if (!tmdbIdParam) {
-        return new Response(JSON.stringify({ error: "Missing tmdb_id query parameter." }), {
+      if (!mappingId || !/^\d+$/.test(mappingId) || !Number.isSafeInteger(Number(mappingId))
+          || Number(mappingId) <= 0 || (tmdbIdParam && anilistIdParam)) {
+        return new Response(JSON.stringify({ error: 'Provide one positive tmdb_id or anilist_id query parameter.' }), {
           status: 400,
           headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
         });
@@ -64,6 +67,7 @@ export default {
 
         // 1. Filter to grab all seasons/parts (Raw Fribb Objects)
         const matches = mappings.filter(item => {
+          if (anilistIdParam) return [].concat(item.anilist_id ?? []).map(String).includes(anilistIdParam);
           const tmdb = item.themoviedb_id;
           if (!tmdb) return false;
           const movieIds = [].concat(tmdb.movie ?? []).map(String);
@@ -73,7 +77,7 @@ export default {
         // 2. Return the raw array directly
         if (matches.length > 0) {
           return new Response(JSON.stringify({
-            tmdb_id: parseInt(tmdbIdParam, 10),
+            [anilistIdParam ? 'anilist_id' : 'tmdb_id']: Number(mappingId),
             total_matches: matches.length,
             matches: matches
           }), {
@@ -85,7 +89,7 @@ export default {
             }
           });
         } else {
-          return new Response(JSON.stringify({ error: `TMDB ID ${tmdbIdParam} not found in the mapping.` }), {
+          return new Response(JSON.stringify({ error: `${anilistIdParam ? 'AniList' : 'TMDB'} ID ${mappingId} not found in the mapping.` }), {
             status: 404,
             headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
           });

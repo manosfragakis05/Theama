@@ -288,7 +288,7 @@ function switchStorageMode(trustDevice) {
 
     const sourceStorage = trustDevice ? sessionStorage : localStorage;
     const targetStorage = trustDevice ? localStorage : sessionStorage;
-    const keysToMove = ['full_addon_data', 'active_queue'];
+    const keysToMove = ['full_addon_data', 'active_queue', 'theama_anilist_session'];
     const sbTokenKey = Object.keys(sourceStorage).find(k => k.startsWith('sb-') && k.endsWith('-auth-token'))
         || Object.keys(targetStorage).find(k => k.startsWith('sb-') && k.endsWith('-auth-token'));
     if (sbTokenKey) keysToMove.push(sbTokenKey);

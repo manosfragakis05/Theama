@@ -12,6 +12,7 @@ import { loadDiscover, searchTMDB } from '../user-addons/catalogs.js';
 import { returnToMyProfile } from '../user-data/profile.js';
 import { loadHome } from '../pages/home.js';
 import { loadCalendar } from '../pages/calendar.js';
+import { loadAniListWatchlists } from '../user-data/anilist-renderer.js';
 
 // --- NAVIGATION & TABS ---
 
@@ -69,6 +70,9 @@ function handlePageSpecificLogic(pageId) {
             break;
         case 'calendar-page':
             loadCalendar();
+            break;
+        case 'profile-page':
+            loadAniListWatchlists();
             break;
         case 'help-page':
             document.getElementById('app-main').scrollTop = 0;

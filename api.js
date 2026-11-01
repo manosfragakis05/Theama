@@ -97,7 +97,8 @@ async function checkFullData(mediaObject) {
             if (tmdbBackdrop) mediaObject.backdrop = originalBackdropUrl(tmdbBackdrop);
 
             if ((mediaObject.type === "tv" || mediaObject.type === "series") && detailedData.seasons) {
-                const validSeasons = detailedData.seasons.filter(s => s.season_number > 0);
+                const validSeasons = detailedData.seasons.filter(s => s.season_number > 0
+                    || (mediaObject.activeSeason === 0 && s.season_number === 0));
 
                 const seasonPromises = validSeasons.map(s =>
                     fetch(`https://api.themoviedb.org/3/tv/${mediaObject.id}/season/${s.season_number}?api_key=${TMDB_KEY}`)
@@ -121,10 +122,12 @@ async function checkFullData(mediaObject) {
                 }));
 
                 // Set defaults as integers
-                const defaultSeason = mediaObject.seasons.find(s => s.seasonNumber > 0) || mediaObject.seasons[0];
+                const defaultSeason = mediaObject.seasons.find(s => s.seasonNumber === mediaObject.activeSeason)
+                    || mediaObject.seasons.find(s => s.seasonNumber > 0) || mediaObject.seasons[0];
 
                 mediaObject.activeSeason = defaultSeason?.seasonNumber ?? 1;
-                mediaObject.activeEpisode = defaultSeason?.episodes[0]?.episodeNumber ?? 1;
+                mediaObject.activeEpisode = defaultSeason?.episodes.find(ep => ep.episodeNumber === mediaObject.activeEpisode)?.episodeNumber
+                    ?? defaultSeason?.episodes[0]?.episodeNumber ?? 1;
 
                 // Set for scrapper after fetching
                 mediaObject.type = "series";

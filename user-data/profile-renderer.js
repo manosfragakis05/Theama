@@ -1,4 +1,5 @@
 import { openMasterDetail } from '../api.js';
+import { setAniListProfileVisibility } from './anilist-renderer.js';
 
 export function renderAllWatchlists(customLists, onEditList = null) {
     const container = document.getElementById('profile-watchlists-container');
@@ -133,9 +134,11 @@ export function showPersonalProfile(username) {
 
     const watchlistsContainer = document.getElementById('profile-watchlists-container');
     if (watchlistsContainer) watchlistsContainer.innerHTML = '';
+    setAniListProfileVisibility(true);
 }
 
 export function renderPublicProfile(userId, profile) {
+    setAniListProfileVisibility(false);
     const usernameDisplay = document.getElementById('profile-username-display');
     const heading = usernameDisplay.parentElement;
     heading.replaceChildren(usernameDisplay);

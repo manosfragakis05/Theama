@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="referrer" content="no-referrer">
+    <meta name="robots" content="noindex">
+    <meta name="theme-color" content="#10131b">
+    <title>Connecting AniList | Theama</title>
+    <style>
+        :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #10131b; color: #c4ccda; }
+        body { margin: 0; min-height: 100svh; display: grid; place-items: center; }
+        main { max-width: 28rem; padding: 2rem; text-align: center; }
+        h1 { color: white; font-size: 1.5rem; }
+        p { line-height: 1.6; }
+        a { color: #60a5fa; }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>Connecting AniList</h1>
+        <p id="callback-status" role="status">Verifying your account and returning to Theama...</p>
+        <a href="/?integration=anilist">Return to Theama</a>
+        <noscript><p>Enable JavaScript to finish connecting your account.</p></noscript>
+    </main>
+    <script type="module" src="/services/anilist-callback.js"></script>
+</body>
+</html>

@@ -49,11 +49,13 @@ import { renderFriendsSidebar, renderProfileFriends, renderPublicProfile, setFol
 
 import { triggerLocalFilePicker, processLocalFile } from './services/offline.js';
 import { initializeHelpPage } from './pages/help.js';
+import { initializeAniList } from './services/anilist.js';
 
 // Setup Static Event Listeners
 function setupStaticEventListeners() {
     initializeHelpPage();
     initializeTorboxPairing();
+    initializeAniList();
     initializeLibraryTabs();
     document.querySelectorAll('[data-library-settings]').forEach(button => {
         button.addEventListener('click', () => {
@@ -276,7 +278,14 @@ async function refreshFriendsLists() {
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize our new static listeners immediately
     setupStaticEventListeners();
-    switchTab('home-page');
+    const initialUrl = new URL(window.location.href);
+    const returningFromAniList = initialUrl.searchParams.get('integration') === 'anilist';
+    switchTab(returningFromAniList ? 'settings-page' : 'home-page');
+    if (returningFromAniList) {
+        initialUrl.searchParams.delete('integration');
+        window.history.replaceState({}, '', initialUrl);
+        document.getElementById('anilist-settings')?.scrollIntoView({ block: 'center' });
+    }
     window.addEventListener('popstate', handleProfileRouting);
 
     let lastAuthKey;
