@@ -1,6 +1,9 @@
 import { appState } from '../services/config.js';
 import { supabase } from './db.js';
 import { isMissingAvatarColumn } from './avatar-data.js';
+import { createAniListProfileStore } from './anilist-profile-data.js';
+
+const aniListProfiles = createAniListProfileStore(supabase, () => appState.currentUser?.id);
 
 async function selectProfiles(columns, configure) {
     let result = await configure(supabase.from('profiles').select(columns));
@@ -57,7 +60,15 @@ export async function fetchPublicProfile(userId) {
         isFollowing = Boolean(data);
     }
 
-    return { id: userId, username: profile.username, avatar_path: profile.avatar_path || null, lists: lists || [], isFollowing };
+    let anilist = null;
+    let anilistError = false;
+    let anilistSetupRequired = false;
+    try { anilist = await aniListProfiles.read(userId); } catch (error) {
+        anilistError = true;
+        anilistSetupRequired = error.code === 'ANILIST_SETUP_REQUIRED';
+    }
+    return { id: userId, username: profile.username, avatar_path: profile.avatar_path || null,
+        lists: lists || [], isFollowing, anilist, anilistError, anilistSetupRequired };
 }
 
 export async function fetchFriendsList() {

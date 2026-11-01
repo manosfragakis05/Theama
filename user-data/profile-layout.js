@@ -5,8 +5,7 @@ let onAniListSelected = () => {};
 function selectSource(source, focus = false, load = true) {
     const page = document.getElementById('profile-page');
     if (!page || !['watchlists', 'anilist'].includes(source)) return;
-    if (page.dataset.public === 'true') source = 'watchlists';
-    else personalSource = source;
+    if (page.dataset.public !== 'true') personalSource = source;
 
     for (const button of page.querySelectorAll('[data-profile-source]')) {
         const selected = button.dataset.profileSource === source;
@@ -18,11 +17,11 @@ function selectSource(source, focus = false, load = true) {
     if (source === 'anilist' && load) onAniListSelected();
 }
 
-export function setProfileLayoutMode(personal) {
+export function setProfileLayoutMode(personal, showPublicTabs = false) {
     const page = document.getElementById('profile-page');
     if (!page) return;
     page.dataset.public = String(!personal);
-    document.getElementById('profile-source-tabs').hidden = !personal;
+    document.getElementById('profile-source-tabs').hidden = !personal && !showPublicTabs;
     selectSource(personal ? personalSource : 'watchlists', false, false);
 }
 

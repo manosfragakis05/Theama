@@ -6,6 +6,7 @@ const LIST_QUERY = `query TheamaAniListWatchlists($userId: Int!, $chunk: Int!) {
         lists {
             name status isCustomList
             entries {
+                private hiddenFromStatusLists
                 media {
                     id format
                     title { userPreferred english romaji native }
@@ -57,12 +58,14 @@ export function clearAniListWatchlistCache() {
     pages.clear();
 }
 
-export function normalizeAniListGroups(lists) {
+export function normalizeAniListGroups(lists, { publicOnly = false } = {}) {
     return (Array.isArray(lists) ? lists : []).map(list => {
         const name = typeof list?.name === 'string' ? list.name : list?.status || 'Anime';
         const seen = new Set();
         const items = [];
         for (const entry of list?.entries || []) {
+            if (publicOnly && entry?.private === true) continue;
+            if (!list?.isCustomList && entry?.hiddenFromStatusLists === true) continue;
             const media = entry?.media;
             if (!Number.isSafeInteger(media?.id) || media.id <= 0 || seen.has(media.id)) continue;
             seen.add(media.id);
@@ -114,6 +117,18 @@ export async function fetchAniListWatchlists(connection, { chunk = 1, force = fa
     const result = { groups: normalizeAniListGroups(collection.lists), hasMore: collection.hasNextChunk === true };
     if (cachedOwner === owner && !signal?.aborted) pages.set(chunk, { at: Date.now(), data: result });
     return result;
+}
+
+// Public reads never accept a connection or reuse the authenticated list cache.
+export async function fetchPublicAniListWatchlists(userId, { chunk = 1, signal, fetcher = fetch } = {}) {
+    if (!Number.isSafeInteger(userId) || userId <= 0) throw new Error('Invalid AniList account.');
+    if (!Number.isSafeInteger(chunk) || chunk < 1) throw new Error('Invalid AniList list page.');
+    const data = await requestAniList(null, LIST_QUERY, { userId, chunk }, { signal, fetcher });
+    const collection = data.MediaListCollection;
+    if (!Array.isArray(collection?.lists)) {
+        return { groups: [], hasMore: false, unavailable: true };
+    }
+    return { groups: normalizeAniListGroups(collection.lists, { publicOnly: true }), hasMore: collection.hasNextChunk === true };
 }
 
 export async function fetchAniListRecommendations(anilistId, { signal, fetcher = fetch } = {}) {

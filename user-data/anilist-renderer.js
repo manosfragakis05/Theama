@@ -3,9 +3,12 @@ import { showToast } from '../services/config.js';
 import { readAniListSession } from '../services/anilist-auth.js';
 import { isDragging } from '../user-addons/row-drag.js';
 import { switchTab } from '../utils/ui.js';
-import { fetchAniListWatchlists, fetchAniListDetail, mergeAniListGroups, clearAniListWatchlistCache } from './anilist-data.js';
+import { fetchAniListWatchlists, fetchPublicAniListWatchlists, fetchAniListDetail, mergeAniListGroups, clearAniListWatchlistCache } from './anilist-data.js';
 
 let personal = false;
+let publicAccount = null;
+let publicView = false;
+let publicMessage = '';
 let initialized = false;
 let generation = 0;
 let controller = null;
@@ -18,11 +21,12 @@ let loadedAt = 0;
 
 function root() { return document.getElementById('profile-anilist-section'); }
 function isVisible() {
-    return personal && !document.getElementById('profile-page')?.classList.contains('hidden')
+    return (personal || publicView) && !document.getElementById('profile-page')?.classList.contains('hidden')
         && !document.getElementById('profile-anilist-panel')?.hidden;
 }
-function connectionIsCurrent(connection) {
-    return personal && readAniListSession()?.accessToken === connection.accessToken;
+function connectionIsCurrent(connection, accountId) {
+    return connection ? personal && readAniListSession()?.accessToken === connection.accessToken
+        : !personal && publicAccount?.id === accountId;
 }
 
 function message(text, retry = false) {
@@ -100,18 +104,26 @@ async function openAnime(media, card) {
     }
 }
 
-export function setAniListProfileVisibility(visible) {
+export function setAniListProfileVisibility(visible, account = null, publicState = {}) {
+    const nextPublicView = !visible && (Boolean(account) || publicState.show === true);
+    const changed = personal !== visible || publicAccount?.id !== account?.id || publicView !== nextPublicView;
     personal = visible;
+    publicAccount = visible ? null : account || null;
+    publicView = nextPublicView;
+    publicMessage = publicState.message || 'This user has not linked an AniList account to their Theama profile.';
     if (!root()) return;
-    root().classList.toggle('hidden', !visible);
-    if (!visible) {
+    root().classList.toggle('hidden', !personal && !publicView);
+    if (changed || (!personal && !publicView)) {
         ++generation;
         controller?.abort();
         detailController?.abort();
+        groups = []; owner = null; chunk = 0; hasMore = false; loadedAt = 0;
+        clearAniListWatchlistCache();
         document.getElementById('profile-anilist-lists').replaceChildren();
-    } else if (isVisible()) {
-        loadAniListWatchlists();
+        message('');
+        root().setAttribute('aria-busy', 'false');
     }
+    if (isVisible()) loadAniListWatchlists();
 }
 
 export async function loadAniListWatchlists({ force = false, more = false } = {}) {
@@ -123,39 +135,53 @@ export async function loadAniListWatchlists({ force = false, more = false } = {}
     controller = request;
     root().setAttribute('aria-busy', 'false');
     let connection;
-    try { connection = readAniListSession(); } catch { /* Render the disconnected state. */ }
-    document.getElementById('profile-anilist-account-description').textContent = connection
-        ? `Anime lists from ${connection.viewer.name} on AniList. Only visible to you.`
-        : 'Your AniList lists, together in your profile.';
-    document.getElementById('profile-anilist-connect').classList.toggle('hidden', Boolean(connection));
-    document.getElementById('profile-anilist-refresh').classList.toggle('hidden', !connection);
-    if (!connection) {
+    if (personal) {
+        try { connection = readAniListSession(); } catch { /* Render the disconnected state. */ }
+    }
+    const accountId = publicAccount?.id;
+    const account = personal ? connection?.viewer : publicAccount;
+    document.getElementById('profile-anilist-heading').textContent = personal ? 'Your anime collection' : 'Public anime collection';
+    document.getElementById('profile-anilist-account-description').textContent = personal
+        ? connection ? `Anime lists from ${connection.viewer.name}. Your view includes private entries; visitors only see public data.`
+            : 'Your AniList lists, together in your profile.'
+        : account ? 'Public anime lists from this user\'s linked AniList account.' : 'Public anime lists shared through AniList.';
+    document.getElementById('profile-anilist-connect').classList.toggle('hidden', !personal || Boolean(connection));
+    document.getElementById('profile-anilist-refresh').classList.toggle('hidden', !account);
+    if (!account) {
         groups = []; owner = null; chunk = 0; hasMore = false;
         clearAniListWatchlistCache();
         renderGroups();
-        message('');
+        message(personal ? '' : publicMessage);
         return;
     }
-    if (owner !== connection.accessToken || force || (!more && Date.now() - loadedAt > 5 * 60 * 1000)) {
+    const nextOwner = personal ? `personal:${connection.accessToken}` : `public:${account.id}`;
+    if (owner !== nextOwner || force || (!more && (!personal || Date.now() - loadedAt > 5 * 60 * 1000))) {
         groups = []; chunk = 0; hasMore = false;
-        owner = connection.accessToken;
+        owner = nextOwner;
         if (force) clearAniListWatchlistCache();
     }
     const nextChunk = more && hasMore ? chunk + 1 : chunk || 1;
     renderGroups();
     root().setAttribute('aria-busy', 'true');
-    message(groups.length ? 'Refreshing AniList lists...' : 'Loading your AniList lists...');
+    message(groups.length ? 'Refreshing AniList lists...' : 'Loading AniList lists...');
     for (const id of ['profile-anilist-refresh', 'profile-anilist-more', 'profile-anilist-retry']) document.getElementById(id).disabled = true;
     try {
-        const data = await fetchAniListWatchlists(connection, { chunk: nextChunk, force, signal: request.signal });
-        if (current !== generation || !connectionIsCurrent(connection)) return;
-        groups = mergeAniListGroups(nextChunk === 1 ? [] : groups, data.groups);
-        chunk = nextChunk; hasMore = data.hasMore;
+        const options = { chunk: nextChunk, force, signal: request.signal };
+        const data = personal ? await fetchAniListWatchlists(connection, options)
+            : await fetchPublicAniListWatchlists(accountId, options);
+        if (current !== generation || !connectionIsCurrent(connection, accountId)) return;
+        groups = data.unavailable ? [] : mergeAniListGroups(nextChunk === 1 ? [] : groups, data.groups);
+        chunk = data.unavailable ? 0 : nextChunk; hasMore = !data.unavailable && data.hasMore;
         loadedAt = Date.now();
         renderGroups();
-        message(groups.some(group => group.items.length) ? '' : 'Your AniList anime lists are empty.');
+        message(data.unavailable ? 'This AniList list is private or unavailable.'
+            : groups.some(group => group.items.length) ? '' : personal ? 'Your AniList anime lists are empty.' : 'No public anime to show.');
     } catch (error) {
-        if (current !== generation || request.signal.aborted || !connectionIsCurrent(connection)) return;
+        if (current !== generation || request.signal.aborted || !connectionIsCurrent(connection, accountId)) return;
+        if (!personal) {
+            groups = []; chunk = 0; hasMore = false;
+            renderGroups();
+        }
         message(error.message, true);
     } finally {
         if (current === generation) {
@@ -176,6 +202,7 @@ function initialize() {
         document.getElementById('anilist-settings')?.scrollIntoView({ block: 'center' });
     });
     window.addEventListener('anilist:connection-changed', () => {
+        if (!personal) return;
         ++generation;
         controller?.abort(); detailController?.abort();
         clearAniListWatchlistCache();

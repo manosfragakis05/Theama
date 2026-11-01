@@ -166,8 +166,12 @@ export function showPersonalProfile(username) {
 }
 
 export function renderPublicProfile(userId, profile) {
-    setAniListProfileVisibility(false);
-    setProfileLayoutMode(false);
+    setProfileLayoutMode(false, Boolean(profile));
+    setAniListProfileVisibility(false, profile?.anilist, {
+        show: Boolean(profile),
+        message: profile?.anilistSetupRequired ? 'Public AniList sharing is not available yet.'
+            : profile?.anilistError ? 'Could not load this profile\'s AniList connection. Reload the profile to try again.' : ''
+    });
     const usernameDisplay = document.getElementById('profile-username-display');
     usernameDisplay.textContent = profile?.username || 'User not found';
     showPublicAvatar(profile || { username: '?' });

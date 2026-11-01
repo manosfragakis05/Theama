@@ -2,12 +2,24 @@ import {
     ANILIST_SESSION_KEY, ANILIST_PENDING_KEY, ANILIST_RESULT_KEY,
     createAuthorization, fetchAniListViewer, readAniListSession, saveAniListSession, clearAniListSession
 } from './anilist-auth.js';
+import { appState } from './config.js';
+import { supabase } from '../user-data/db.js';
+import { createAniListProfileStore } from '../user-data/anilist-profile-data.js';
+import { updatePublicProfile } from '../user-data/network.js';
 
 const clientId = import.meta.env.VITE_ANILIST_CLIENT_ID?.trim();
 const configured = /^\d+$/.test(clientId || '');
 let generation = 0;
 let initialized = false;
 let renderedConnectionToken;
+const publicProfiles = createAniListProfileStore(supabase, () => appState.currentUser?.id);
+let profileUpdate = Promise.resolve();
+
+function queueProfileUpdate(operation) {
+    const result = profileUpdate.catch(() => {}).then(operation);
+    profileUpdate = result;
+    return result;
+}
 
 function renderConnection(connection, message = '', { checking = false, retry = false } = {}) {
     const connected = Boolean(connection);
@@ -39,6 +51,7 @@ function renderConnection(connection, message = '', { checking = false, retry = 
 
 async function refreshConnection(message = '') {
     const current = ++generation;
+    const theamaUserId = appState.currentUser?.id;
     let connection;
     try { connection = readAniListSession(); } catch {
         renderConnection(null, 'Allow browser storage to connect your AniList account.');
@@ -59,6 +72,21 @@ async function refreshConnection(message = '') {
         // In particular, never promote a session-only token to local storage.
         const persistent = !sessionStorage.getItem(ANILIST_SESSION_KEY) && Boolean(localStorage.getItem(ANILIST_SESSION_KEY));
         saveAniListSession(connection, persistent);
+        if (theamaUserId) {
+            try {
+                await queueProfileUpdate(async () => {
+                    if (current !== generation || appState.currentUser?.id !== theamaUserId) return;
+                    // Ensure the profile row exists before setting its linked ID.
+                    await updatePublicProfile();
+                    if (current !== generation || appState.currentUser?.id !== theamaUserId) return;
+                    await publicProfiles.save(theamaUserId, viewer);
+                });
+            } catch (error) {
+                if (current === generation) renderConnection(connection, error.message, { retry: true });
+                return;
+            }
+        }
+        if (current !== generation) return;
         renderConnection(connection, message);
     } catch (error) {
         if (current !== generation) return;
@@ -89,20 +117,35 @@ export function initializeAniList() {
             renderConnection(null, error.message);
         }
     });
-    document.getElementById('anilist-disconnect-btn').addEventListener('click', () => {
-        ++generation;
+    document.getElementById('anilist-disconnect-btn').addEventListener('click', async () => {
+        const current = ++generation;
+        const userId = appState.currentUser?.id;
+        let connection;
+        const button = document.getElementById('anilist-disconnect-btn');
+        button.disabled = true;
         try {
+            connection = readAniListSession();
+            if (userId) await queueProfileUpdate(() => publicProfiles.remove(userId));
+            if (current !== generation) return;
             clearAniListSession();
             sessionStorage.removeItem(ANILIST_PENDING_KEY);
             sessionStorage.removeItem(ANILIST_RESULT_KEY);
             renderConnection(null, 'AniList disconnected from this device.');
-        } catch {
-            renderConnection(null, 'Could not clear the connection. Clear this site’s browser data to disconnect.');
+        } catch (error) {
+            if (current === generation) renderConnection(connection, error.message || 'Could not disconnect AniList. Please try again.');
+        } finally {
+            button.disabled = false;
         }
     });
     document.getElementById('anilist-retry-btn').addEventListener('click', () => refreshConnection());
     window.addEventListener('storage', event => {
         if (event.key === ANILIST_SESSION_KEY || event.key === null) refreshConnection();
+    });
+    let theamaUserId = appState.currentUser?.id;
+    window.addEventListener('auth-state-changed', () => {
+        if (theamaUserId === appState.currentUser?.id) return;
+        theamaUserId = appState.currentUser?.id;
+        refreshConnection();
     });
     let message = '';
     try {

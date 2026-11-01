@@ -51,7 +51,7 @@ import { triggerLocalFilePicker, processLocalFile } from './services/offline.js'
 import { initializeHelpPage } from './pages/help.js';
 import { initializeAniList } from './services/anilist.js';
 import { initializeProfileLayout } from './user-data/profile-layout.js';
-import { loadAniListWatchlists } from './user-data/anilist-renderer.js';
+import { loadAniListWatchlists, setAniListProfileVisibility } from './user-data/anilist-renderer.js';
 import { initializeAvatarPicker } from './user-data/avatar-ui.js';
 
 // Setup Static Event Listeners
@@ -239,6 +239,8 @@ const updateSW = registerSW({
 let routeVersion = 0;
 export async function handleProfileRouting() {
     const version = ++routeVersion;
+    // Clear private lists immediately, before resolving another profile.
+    setAniListProfileVisibility(false);
     const url = new URL(window.location.href);
     let friendId = url.searchParams.get('user');
     const openedProfileLink = Boolean(friendId);

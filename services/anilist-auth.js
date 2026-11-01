@@ -74,14 +74,21 @@ export async function requestAniList(accessToken, query, variables = {}, { fetch
         if (signal?.aborted) throw signal.reason;
         throw new Error('Could not reach AniList. Check your connection and try again.');
     }
-    if (response.status === 401 || response.status === 403) {
-        const error = new Error('Your AniList connection is no longer valid. Please reconnect.');
-        error.unauthorized = true;
+    if (response.status === 401 || response.status === 403 || (!accessToken && response.status === 404)) {
+        const error = new Error(accessToken ? 'Your AniList connection is no longer valid. Please reconnect.'
+            : 'This AniList list is private or unavailable.');
+        error.unauthorized = Boolean(accessToken);
+        error.unavailable = !accessToken;
         throw error;
     }
     if (response.status === 429) throw new Error('AniList is busy. Wait a minute before trying again.');
     let data;
     try { data = await response.json(); } catch { /* Use the safe error below. */ }
+    if (!accessToken && data?.errors?.some(error => [401, 403, 404].includes(Number(error.status)))) {
+        const error = new Error('This AniList list is private or unavailable.');
+        error.unavailable = true;
+        throw error;
+    }
     if (!response.ok || data?.errors?.length || !data?.data) {
         throw new Error('Could not verify your AniList account or load its data. Please try again.');
     }
