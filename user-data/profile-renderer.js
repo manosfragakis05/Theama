@@ -1,5 +1,6 @@
 import { openMasterDetail } from '../api.js';
 import { setAniListProfileVisibility } from './anilist-renderer.js';
+import { setProfileLayoutMode } from './profile-layout.js';
 
 export function renderAllWatchlists(customLists, onEditList = null) {
     const container = document.getElementById('profile-watchlists-container');
@@ -20,6 +21,8 @@ export function renderAllWatchlists(customLists, onEditList = null) {
         const editBtn = clone.querySelector('.wl-row-edit-btn');
 
         nameEl.textContent = list.name;
+        trackEl.tabIndex = 0;
+        trackEl.setAttribute('aria-label', list.name);
 
         if (!list.is_private) {
             nameEl.insertAdjacentHTML('afterend', `
@@ -46,6 +49,18 @@ export function renderMediaCards(mediaData, trackId, onRemoveClick = null, onCar
     if (!trackEl) return;
 
     const cardTemplate = document.getElementById('poster-card-template');
+    const section = trackEl.closest('.watchlist-section');
+    if (section) {
+        let count = section.querySelector('.profile-row-count');
+        if (!count) {
+            count = document.createElement('span');
+            count.className = 'profile-row-count profile-count';
+            const name = section.querySelector('.wl-row-name');
+            if (name) name.after(count);
+            else section.querySelector('h3')?.append(count);
+        }
+        count.textContent = mediaData?.length || 0;
+    }
 
     const emptyState =
         trackEl.querySelector('.wl-row-empty') ||
@@ -70,6 +85,8 @@ export function renderMediaCards(mediaData, trackId, onRemoveClick = null, onCar
         const removeBtn = clone.querySelector('.remove-btn');
 
         title.textContent = media.title;
+        img.alt = media.title || 'Poster';
+        img.addEventListener('error', () => { img.hidden = true; }, { once: true });
 
         if (yearEl) yearEl.remove();
 
@@ -92,13 +109,23 @@ export function renderMediaCards(mediaData, trackId, onRemoveClick = null, onCar
             img.onload = () => {
                 img.classList.remove('opacity-0');
             };
-        }
+        } else img.hidden = true;
 
         if (onCardClick) {
+            card.setAttribute('role', 'button');
+            card.setAttribute('aria-label', `Open ${media.title}`);
+            card.tabIndex = 0;
             card.onclick = (e) => {
                 e.stopPropagation();
                 onCardClick(media);
             }
+            card.addEventListener('keydown', event => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    if (event.target !== card) return;
+                    event.preventDefault();
+                    card.click();
+                }
+            });
         }
 
         trackEl.appendChild(clone);
@@ -108,15 +135,14 @@ export function renderMediaCards(mediaData, trackId, onRemoveClick = null, onCar
 export function showPersonalProfile(username) {
     const usernameDisplay = document.getElementById('profile-username-display');
     if (usernameDisplay) {
-        const heading = usernameDisplay.parentElement;
-        heading.textContent = 'Welcome, ';
-        heading.appendChild(usernameDisplay);
-        heading.append('!');
         usernameDisplay.textContent = username;
-        if (heading.nextElementSibling) {
-            heading.nextElementSibling.textContent = 'Manage your watchlists and profile.';
-        }
     }
+    document.getElementById('profile-avatar-initial').textContent = username.charAt(0).toUpperCase();
+    document.getElementById('profile-eyebrow').textContent = 'YOUR PROFILE';
+    document.getElementById('profile-description').textContent = 'Your collection, all in one place.';
+    document.getElementById('profile-watchlists-heading').textContent = 'Your watchlists';
+    document.getElementById('profile-watchlists-description').textContent = 'The films and series you want to come back to.';
+    setProfileLayoutMode(true);
 
     document.getElementById('back-to-profile-btn')?.classList.add('hidden');
     const followBtn = document.getElementById('profile-follow-btn');
@@ -125,7 +151,7 @@ export function showPersonalProfile(username) {
     for (const element of [
         document.getElementById('profile-settings-btn'),
         document.getElementById('profile-share-btn'),
-        document.querySelector('button[onclick*="create-list-modal"]'),
+        document.getElementById('profile-create-list-btn'),
         document.getElementById('default-watchlists-container'),
         document.getElementById('profile-friends-section')
     ]) {
@@ -139,19 +165,22 @@ export function showPersonalProfile(username) {
 
 export function renderPublicProfile(userId, profile) {
     setAniListProfileVisibility(false);
+    setProfileLayoutMode(false);
     const usernameDisplay = document.getElementById('profile-username-display');
-    const heading = usernameDisplay.parentElement;
-    heading.replaceChildren(usernameDisplay);
     usernameDisplay.textContent = profile?.username || 'User not found';
-    heading.append("'s Profile");
-    heading.nextElementSibling.textContent = profile
+    document.getElementById('profile-avatar-initial').textContent = (profile?.username || '?').charAt(0).toUpperCase();
+    document.getElementById('profile-eyebrow').textContent = 'PUBLIC PROFILE';
+    document.getElementById('profile-description').textContent = profile
         ? 'Browsing public watchlists.' : 'This profile is unavailable.';
+    document.getElementById('profile-watchlists-heading').textContent = 'Public watchlists';
+    document.getElementById('profile-watchlists-description').textContent = profile?.lists?.length
+        ? 'Collections shared with everyone.' : profile ? 'No public watchlists to show yet.' : '';
 
     document.getElementById('back-to-profile-btn').classList.remove('hidden');
     for (const element of [
         document.getElementById('profile-settings-btn'),
         document.getElementById('profile-share-btn'),
-        document.querySelector('button[onclick*="create-list-modal"]'),
+        document.getElementById('profile-create-list-btn'),
         document.getElementById('default-watchlists-container'),
         document.getElementById('profile-friends-section')
     ]) {
@@ -181,9 +210,10 @@ export function renderPublicProfile(userId, profile) {
 export function setFollowButton(isFollowing) {
     const btn = document.getElementById('profile-follow-btn');
     btn.dataset.following = String(isFollowing);
+    btn.setAttribute('aria-label', isFollowing ? 'Unfollow user' : 'Follow user');
     btn.className = isFollowing
-        ? 'px-6 py-3 rounded-2xl font-bold text-sm transition-all flex items-center gap-2 border shadow-sm outline-none bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-700 hover:text-white'
-        : 'px-6 py-3 rounded-2xl font-bold text-sm transition-all flex items-center gap-2 border shadow-sm outline-none bg-blue-600 hover:bg-blue-500 text-white border-blue-500';
+        ? 'profile-button'
+        : 'profile-button profile-button-primary';
     document.getElementById('follow-text').textContent = isFollowing ? 'Following' : 'Follow';
     document.getElementById('follow-icon').innerHTML = isFollowing
         ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>'
@@ -221,6 +251,8 @@ export function renderProfileFriends(friendsList) {
     const emptyState = document.getElementById('profile-friends-empty');
     const template = document.getElementById('profile-friend-template');
     if (!container || !template) return;
+    const count = document.getElementById('profile-friends-count');
+    if (count) count.textContent = friendsList?.length || 0;
 
     container.querySelectorAll('.profile-friend-btn').forEach(button => button.remove());
     emptyState?.classList.toggle('hidden', Boolean(friendsList?.length));
@@ -229,6 +261,7 @@ export function renderProfileFriends(friendsList) {
         const clone = template.content.cloneNode(true);
         const username = friend.username || 'User';
         clone.querySelector('.profile-friend-name').textContent = username;
+        clone.querySelector('.profile-friend-avatar').textContent = username.charAt(0).toUpperCase();
         clone.querySelector('.profile-friend-btn').dataset.friendId = friend.id;
         container.appendChild(clone);
     }

@@ -17,7 +17,10 @@ let hasMore = false;
 let loadedAt = 0;
 
 function root() { return document.getElementById('profile-anilist-section'); }
-function isVisible() { return personal && !document.getElementById('profile-page')?.classList.contains('hidden'); }
+function isVisible() {
+    return personal && !document.getElementById('profile-page')?.classList.contains('hidden')
+        && !document.getElementById('profile-anilist-panel')?.hidden;
+}
 function connectionIsCurrent(connection) {
     return personal && readAniListSession()?.accessToken === connection.accessToken;
 }
@@ -36,9 +39,14 @@ function renderGroups() {
     groups.filter(group => group.items.length).forEach((group, index) => {
         const row = document.getElementById('watchlist-row-template').content.cloneNode(true);
         row.querySelector('.wl-row-name').textContent = group.name;
+        const count = document.createElement('span');
+        count.className = 'profile-count';
+        count.textContent = group.items.length;
+        row.querySelector('h3').append(count);
         row.querySelector('.wl-row-edit-btn').remove();
         row.querySelector('.wl-row-empty').remove();
         const track = row.querySelector('.wl-row-track');
+        track.tabIndex = 0;
         track.setAttribute('aria-label', `AniList ${group.name}`);
         for (const media of group.items) {
             const fragment = document.getElementById('poster-card-template').content.cloneNode(true);
@@ -116,13 +124,16 @@ export async function loadAniListWatchlists({ force = false, more = false } = {}
     root().setAttribute('aria-busy', 'false');
     let connection;
     try { connection = readAniListSession(); } catch { /* Render the disconnected state. */ }
+    document.getElementById('profile-anilist-account-description').textContent = connection
+        ? `Anime lists from ${connection.viewer.name} on AniList. Only visible to you.`
+        : 'Your AniList lists, together in your profile.';
     document.getElementById('profile-anilist-connect').classList.toggle('hidden', Boolean(connection));
     document.getElementById('profile-anilist-refresh').classList.toggle('hidden', !connection);
     if (!connection) {
         groups = []; owner = null; chunk = 0; hasMore = false;
         clearAniListWatchlistCache();
         renderGroups();
-        message('Connect AniList in Settings to see your anime lists here.');
+        message('');
         return;
     }
     if (owner !== connection.accessToken || force || (!more && Date.now() - loadedAt > 5 * 60 * 1000)) {

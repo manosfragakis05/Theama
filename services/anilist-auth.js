@@ -60,7 +60,10 @@ export async function requestAniList(accessToken, query, variables = {}, { fetch
     try {
         response = await fetcher('https://graphql.anilist.co', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${accessToken}` },
+            headers: {
+                'Content-Type': 'application/json', Accept: 'application/json',
+                ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+            },
             body: JSON.stringify({ query, variables }),
             cache: 'no-store',
             credentials: 'omit',

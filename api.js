@@ -4,6 +4,7 @@ import { showStreamPicker, submitStreamSource } from './user-addons/scraper-rend
 import { getTmdbId } from './metadata/metadata.js';
 import { getLibraryActionLabel, getCurrentUserSettings } from './user-data/user-settings.js';
 import { getMediaDurationMinutes, selectFirstSource } from './utils/auto-stream.js';
+import { loadAniListDetailRows } from './user-data/anilist-recommendations.js';
 
 //#region State and Data
 
@@ -23,11 +24,15 @@ export const mediaStore = (() => {
     };
 })();
 
+let detailGeneration = 0;
+
 export async function openMasterDetail(mediaObject) {
+    const current = ++detailGeneration;
     mediaStore.clear();
 
     // Render UI
     renderMasterDetailView(mediaObject);
+    loadAniListDetailRows(mediaObject, openMasterDetail);
 
     const seasonsContainer = document.getElementById('media-seasons');
     if (mediaObject.type === 'series' || mediaObject.type === 'tv') {
@@ -58,10 +63,10 @@ export async function openMasterDetail(mediaObject) {
     }
 
     // Fetch missing data
-    checkFullData(mediaObject);
+    checkFullData(mediaObject, current);
 }
 
-async function checkFullData(mediaObject) {
+async function checkFullData(mediaObject, current = detailGeneration) {
     if (!mediaObject || !mediaObject.id || !mediaObject.type) return;
 
     if (mediaObject.addonName == "customTMDB" || !mediaObject.baseUrl) {
@@ -74,6 +79,7 @@ async function checkFullData(mediaObject) {
             if (!res.ok) throw new Error("TMDB item fetch failed");
 
             const detailedData = await res.json();
+            if (current !== detailGeneration) return;
 
             // Format Data Safely
             const tmdbGenre = detailedData.genres?.[0]?.name || '';
@@ -107,6 +113,7 @@ async function checkFullData(mediaObject) {
                 );
 
                 const tmdbSeasonsData = (await Promise.all(seasonPromises)).filter(Boolean);
+                if (current !== detailGeneration) return;
 
                 // Format into universal Stremio structure
                 mediaObject.seasons = tmdbSeasonsData.map(tmdbSeason => ({
@@ -136,6 +143,7 @@ async function checkFullData(mediaObject) {
             }
 
             const animeId = await fetchAnimeMapping(mediaObject.id);
+            if (current !== detailGeneration) return;
             if (animeId) {
                 const rawMatches = animeId.data ? animeId.data.matches : animeId.matches;
                 const formatted = formatAnimeMappings(rawMatches);
@@ -161,6 +169,7 @@ async function checkFullData(mediaObject) {
             return;
 
         } catch (e) {
+            if (current !== detailGeneration) return;
             console.error("Detail Fetch Error:", e);
 
             // If it fails, replace the spinner with an error message
@@ -184,6 +193,7 @@ async function checkFullData(mediaObject) {
 
             if (!res.ok) throw new Error("Stremio Addon meta fetch failed");
             const data = await res.json();
+            if (current !== detailGeneration) return;
             const meta = data.meta;
 
             if (!meta) return;
@@ -195,6 +205,7 @@ async function checkFullData(mediaObject) {
                 const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_KEY}&external_source=imdb_id`;
                 const response = await fetch(url);
                 const data = await response.json();
+                if (current !== detailGeneration) return;
 
                 const results = mediaObject.type === 'movie'
                     ? data.movie_results
@@ -280,6 +291,7 @@ async function checkFullData(mediaObject) {
             // update the UI with the enriched data
             renderMasterDetailView(mediaObject);
         } catch (e) {
+            if (current !== detailGeneration) return;
             console.error("Detail Fetch Error:", e);
 
             // If it fails, replace the spinner with an error message
@@ -300,6 +312,8 @@ async function checkFullData(mediaObject) {
 
 export async function openCollectionGrid(collectionItem) {
     if (!collectionItem) return;
+    ++detailGeneration;
+    loadAniListDetailRows(null, openMasterDetail);
 
     mediaStore.clear();
 
@@ -701,6 +715,8 @@ export function renderSeason(mediaObject) {
 }
 
 export function closeMovieDetail() {
+    ++detailGeneration;
+    loadAniListDetailRows(null, openMasterDetail);
     const viewContainer = document.getElementById('full-detail-view');
     viewContainer.classList.add('translate-y-full');
     document.body.style.overflow = '';

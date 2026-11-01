@@ -2,6 +2,93 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Profile: a wide collection workspace with one source in view at a time. */
+#profile-page {
+    max-width: none;
+    margin: 0;
+    padding-inline: clamp(16px, 2.5vw, 40px);
+}
+#profile-page:not(.hidden) { display: flex; flex-direction: column; gap: 24px; }
+#profile-page [hidden] { display: none !important; }
+#profile-page .hidden { display: none !important; }
+#profile-page .profile-header { padding: 0 0 24px; }
+.profile-header-main { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.profile-identity { display: flex; align-items: center; min-width: 0; gap: 16px; }
+.profile-avatar { display: grid; place-items: center; flex-shrink: 0; width: 64px; height: 64px; border: 1px solid #4476bd; border-radius: 20px; background: linear-gradient(145deg, #234b81, #18283f); color: #dbeafe; font-size: 26px; font-weight: 650; }
+.profile-identity-copy { min-width: 0; }
+.profile-eyebrow { margin-bottom: 3px; color: #7c899e; font-size: 10px; font-weight: 650; letter-spacing: .14em; }
+.profile-name { color: #f1f5f9; font-size: clamp(24px, 2.5vw, 34px); font-weight: 700; letter-spacing: -.045em; line-height: 1.2; overflow-wrap: anywhere; }
+.profile-description { margin-top: 6px; color: #a0abbd; font-size: 13px; line-height: 1.5; }
+.profile-actions { display: flex; flex-shrink: 0; align-items: center; gap: 8px; }
+.profile-button { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; gap: 8px; min-height: 40px; padding: 9px 14px; border: 1px solid #303847; border-radius: 10px; color: #c4ccda; background: #1a202c; font-size: 12px; font-weight: 600; transition: background .15s, border-color .15s, color .15s; }
+.profile-button:hover { background: #252d3b; border-color: #4b5669; color: #f1f5f9; }
+.profile-button-primary { color: white; background: #2563eb; border-color: #3b75ef; }
+.profile-button-primary:hover { color: white; background: #3472f0; border-color: #6095ff; }
+.profile-button-icon { width: 40px; padding: 9px; }
+.profile-button:disabled { opacity: .5; cursor: wait; }
+.profile-back { display: flex; align-items: center; gap: 6px; width: fit-content; margin-bottom: 20px; color: #93bbff; font-size: 12px; font-weight: 600; }
+.profile-source-tabs { display: flex; align-items: center; gap: 6px; border-bottom: 1px solid #303847; padding-bottom: 10px; }
+.profile-source-tab { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 42px; padding: 10px 18px; border-radius: 9px; color: #a0abbd; font-size: 13px; font-weight: 600; transition: color .15s, background .15s; }
+.profile-source-tab:hover { color: #e2e8f0; background: #1c212d; }
+.profile-source-tab[aria-selected="true"] { color: #b5d0ff; background: #3b82f617; }
+.profile-source-tab[aria-selected="true"]::after { content: ''; position: absolute; right: 18px; bottom: -11px; left: 18px; height: 2px; border-radius: 2px; background: #73a7ff; }
+.profile-anilist-mark { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 4px; background: #2b619c; color: #e0f2fe; font-size: 12px; font-weight: 800; }
+.profile-panel { min-width: 0; outline: none; }
+.profile-panel:focus-visible { outline: 2px solid #73a7ff; outline-offset: 6px; border-radius: 8px; }
+.profile-section-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; margin-bottom: 22px; }
+.profile-section-header h2 { color: #edf2fa; font-size: 19px; font-weight: 650; letter-spacing: -.025em; }
+.profile-section-header p { margin-top: 5px; color: #7c899e; font-size: 12px; line-height: 1.6; }
+.profile-collections, .profile-custom-lists, .profile-anilist-lists { display: flex; flex-direction: column; min-width: 0; gap: 22px; }
+.profile-custom-lists .watchlist-section, .profile-anilist-lists .watchlist-section + .watchlist-section { border-top: 1px solid #252d3a; padding-top: 18px; }
+#profile-page .watchlist-section { min-width: 0; }
+#profile-page .watchlist-section h3 { display: flex; align-items: center; gap: 8px; min-height: 32px; margin: 0; padding: 0; color: #dce4f1; font-size: 15px; font-weight: 600; letter-spacing: -.015em; }
+.profile-count { display: inline-flex; align-items: center; justify-content: center; min-width: 23px; min-height: 20px; padding: 2px 6px; border: 1px solid #303847; border-radius: 6px; color: #7f8da4; font-size: 10px; font-weight: 550; line-height: 1; font-variant-numeric: tabular-nums; }
+.profile-count:empty { display: none; }
+#profile-page .wl-row-track { display: flex; align-items: flex-start; width: 100%; min-height: 0; margin: 0; padding: 12px 2px 8px; gap: 14px; overflow-x: auto; overscroll-behavior-x: contain; }
+#profile-page .poster-card { width: clamp(108px, 10vw, 154px); }
+#profile-page .poster-card:hover { transform: translateY(-3px); }
+#profile-page .poster-title { line-height: 1.5; font-weight: 550; }
+#profile-page .poster-card > div:first-child { border-radius: 10px; }
+#profile-page .poster-img { transition: opacity .15s; }
+#profile-page .wl-row-empty, .profile-empty-state { flex: none; width: 100%; border: 1px dashed #303847; border-radius: 12px; background: #161c27; padding: 24px 16px; text-align: center; }
+.profile-empty-state p { color: #a0abbd; font-size: 13px; font-weight: 550; }
+.profile-empty-state span { display: block; margin-top: 4px; color: #7c899e; font-size: 12px; }
+.profile-anilist-title { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.profile-anilist-status { margin: 0 0 14px; padding: 14px 16px; border: 1px solid #303847; border-radius: 10px; color: #a0abbd; background: #161c27; font-size: 12px; line-height: 1.6; }
+.profile-anilist-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.profile-anilist-actions:not(:has(button:not(.hidden))) { display: none; }
+.profile-friends { border: 1px solid #303847; border-radius: 12px; background: #171d28; }
+.profile-friends summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 10px 14px; color: #c4ccda; font-size: 12px; font-weight: 600; cursor: pointer; list-style: none; }
+.profile-friends summary::-webkit-details-marker { display: none; }
+.profile-friends summary > span { display: flex; align-items: center; gap: 8px; }
+.profile-friends summary > svg { transform: rotate(-90deg); transition: transform .15s; }
+.profile-friends[open] summary > svg { transform: rotate(0); }
+.profile-friends-list { display: flex; flex-direction: column; gap: 0; padding: 0 0 6px; }
+#profile-page .profile-friend-btn { width: 100%; gap: 12px; min-height: 48px; padding: 8px 14px; background: transparent; border: 0; border-radius: 0; font-size: 13px; }
+#profile-page .profile-friend-btn:hover { background: #ffffff04; }
+#profile-page .profile-friend-btn:focus-visible { outline-offset: -3px; }
+.profile-friend-avatar { display: grid; place-items: center; flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%; background: #3b82f612; color: #93bbff; font-size: 12px; font-weight: 600; }
+.profile-friend-name { font-weight: 500; }
+.profile-friends-empty { padding: 6px 14px; color: #7c899e; font-size: 12px; }
+#profile-page :is(button, a, summary, .wl-row-track):focus-visible { outline: 2px solid #73a7ff; outline-offset: 3px; }
+@media (max-width: 639px) {
+    #profile-page:not(.hidden) { gap: 20px; }
+    .profile-header-main { align-items: flex-start; gap: 10px; }
+    .profile-identity { gap: 12px; }
+    .profile-avatar { width: 48px; height: 48px; border-radius: 15px; font-size: 21px; }
+    .profile-name { font-size: 25px; }
+    .profile-description { font-size: 12px; }
+    .profile-actions { gap: 6px; padding-top: 5px; }
+    .profile-actions .profile-button { width: 36px; min-height: 36px; padding: 8px; }
+    .profile-actions .profile-button span { display: none; }
+    .profile-source-tab { flex: 1; }
+    .profile-section-header { margin-bottom: 16px; }
+    .profile-section-header h2 { font-size: 18px; }
+    .profile-section-header > div { flex: 1; min-width: 170px; }
+    #profile-page .poster-card { width: 116px; }
+    #profile-page .wl-row-track { gap: 12px; }
+}
+
 /* Release calendar */
 .calendar-shell { max-width: 88rem; margin: 0 auto; padding: .75rem 0 2rem; }
 .calendar-header { display: flex; justify-content: space-between; align-items: center; gap: 1.5rem; margin-bottom: 2rem; }

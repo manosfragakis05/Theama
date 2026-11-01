@@ -470,174 +470,119 @@
 
                 </div>
 
-                <div id="profile-page" class="page-view hidden flex flex-col gap-10 max-w-6xl mx-auto w-full pt-4">
-
-                    <div
-                        class="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-800/40 backdrop-blur-md p-6 md:p-8 rounded-3xl border border-slate-700/50 shadow-xl gap-6">
-
-                        <div>
-                            <button id="back-to-profile-btn"
-                                class="hidden -mt-3 mb-1 text-blue-500 hover:text-blue-400 font-bold flex items-center gap-2 transition cursor-pointer">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
-                                </svg>
-                                Back
-                            </button>
-
-                            <h1 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight">
-                                Welcome, <span id="profile-username-display"
-                                    class="text-blue-500 drop-shadow-[0_0_5px_rgba(59,130,246,0.3)]">Guest</span>!
-                            </h1>
-                            <p class="text-slate-400 mt-2 text-sm sm:text-base">Your personal space for watchlists and
-                                stats.
-                            </p>
+                <div id="profile-page" class="page-view hidden profile-page" data-public="false">
+                    <header class="profile-header">
+                        <button id="back-to-profile-btn" type="button" class="hidden profile-back">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                            </svg>
+                            My profile
+                        </button>
+                        <div class="profile-header-main">
+                            <div class="profile-identity">
+                                <div id="profile-avatar-initial" class="profile-avatar" aria-hidden="true">G</div>
+                                <div class="profile-identity-copy">
+                                    <p id="profile-eyebrow" class="profile-eyebrow">YOUR PROFILE</p>
+                                    <h1 class="profile-name"><span id="profile-username-display">Guest</span></h1>
+                                    <p id="profile-description" class="profile-description">Your collection, all in one place.</p>
+                                </div>
+                            </div>
+                            <div class="profile-actions">
+                                <button id="profile-follow-btn" type="button" data-friend-id="" class="hidden">
+                                    <svg id="follow-icon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"></svg>
+                                    <span id="follow-text">Follow</span>
+                                </button>
+                                <button id="profile-share-btn" type="button" class="profile-button" title="Share profile" aria-label="Share profile">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" aria-hidden="true"><use href="#icon-share"></use></svg>
+                                    <span>Share</span>
+                                </button>
+                                <button id="profile-settings-btn" type="button" class="profile-button profile-button-icon" title="Profile settings" aria-label="Profile settings">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" aria-hidden="true"><use href="#icon-settings"></use></svg>
+                                </button>
+                            </div>
                         </div>
+                    </header>
 
-                        <div class="shrink-0 self-start sm:self-auto flex items-center">
-
-
-                            <button id="profile-follow-btn" data-friend-id=""
-                                class="hidden px-6 py-3 rounded-2xl font-bold text-sm transition-all items-center gap-2 border shadow-sm outline-none">
-                                <svg id="follow-icon" class="w-5 h-5" fill="none" stroke="currentColor"
-                                    viewBox="0 0 24 24">
-                                </svg>
-                                <span id="follow-text">Follow</span>
-                            </button>
-
-
-                            <button id="profile-settings-btn"
-                                class="p-4 bg-slate-900/50 hover:bg-blue-600 text-slate-300 hover:text-white rounded-2xl transition-all border border-slate-700/50 hover:border-blue-500 shadow-sm group">
-                                <svg class="w-6 h-6 group-hover:rotate-90 transition-transform duration-300" fill="none"
-                                    stroke="currentColor" viewBox="0 0 24 24">
-                                    <use href="#icon-settings"></use>
-                                </svg>
-                            </button>
-
-                            <button id="profile-share-btn"
-                                class="p-4 ml-2 bg-slate-900/50 hover:bg-blue-600 text-slate-300 hover:text-white rounded-2xl transition-all border border-slate-700/50 hover:border-blue-500 shadow-sm group"
-                                title="Share Profile">
-
-                                <svg class="w-6 h-6 group-hover:-translate-y-0.5 transition-transform duration-300"
-                                    fill="none" stroke="currentColor">
-                                    <use href="#icon-share"></use>
-                                </svg>
-
-                            </button>
-
+                    <details id="profile-friends-section" class="profile-friends md:hidden">
+                        <summary>
+                            <span id="profile-friends-heading">Following <span id="profile-friends-count" class="profile-count">0</span></span>
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" aria-hidden="true"><use href="#icon-arrow"></use></svg>
+                        </summary>
+                        <div id="profile-friends-list" class="profile-friends-list">
+                            <div id="profile-friends-empty" class="profile-friends-empty">
+                                <p>People you follow will appear here.</p>
+                            </div>
                         </div>
+                    </details>
+
+                    <div id="profile-source-tabs" class="profile-source-tabs" role="tablist" aria-label="Profile collections">
+                        <button id="profile-watchlists-tab" type="button" role="tab" class="profile-source-tab"
+                            data-profile-source="watchlists" aria-selected="true" aria-controls="profile-watchlists-panel" tabindex="0">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" aria-hidden="true"><use href="#icon-save"></use></svg>
+                            Watchlists
+                        </button>
+                        <button id="profile-anilist-tab" type="button" role="tab" class="profile-source-tab"
+                            data-profile-source="anilist" aria-selected="false" aria-controls="profile-anilist-panel" tabindex="-1">
+                            <span class="profile-anilist-mark" aria-hidden="true">A</span>
+                            AniList
+                        </button>
                     </div>
 
-                    <section id="profile-friends-section" class="flex md:hidden flex-col gap-6"
-                        aria-labelledby="profile-friends-heading">
-                        <div class="flex items-center justify-between px-2">
-                            <h2 id="profile-friends-heading"
-                                class="text-2xl font-bold text-white flex items-center gap-3">
-                                <span
-                                    class="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-500 border border-blue-500/20 shadow-inner">
-                                    <svg class="w-5 h-5" aria-hidden="true" fill="none" stroke="currentColor"
-                                        viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m20 0v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M13 7a4 4 0 11-8 0 4 4 0 018 0z">
-                                        </path>
-                                    </svg>
-                                </span>
-                                My Friends
-                            </h2>
-                        </div>
-
-                        <div
-                            class="bg-slate-800/30 backdrop-blur border border-slate-700/50 rounded-3xl p-4 sm:p-8 shadow-lg">
-                            <div id="profile-friends-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                <div id="profile-friends-empty"
-                                    class="col-span-full text-center py-10 px-4 bg-slate-900/50 border border-dashed border-slate-700/50 rounded-2xl">
-                                    <p class="text-slate-400 font-medium">No friends yet.</p>
-                                    <p class="text-slate-500 text-sm mt-1">People you follow will appear here.</p>
-                                </div>
+                    <section id="profile-watchlists-panel" class="profile-panel" role="tabpanel" aria-labelledby="profile-watchlists-tab" tabindex="0">
+                        <div class="profile-section-header">
+                            <div>
+                                <h2 id="profile-watchlists-heading">Your watchlists</h2>
+                                <p id="profile-watchlists-description">The films and series you want to come back to.</p>
                             </div>
-                        </div>
-                    </section>
-
-                    <section class="flex flex-col gap-6">
-
-                        <div class="flex items-center justify-between px-2">
-                            <h2 class="text-2xl font-bold text-white flex items-center gap-3">
-                                <div
-                                    class="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center text-emerald-500 border border-emerald-500/20 shadow-inner">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <use href="#icon-save"></use>
-                                    </svg>
-                                </div>
-                                My Watchlists
-                            </h2>
-
-                            <button onclick="document.getElementById('create-list-modal').classList.remove('hidden')"
-                                class="bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold px-5 py-2.5 rounded-xl border border-blue-500 transition-all shadow-[0_0_15px_rgba(37,99,235,0.2)] hover:shadow-[0_0_20px_rgba(37,99,235,0.4)] flex items-center gap-2 group">
-                                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M12 4v16m8-8H4">
-                                    </path>
-                                </svg>
-                                New List
+                            <button id="profile-create-list-btn" type="button" class="profile-button profile-button-primary"
+                                onclick="document.getElementById('create-list-modal').classList.remove('hidden')">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                                New list
                             </button>
                         </div>
-
-                        <div
-                            class="bg-slate-800/30 backdrop-blur border border-slate-700/50 rounded-3xl p-6 sm:p-8 flex flex-col gap-10 shadow-lg">
-
-                            <div id="profile-watchlists-container" class="flex flex-col">
-                            </div>
-
-                            <div id="default-watchlists-container" class="w-full">
-                                <h3
-                                    class="text-xl font-bold text-slate-100 mb-1 pl-1 flex items-center gap-3 relative z-10">
-                                    <div
-                                        class="w-8 h-8 bg-red-500/10 rounded-lg flex items-center justify-center text-red-500 shadow-sm border border-red-500/20">
-                                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                                            <path
-                                                d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z">
-                                            </path>
-                                        </svg>
-                                    </div>
+                        <div class="profile-collections">
+                            <div id="default-watchlists-container" class="watchlist-section">
+                                <h3 class="profile-row-heading">
+                                    <svg class="w-4 h-4 text-rose-400" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
+                                    </svg>
                                     Favourites
+                                    <span class="profile-row-count profile-count"></span>
                                 </h3>
-
-                                <div id="watchlist-track-favourites"
-                                    class="draggable-row flex overflow-x-auto gap-4 py-6 px-4 -mx-4 -mt-4 scrollbar-hide items-start min-h-[160px]">
-                                    <div id="favourites-empty-state"
-                                        class="flex-none w-full text-center py-12 bg-slate-900/50 border border-dashed border-slate-700/50 rounded-2xl">
-                                        <p class="text-slate-400 font-medium">No favourites added yet.</p>
-                                        <p class="text-slate-500 text-sm mt-1">Start exploring and save your top picks!
-                                        </p>
+                                <div id="watchlist-track-favourites" class="wl-row-track draggable-row scrollbar-hide" tabindex="0" aria-label="Favourites">
+                                    <div id="favourites-empty-state" class="profile-empty-state">
+                                        <p>No favourites yet</p>
+                                        <span>Save a film or series to find it here.</span>
                                     </div>
                                 </div>
                             </div>
-
+                            <div id="profile-watchlists-container" class="profile-custom-lists"></div>
                         </div>
                     </section>
 
-                    <section id="profile-anilist-section" class="hidden flex flex-col gap-6" aria-labelledby="profile-anilist-heading" aria-busy="false">
-                        <div class="flex flex-wrap items-center justify-between gap-3 px-2">
-                            <div>
-                                <h2 id="profile-anilist-heading" class="text-2xl font-bold text-white">AniList Watchlists</h2>
-                                <p class="text-sm text-slate-400 mt-1">Your anime lists from AniList, visible here only to you.</p>
+                    <div id="profile-anilist-panel" class="profile-panel" role="tabpanel" aria-labelledby="profile-anilist-tab" tabindex="0" hidden>
+                        <section id="profile-anilist-section" class="hidden" aria-labelledby="profile-anilist-heading" aria-busy="false">
+                            <div class="profile-section-header">
+                                <div>
+                                    <div class="profile-anilist-title">
+                                        <h2 id="profile-anilist-heading">Your anime collection</h2>
+                                    </div>
+                                    <p id="profile-anilist-account-description">Your AniList lists, together in your profile.</p>
+                                </div>
+                                <button id="profile-anilist-refresh" type="button" class="hidden profile-button" title="Refresh AniList lists">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0111.6-2L20 8M4 16l2.3 3A7 7 0 0017.9 17"></path></svg>
+                                    Refresh
+                                </button>
                             </div>
-                            <button id="profile-anilist-refresh" type="button"
-                                class="hidden px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-sm font-bold text-slate-300 hover:text-white hover:bg-slate-700 disabled:opacity-50">Refresh</button>
-                        </div>
-                        <div class="bg-slate-800/30 backdrop-blur border border-slate-700/50 rounded-3xl p-6 sm:p-8 flex flex-col gap-6 shadow-lg">
-                            <p id="profile-anilist-status" role="status" aria-live="polite" class="text-sm text-slate-400">Connect AniList in Settings to see your anime lists here.</p>
-                            <div id="profile-anilist-lists" class="flex flex-col gap-6"></div>
-                            <div class="flex flex-wrap gap-3">
-                                <button id="profile-anilist-connect" type="button"
-                                    class="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-sm font-bold text-white">Connect AniList</button>
-                                <button id="profile-anilist-retry" type="button"
-                                    class="hidden px-5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-sm font-bold text-slate-300 hover:text-white disabled:opacity-50">Try again</button>
-                                <button id="profile-anilist-more" type="button"
-                                    class="hidden px-5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-sm font-bold text-slate-300 hover:text-white disabled:opacity-50">Load more anime</button>
+                            <p id="profile-anilist-status" role="status" aria-live="polite" class="hidden profile-anilist-status"></p>
+                            <div id="profile-anilist-lists" class="profile-anilist-lists"></div>
+                            <div class="profile-anilist-actions">
+                                <button id="profile-anilist-connect" type="button" class="profile-button profile-button-primary">Connect AniList</button>
+                                <button id="profile-anilist-retry" type="button" class="hidden profile-button">Try again</button>
+                                <button id="profile-anilist-more" type="button" class="hidden profile-button">Load more anime</button>
                             </div>
-                        </div>
-                    </section>
+                        </section>
+                    </div>
                 </div>
 
                 <div id="settings-page" class="page-view hidden max-w-4xl mx-auto w-full flex flex-col gap-10">
@@ -1439,6 +1384,34 @@
 
                 </div>
             </div>
+
+            <section id="detail-anilist-related" class="hidden mt-10 w-full min-w-0 text-left"
+                aria-labelledby="detail-anilist-related-heading" aria-busy="false">
+                <div class="flex flex-wrap items-center justify-between gap-3 mb-2">
+                    <h2 id="detail-anilist-related-heading" class="text-lg font-bold text-slate-200">Related</h2>
+                    <a class="anilist-media-link text-xs font-medium text-blue-400 hover:text-blue-300"
+                        target="_blank" rel="noopener noreferrer">View on AniList &rarr;</a>
+                </div>
+                <p class="text-xs text-slate-500 mb-3">Prequels, sequels, movies, and related anime</p>
+                <p role="status" class="text-sm text-slate-400"></p>
+                <button type="button" class="anilist-media-retry hidden mt-3 rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-blue-400 hover:bg-slate-700">Try again</button>
+                <div class="anilist-media-track draggable-row custom-scrollbar flex gap-4 overflow-x-auto overscroll-x-contain py-4 px-1 w-full"
+                    tabindex="0" aria-label="Related anime"></div>
+            </section>
+
+            <section id="detail-anilist-recommendations" class="hidden mt-10 w-full min-w-0 text-left"
+                aria-labelledby="detail-anilist-recommendations-heading" aria-busy="false">
+                <div class="flex flex-wrap items-center justify-between gap-3 mb-2">
+                    <h2 id="detail-anilist-recommendations-heading" class="text-lg font-bold text-slate-200">Recommendations</h2>
+                    <a class="anilist-media-link text-xs font-medium text-blue-400 hover:text-blue-300"
+                        target="_blank" rel="noopener noreferrer">View on AniList &rarr;</a>
+                </div>
+                <p class="text-xs text-slate-500 mb-3">Recommended by the AniList community</p>
+                <p role="status" class="text-sm text-slate-400"></p>
+                <button type="button" class="anilist-media-retry hidden mt-3 rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-blue-400 hover:bg-slate-700">Try again</button>
+                <div class="anilist-media-track draggable-row custom-scrollbar flex gap-4 overflow-x-auto overscroll-x-contain py-4 px-1 w-full"
+                    tabindex="0" aria-label="AniList recommendations"></div>
+            </section>
         </div>
 
         <template id="episode-card-template">
@@ -1965,7 +1938,8 @@
     <template id="profile-friend-template">
         <button type="button" data-friend-id=""
             class="profile-friend-btn w-full min-w-0 min-h-11 flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-left text-slate-400 transition-colors hover:bg-slate-800/50 hover:text-white group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
-            <span class="profile-friend-name min-w-0 font-medium text-sm truncate"></span>
+            <span class="profile-friend-avatar" aria-hidden="true"></span>
+            <span class="profile-friend-name flex-1 min-w-0 truncate"></span>
             <svg class="w-3.5 h-3.5 shrink-0 text-slate-600 -rotate-90 group-hover:text-slate-400" aria-hidden="true"
                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <use href="#icon-arrow"></use>

@@ -17,6 +17,38 @@ const LIST_QUERY = `query TheamaAniListWatchlists($userId: Int!, $chunk: Int!) {
     }
 }`;
 const CACHE_MS = 5 * 60 * 1000;
+const RECOMMENDATIONS_QUERY = `query TheamaAniListRecommendations($mediaId: Int!) {
+    Media(id: $mediaId, type: ANIME) {
+        recommendations(sort: [RATING_DESC, ID], perPage: 25) {
+            nodes {
+                rating
+                mediaRecommendation {
+                    id type format
+                    title { userPreferred english romaji native }
+                    coverImage { large }
+                    startDate { year }
+                }
+            }
+        }
+    }
+}`;
+const recommendations = new Map();
+const RELATIONS_QUERY = `query TheamaAniListRelations($mediaId: Int!) {
+    Media(id: $mediaId, type: ANIME) {
+        relations {
+            edges {
+                relationType(version: 3)
+                node {
+                    id type format
+                    title { userPreferred english romaji native }
+                    coverImage { large }
+                    startDate { year }
+                }
+            }
+        }
+    }
+}`;
+const relations = new Map();
 let cachedOwner = null;
 const pages = new Map();
 
@@ -82,6 +114,44 @@ export async function fetchAniListWatchlists(connection, { chunk = 1, force = fa
     const result = { groups: normalizeAniListGroups(collection.lists), hasMore: collection.hasNextChunk === true };
     if (cachedOwner === owner && !signal?.aborted) pages.set(chunk, { at: Date.now(), data: result });
     return result;
+}
+
+export async function fetchAniListRecommendations(anilistId, { signal, fetcher = fetch } = {}) {
+    if (!Number.isSafeInteger(anilistId) || anilistId <= 0) throw new Error('Invalid AniList anime.');
+    signal?.throwIfAborted();
+    const cached = recommendations.get(anilistId);
+    if (cached && Date.now() - cached.at < CACHE_MS) return cached.items;
+    // Community recommendations are public and do not need an account token.
+    const data = await requestAniList(null, RECOMMENDATIONS_QUERY, { mediaId: anilistId }, { signal, fetcher });
+    const nodes = data.Media?.recommendations?.nodes;
+    if (!Array.isArray(nodes)) throw new Error('Could not load AniList recommendations. Please try again.');
+    const entries = nodes
+        .filter(node => node?.mediaRecommendation?.type === 'ANIME' && node.mediaRecommendation.id !== anilistId)
+        .map(node => ({ media: node.mediaRecommendation }));
+    const items = normalizeAniListGroups([{ entries }])[0].items;
+    signal?.throwIfAborted();
+    if (recommendations.size >= 50) recommendations.delete(recommendations.keys().next().value);
+    recommendations.set(anilistId, { at: Date.now(), items });
+    return items;
+}
+
+export async function fetchAniListRelations(anilistId, { signal, fetcher = fetch } = {}) {
+    if (!Number.isSafeInteger(anilistId) || anilistId <= 0) throw new Error('Invalid AniList anime.');
+    signal?.throwIfAborted();
+    const cached = relations.get(anilistId);
+    if (cached && Date.now() - cached.at < CACHE_MS) return cached.items;
+    const data = await requestAniList(null, RELATIONS_QUERY, { mediaId: anilistId }, { signal, fetcher });
+    const edges = data.Media?.relations?.edges;
+    if (!Array.isArray(edges)) throw new Error('Could not load related anime from AniList. Please try again.');
+    // Manga and light novels can be relations too; keep only animated media.
+    const animeEdges = edges.filter(edge => edge?.node?.type === 'ANIME' && edge.node.id !== anilistId);
+    const relationTypes = new Map(animeEdges.map(edge => [edge.node.id, edge.relationType || 'OTHER']));
+    const items = normalizeAniListGroups([{ entries: animeEdges.map(edge => ({ media: edge.node })) }])[0].items
+        .map(item => ({ ...item, relationType: relationTypes.get(item.anilistId) }));
+    signal?.throwIfAborted();
+    if (relations.size >= 50) relations.delete(relations.keys().next().value);
+    relations.set(anilistId, { at: Date.now(), items });
+    return items;
 }
 
 // Never pass an AniList ID to a TMDB endpoint. Resolve the existing mapping

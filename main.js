@@ -50,9 +50,12 @@ import { renderFriendsSidebar, renderProfileFriends, renderPublicProfile, setFol
 import { triggerLocalFilePicker, processLocalFile } from './services/offline.js';
 import { initializeHelpPage } from './pages/help.js';
 import { initializeAniList } from './services/anilist.js';
+import { initializeProfileLayout } from './user-data/profile-layout.js';
+import { loadAniListWatchlists } from './user-data/anilist-renderer.js';
 
 // Setup Static Event Listeners
 function setupStaticEventListeners() {
+    initializeProfileLayout({ onAniList: loadAniListWatchlists });
     initializeHelpPage();
     initializeTorboxPairing();
     initializeAniList();
