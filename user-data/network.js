@@ -1,5 +1,15 @@
 import { appState } from '../services/config.js';
 import { supabase } from './db.js';
+import { isMissingAvatarColumn } from './avatar-data.js';
+
+async function selectProfiles(columns, configure) {
+    let result = await configure(supabase.from('profiles').select(columns));
+    // Existing public profiles still work before the avatar migration is applied.
+    if (isMissingAvatarColumn(result.error)) {
+        result = await configure(supabase.from('profiles').select(columns.replace(/,\s*avatar_path/, '')));
+    }
+    return result;
+}
 
 export async function updatePublicProfile() {
     const user = appState.currentUser;
@@ -13,8 +23,8 @@ export async function updatePublicProfile() {
 }
 
 export async function fetchPublicProfile(userId) {
-    const { data: profile, error: profileError } = await supabase
-        .from('profiles').select('username').eq('id', userId).maybeSingle();
+    const { data: profile, error: profileError } = await selectProfiles('id, username, avatar_path',
+        query => query.eq('id', userId).maybeSingle());
     if (profileError) throw profileError;
     if (!profile) return null;
 
@@ -47,7 +57,7 @@ export async function fetchPublicProfile(userId) {
         isFollowing = Boolean(data);
     }
 
-    return { username: profile.username, lists: lists || [], isFollowing };
+    return { id: userId, username: profile.username, avatar_path: profile.avatar_path || null, lists: lists || [], isFollowing };
 }
 
 export async function fetchFriendsList() {
@@ -59,10 +69,8 @@ export async function fetchFriendsList() {
     if (followError) throw followError;
     if (!follows?.length) return [];
 
-    const { data: profiles, error: profileError } = await supabase
-        .from('profiles').select('id, username')
-        .in('id', follows.map(follow => follow.following_id))
-        .order('username', { ascending: true });
+    const { data: profiles, error: profileError } = await selectProfiles('id, username, avatar_path',
+        query => query.in('id', follows.map(follow => follow.following_id)).order('username', { ascending: true }));
     if (profileError) throw profileError;
     return profiles || [];
 }

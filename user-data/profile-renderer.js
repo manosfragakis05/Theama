@@ -1,6 +1,8 @@
 import { openMasterDetail } from '../api.js';
 import { setAniListProfileVisibility } from './anilist-renderer.js';
 import { setProfileLayoutMode } from './profile-layout.js';
+import { appState } from '../services/config.js';
+import { showPersonalAvatar, showPublicAvatar, renderUserAvatar } from './avatar-ui.js';
 
 export function renderAllWatchlists(customLists, onEditList = null) {
     const container = document.getElementById('profile-watchlists-container');
@@ -137,7 +139,7 @@ export function showPersonalProfile(username) {
     if (usernameDisplay) {
         usernameDisplay.textContent = username;
     }
-    document.getElementById('profile-avatar-initial').textContent = username.charAt(0).toUpperCase();
+    showPersonalAvatar(appState.currentUser, username);
     document.getElementById('profile-eyebrow').textContent = 'YOUR PROFILE';
     document.getElementById('profile-description').textContent = 'Your collection, all in one place.';
     document.getElementById('profile-watchlists-heading').textContent = 'Your watchlists';
@@ -168,7 +170,7 @@ export function renderPublicProfile(userId, profile) {
     setProfileLayoutMode(false);
     const usernameDisplay = document.getElementById('profile-username-display');
     usernameDisplay.textContent = profile?.username || 'User not found';
-    document.getElementById('profile-avatar-initial').textContent = (profile?.username || '?').charAt(0).toUpperCase();
+    showPublicAvatar(profile || { username: '?' });
     document.getElementById('profile-eyebrow').textContent = 'PUBLIC PROFILE';
     document.getElementById('profile-description').textContent = profile
         ? 'Browsing public watchlists.' : 'This profile is unavailable.';
@@ -240,7 +242,7 @@ export function renderFriendsSidebar(friendsList) {
         const nameEl = clone.querySelector('.following-name');
 
         nameEl.textContent = friend.username;
-        avatar.textContent = friend.username.charAt(0).toUpperCase();
+        renderUserAvatar(avatar, friend);
         btn.dataset.friendId = friend.id;
         container.appendChild(clone);
     });
@@ -261,7 +263,7 @@ export function renderProfileFriends(friendsList) {
         const clone = template.content.cloneNode(true);
         const username = friend.username || 'User';
         clone.querySelector('.profile-friend-name').textContent = username;
-        clone.querySelector('.profile-friend-avatar').textContent = username.charAt(0).toUpperCase();
+        renderUserAvatar(clone.querySelector('.profile-friend-avatar'), { ...friend, username });
         clone.querySelector('.profile-friend-btn').dataset.friendId = friend.id;
         container.appendChild(clone);
     }

@@ -52,9 +52,11 @@ import { initializeHelpPage } from './pages/help.js';
 import { initializeAniList } from './services/anilist.js';
 import { initializeProfileLayout } from './user-data/profile-layout.js';
 import { loadAniListWatchlists } from './user-data/anilist-renderer.js';
+import { initializeAvatarPicker } from './user-data/avatar-ui.js';
 
 // Setup Static Event Listeners
 function setupStaticEventListeners() {
+    initializeAvatarPicker();
     initializeProfileLayout({ onAniList: loadAniListWatchlists });
     initializeHelpPage();
     initializeTorboxPairing();
