@@ -65,6 +65,69 @@
 .profile-anilist-status { margin: 0 0 14px; padding: 14px 16px; border: 1px solid #303847; border-radius: 10px; color: #a0abbd; background: #161c27; font-size: 12px; line-height: 1.6; }
 .profile-anilist-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
 .profile-anilist-actions:not(:has(button:not(.hidden))) { display: none; }
+
+/* AniList overview */
+.ani-overview { margin-bottom: 24px; }
+.ani-stats-hero { padding: 18px 20px; border: 1px solid #2c3545; border-radius: 14px; background: linear-gradient(115deg, #83b9dd06, transparent 60%), #171d28; }
+.ani-stats-header { display: flex; align-items: center; }
+#profile-page .ani-stats-header h3 { margin: 0; color: #dce4f1; font-size: 18px; font-weight: 600; line-height: 1.3; letter-spacing: -.025em; overflow-wrap: anywhere; }
+.ani-stats-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 18px; }
+.ani-stat { --stat-color: #a0c9d0; min-width: 0; padding: 0 clamp(12px, 2vw, 26px); border-left: 1px solid #9cb0d118; }
+.ani-stat:first-child { padding-left: 0; border-left: 0; }
+.ani-stat:last-child { padding-right: 0; }
+.ani-stat--episodes { --stat-color: #b8aed6; }
+.ani-stat--time { --stat-color: #d8c09b; }
+.ani-stat dt { display: flex; align-items: center; gap: 6px; color: #a4b1c3; font-size: 11px; }
+.ani-stat-icon { display: inline-grid; place-items: center; width: 23px; height: 23px; flex-shrink: 0; border-radius: 6px; color: var(--stat-color); background: color-mix(in srgb, var(--stat-color) 6%, transparent); }
+.ani-stat-icon svg { width: 15px; height: 15px; }
+.ani-stat-value { margin-top: 8px; color: #e4ebf5; font-size: clamp(25px, 2.8vw, 34px); font-weight: 600; letter-spacing: -.045em; line-height: 1.15; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ani-stat--time .ani-stat-value { color: #ddc9ac; }
+.ani-stat-caption { margin-top: 4px; color: #8c9bb1; font-size: 10px; line-height: 1.5; }
+.ani-stats-note { margin-top: 14px; color: #7d8ca3; font-size: 10px; line-height: 1.5; }
+.ani-highlights-header { margin: 16px 0 8px; }
+.ani-highlights-header h3 { color: #a4b1c3; font-size: 12px; font-weight: 550; }
+.ani-highlights { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.ani-highlight { --highlight: #b8aed6; min-width: 0; overflow: hidden; padding: 12px; border: 1px solid #2c3545; border-radius: 12px; background: #171d28; }
+.ani-highlight--watched { --highlight: #a0c9d0; }
+.ani-highlight--rated { --highlight: #d8c09b; }
+.ani-highlight-heading { display: flex; align-items: center; gap: 6px; margin-bottom: 9px; color: var(--highlight); font-size: 10px; font-weight: 550; }
+.ani-highlight-heading::before { content: ''; width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
+.ani-highlight-winner { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 78px; padding: 3px; border-radius: 7px; text-align: left; transition: background .2s; }
+.ani-highlight-winner:hover { background: color-mix(in srgb, var(--highlight) 6%, transparent); }
+.ani-highlight-poster { flex-shrink: 0; width: 48px; aspect-ratio: 2 / 3; overflow: hidden; border-radius: 5px; background: linear-gradient(145deg, #35455e, #1d2638); box-shadow: 0 3px 10px #0003; }
+.ani-highlight-poster img { width: 100%; height: 100%; object-fit: cover; transition: transform .25s; }
+.ani-highlight-winner:hover .ani-highlight-poster img { transform: scale(1.04); }
+.ani-highlight-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; align-items: flex-start; }
+.ani-highlight-value { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; color: var(--highlight); font-size: 22px; font-weight: 600; line-height: 1.1; letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+.ani-highlight-unit { color: #a8b4c6; font-size: 10px; font-weight: 500; letter-spacing: 0; }
+.ani-highlight-name { display: -webkit-box; overflow: hidden; -webkit-line-clamp: 2; -webkit-box-orient: vertical; color: #dce4f1; font-size: 12px; font-weight: 550; line-height: 1.4; overflow-wrap: anywhere; }
+.ani-highlight-format { margin-top: 4px; color: #8c9bb1; font-size: 10px; }
+.ani-highlight-empty { display: flex; align-items: center; justify-content: center; min-height: 78px; padding: 10px; color: #8796ad; font-size: 11px; text-align: center; line-height: 1.5; }
+.ani-stats-feedback { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ani-stats-feedback:has(p:not([hidden])) { margin-top: 12px; }
+.ani-stats-feedback p { color: #94a3b8; font-size: 12px; line-height: 1.6; }
+.ani-highlight-skeleton { min-height: 126px; border: 1px solid #2c3545; border-radius: 12px; background: linear-gradient(110deg, #171d28, #1e2736, #171d28); }
+.ani-overview.is-loading :is(.ani-stat-value, .ani-highlight-skeleton) { animation: ani-stats-pulse 1.6s ease-in-out infinite alternate; }
+@keyframes ani-stats-pulse { to { opacity: .35; } }
+@media (max-width: 639px) {
+    .ani-stats-hero { padding: 16px 14px; }
+    .ani-stats-totals { margin-top: 16px; }
+    .ani-stat { padding: 0 8px; }
+    .ani-stat dt { flex-direction: column; align-items: flex-start; gap: 5px; font-size: 10px; }
+    .ani-stat-value { margin-top: 8px; font-size: clamp(21px, 5.5vw, 28px); }
+    .ani-stat-caption { font-size: 9px; }
+    .ani-highlights { grid-template-columns: 1fr; gap: 8px; }
+    .ani-highlight { padding: 10px 12px; }
+    .ani-highlight-heading { margin-bottom: 6px; }
+    .ani-highlight-winner { min-height: 66px; }
+    .ani-highlight-poster { width: 40px; }
+    .ani-highlight-value { font-size: 21px; }
+    .ani-highlight-skeleton { min-height: 106px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .ani-overview.is-loading :is(.ani-stat-value, .ani-highlight-skeleton) { animation: none; }
+    .ani-highlight-poster img, .ani-highlight-winner { transition: none; }
+}
 .profile-friends { border: 1px solid #303847; border-radius: 12px; background: #171d28; }
 .profile-friends summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 10px 14px; color: #c4ccda; font-size: 12px; font-weight: 600; cursor: pointer; list-style: none; }
 .profile-friends summary::-webkit-details-marker { display: none; }
