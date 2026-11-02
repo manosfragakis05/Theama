@@ -34,8 +34,8 @@ Bypass WebKit's strict media limitations. Play **MKV files** and unsupported aud
 - **TMDB Preinstalled:** The Movie Database catalog comes preinstalled for instant discovery of trending movies and TV shows.
 - **Anime Matching** For the default catalogs automatically uses **kitsu ids** for better results.
 
-### AniList Intergration
-- View and share you public anilist stats and watchlits easily within the app, updating your AniList library coming soon.
+### AniList Integration
+- View and share you public anilist stats and watchlists easily within the app, updating your AniList library coming soon.
 
 ## Getting Started
 1. **Create a free Theama account.** It is optional for browsing and compatible add-on playback, but most features require one, including your saved app library, watch tracking, release calendar, custom watchlists, and social features.

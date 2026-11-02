@@ -937,6 +937,7 @@ body {
     }
 
     #mobile-nav {
+        bottom: -5px;
         padding: 6px 8px max(8px, env(safe-area-inset-bottom));
         background: rgba(16, 19, 27, 0.94);
         border-color: var(--ui-border);
