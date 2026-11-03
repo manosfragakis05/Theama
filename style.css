@@ -447,6 +447,23 @@ option:hover {
     -webkit-overflow-scrolling: touch;
 }
 
+/* Keep mouse dragging direct, even if a track gains smooth scrolling or snapping. */
+.draggable-row.is-row-dragging {
+    scroll-behavior: auto !important;
+    scroll-snap-type: none !important;
+    overflow-anchor: none;
+}
+
+/* Hit testing stays on the track so cards cannot hover as they pass the mouse. */
+.draggable-row.is-row-dragging * {
+    pointer-events: none !important;
+    transition: none !important;
+}
+
+.draggable-row.is-row-dragging .poster-card {
+    transform: none !important;
+}
+
 .artplayer-app {
     width: 100%;
     overflow: hidden;

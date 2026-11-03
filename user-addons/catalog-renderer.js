@@ -19,6 +19,14 @@ const rowObservers = {};
 const rowSentinels = {}; // containerId -> current sentinel element
 const rowMessages = {};  // containerId -> current message element, if one is shown
 
+function removeRowSentinel(containerId) {
+    const sentinel = rowSentinels[containerId];
+    if (!sentinel) return;
+    rowObservers[containerId]?.unobserve(sentinel);
+    sentinel.remove();
+    delete rowSentinels[containerId];
+}
+
 function getObserverFor(containerId) {
     // Return cached observer if it already exists
     if (rowObservers[containerId]) return rowObservers[containerId];
@@ -29,7 +37,7 @@ function getObserverFor(containerId) {
     // Create the observer with the row as the absolute root
     const observer = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
-            if (entry.isIntersecting) {
+            if (entry.isIntersecting && entry.target === rowSentinels[containerId] && entry.target.isConnected) {
                 observer.unobserve(entry.target);
                 triggerFetch(containerId);
             }
@@ -49,6 +57,8 @@ const viewportObserver = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
         const row = entry.target;
         const containerId = row.dataset.catalogId || row.id;
+        // Ignore notifications queued before this row was replaced or torn down.
+        if (!row.isConnected || document.getElementById(containerId) !== row) return;
         const catalogObject = getActiveState(containerId);
 
         if (!catalogObject) return;
@@ -68,6 +78,8 @@ const viewportObserver = new IntersectionObserver((entries) => {
             if (row.childElementCount > 0) {
                 row.style.minHeight = `${row.offsetHeight}px`;
                 rowScrollPositions[containerId] = row.scrollLeft;
+                removeRowSentinel(containerId);
+                delete rowMessages[containerId];
                 row.replaceChildren();
 
                 catalogObject.cardEls?.clear();
@@ -275,13 +287,7 @@ export function renderCardsToRow(items, containerId, hasMore) {
     const catalogObject = getActiveState(containerId);
     if (!catalogObject) return;
 
-    const oldSentinel = rowSentinels[containerId];
-    if (oldSentinel) {
-        const observer = getObserverFor(containerId);
-        if (observer) observer.unobserve(oldSentinel);
-        oldSentinel.remove();
-        delete rowSentinels[containerId];
-    }
+    removeRowSentinel(containerId);
 
     const fragment = document.createDocumentFragment();
     items.forEach(item => {
@@ -310,8 +316,10 @@ export function teardownRow(containerId) {
     const rowEl = document.getElementById(containerId);
     if (rowEl) viewportObserver.unobserve(rowEl);
     destroyObserver(containerId);
-    delete rowSentinels[containerId];
+    removeRowSentinel(containerId);
     delete rowMessages[containerId];
+    delete rowScrollPositions[containerId];
+    delete lastFetchTime[containerId];
 
     // 1. Clear pending timeouts to stop ghost fetches
     if (fetchTimeouts[containerId]) {
@@ -454,9 +462,9 @@ export function injectCatalogShell(catalogObject, targetContainer) {
 
     container.appendChild(shellNode);
 
-    setTimeout(() => {
-        if (rowEl) viewportObserver.observe(rowEl);
-    }, 0);
+    // IntersectionObserver already delivers asynchronously, including for fragments.
+    // A timer here could observe a detached row after teardown had already run.
+    if (rowEl) viewportObserver.observe(rowEl);
 }
 
 export function populateTypeDropdown(typesList) {
@@ -660,8 +668,8 @@ export function showRowMessage(containerId, message = "No results found.") {
     const row = document.getElementById(containerId);
     if (!row) return;
 
+    removeRowSentinel(containerId);
     getActiveState(containerId)?.cardEls?.clear();
     row.innerHTML = `<p class="text-slate-500 pl-2 text-sm mt-4">${message}</p>`;
     rowMessages[containerId] = row.firstElementChild;
-    delete rowSentinels[containerId]; // the old one just got wiped by innerHTML
 }

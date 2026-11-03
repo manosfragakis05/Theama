@@ -7,6 +7,7 @@ let frameId = null;
 let clickResetTimer = null;
 let draggedRow = null;
 let isDragInitialized = false;
+const DRAG_THRESHOLD = 5;
 
 function resetClickSuppression() {
     clearTimeout(clickResetTimer);
@@ -25,7 +26,7 @@ function stopDrag() {
         if (finishedSlider.isConnected) finishedSlider.scrollLeft = pendingScrollLeft;
     }
     activeSlider = null;
-    finishedSlider.classList.remove('cursor-grabbing', 'pointer-events-none');
+    finishedSlider.classList.remove('is-row-dragging', 'cursor-grabbing');
     document.body.classList.remove('select-none', 'cursor-grabbing');
     // Keep the release click from opening a card, without delaying drag cleanup.
     if (isDragging) {
@@ -63,12 +64,12 @@ export function initGlobalDrag() {
             cancelDrag();
             return;
         }
-        const walk = (e.clientX - startX) * 2;
+        const walk = (e.clientX - startX)*2;
         if (!isDragging) {
-            if (Math.abs(walk) <= 5) return;
+            if (Math.abs(walk) <= DRAG_THRESHOLD) return;
             isDragging = true;
             draggedRow = activeSlider;
-            activeSlider.classList.add('cursor-grabbing');
+            activeSlider.classList.add('is-row-dragging', 'cursor-grabbing');
             document.body.classList.add('select-none', 'cursor-grabbing');
         }
         e.preventDefault();
