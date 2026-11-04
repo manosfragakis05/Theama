@@ -1,6 +1,7 @@
 import { MKVPlayer } from '../engine/mkv_lib.js';
 import { appState, smartFetch, showToast } from '../services/config.js';
 import { getCurrentUserSettings } from '../user-data/user-settings.js';
+import { getTorboxDownloadRequest } from '../services/torbox-cloud.js';
 import { upsertWatchProgress } from '../user-data/watch-history.js';
 
 import { advanceToNextItem, retreatToPreviousItem, getQueueState, setQueuePlaybackStatus } from './playlist.js';
@@ -18,8 +19,8 @@ window.addEventListener('queue:updated', ({ detail }) => {
 });
 
 // LINK FETCHER
-export async function getTorboxLink(tid, fid, apiKey = getCurrentUserSettings().user_preferences.torboxApiKey, sourceUrl = null) {
-    const targetUrl = sourceUrl || `https://api.torbox.app/v1/api/torrents/requestdl?token=${encodeURIComponent(apiKey)}&torrent_id=${encodeURIComponent(tid)}&file_id=${encodeURIComponent(fid)}&zip=false`;
+export async function getTorboxLink(tid, fid, apiKey = getCurrentUserSettings().user_preferences.torboxApiKey, sourceUrl = null, torboxType = 'torrent') {
+    const targetUrl = sourceUrl || getTorboxDownloadRequest(tid, fid, apiKey, torboxType);
 
     try {
         const res = await smartFetch(targetUrl, sourceUrl ? { proxyMode: 'resolve' } : {});
@@ -31,7 +32,7 @@ export async function getTorboxLink(tid, fid, apiKey = getCurrentUserSettings().
 
         const resolvedUrl = new URL(data.data);
         if (!['https:', 'http:'].includes(resolvedUrl.protocol)
-            || (resolvedUrl.hostname === 'api.torbox.app' && resolvedUrl.pathname === '/v1/api/torrents/requestdl')) {
+            || (resolvedUrl.hostname === 'api.torbox.app' && /^\/v1\/api\/(?:torrents|usenet)\/requestdl$/.test(resolvedUrl.pathname))) {
             throw new Error('TorBox did not return a direct video URL.');
         }
         return data.data; // Returns just the raw CDN URL string
@@ -78,7 +79,7 @@ export async function requestLink(tid, fid, torrentName, fileName, queueUid = nu
             }
             if (generation !== playbackGeneration) return false;
         }
-        const streamUrl = await getTorboxLink(tid, fid, apiKey, playbackSource);
+        const streamUrl = await getTorboxLink(tid, fid, apiKey, playbackSource, queued?.torboxType);
         if (generation !== playbackGeneration) return;
         if (list) list.style.opacity = '1';
         if (streamUrl) {

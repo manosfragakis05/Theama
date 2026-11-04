@@ -7,6 +7,7 @@
 
 import { getCurrentUserSettings } from '../user-data/user-settings.js';
 import { appState, smartFetch, showToast } from '../services/config.js';
+import { getTorboxCloudList, isReadyCloudDownload } from '../services/torbox-cloud.js';
 
 import { parseMediaData } from '../utils/parseMedia.js';
 import { getPosterForLibrary, getTmdbId } from '../metadata/metadata.js';
@@ -42,6 +43,8 @@ export function initializeLibraryTabs() {
 
 //#region Torbox
 let libraryRequestId = 0;
+let usenetDownloads = [];
+const getCloudDownloads = () => [...appState.allTorrents, ...usenetDownloads];
 
 export async function fetchLibrary() {
     const key = getCurrentUserSettings().user_preferences.torboxApiKey;
@@ -51,24 +54,22 @@ export async function fetchLibrary() {
     const isCurrent = () => requestId === libraryRequestId && context === getMetadataContext();
 
     try {
-        const res = await smartFetch('https://api.torbox.app/v1/api/torrents/mylist?bypass_cache=true', {
-            headers: { 'Authorization': `Bearer ${key}` }
-        });
-        const data = await res.json();
+        const results = await Promise.allSettled([
+            getTorboxCloudList(key, 'torrent'), getTorboxCloudList(key, 'usenet')
+        ]);
         if (!isCurrent()) return;
-
-        if (data.success && Array.isArray(data.data)) {
-            const torrents = data.data.filter(t => t.download_finished);
-            appState.allTorrents = torrents;
-            const hashes = new Set(data.data.map(t => t.hash));
-            for (const hash of metadataCache.keys()) {
-                if (!hashes.has(hash)) metadataCache.delete(hash);
-            }
-            renderList(torrents);
-
-        } else {
-            showToast("Error: " + data.detail, 'error');
+        if (results.every(result => result.status === 'rejected')) throw new Error('Both cloud lists failed.');
+        if (results[0].status === 'fulfilled') appState.allTorrents = results[0].value.filter(isReadyCloudDownload);
+        if (results[1].status === 'fulfilled') usenetDownloads = results[1].value.filter(isReadyCloudDownload);
+        for (const result of results) {
+            if (result.status === 'rejected') showToast(result.reason.message, 'error');
         }
+        const downloads = getCloudDownloads();
+        const hashes = new Set(downloads.map(item => item.hash));
+        for (const hash of metadataCache.keys()) {
+            if (!hashes.has(hash)) metadataCache.delete(hash);
+        }
+        renderList(downloads);
     } catch (e) {
         if (!isCurrent()) return;
         console.error('Cloud library load failed:', e);
@@ -81,7 +82,7 @@ export async function fetchLibrary() {
 
 // --- API ACTIONS ---
 
-export async function deleteTorrent(torrentId, event) {
+export async function deleteTorrent(torrentId, event, torboxType = 'torrent') {
     if (event) event.stopPropagation();
     if (!confirm("Are you sure you want to delete this from TorBox?")) return false;
 
@@ -90,16 +91,19 @@ export async function deleteTorrent(torrentId, event) {
 
     const userId = appState.currentUser?.id ?? null;
     const context = getMetadataContext();
-    const deletedTorrent = appState.allTorrents.find(t => String(t.id) === String(torrentId));
+    const usenet = torboxType === 'usenet';
+    const isDeletedItem = item => String(item.id) === String(torrentId)
+        && (item.torboxType === 'usenet') === usenet;
+    const deletedTorrent = getCloudDownloads().find(isDeletedItem);
 
     try {
-        const res = await smartFetch('https://api.torbox.app/v1/api/torrents/controltorrent', {
+        const res = await smartFetch(`https://api.torbox.app/v1/api/${usenet ? 'usenet/controlusenetdownload' : 'torrents/controltorrent'}`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${key}`,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ torrent_id: torrentId, operation: "delete" })
+            body: JSON.stringify({ [usenet ? 'usenet_id' : 'torrent_id']: torrentId, operation: "delete" })
         });
 
         const data = await res.json();
@@ -108,11 +112,16 @@ export async function deleteTorrent(torrentId, event) {
             if (context === getMetadataContext()) {
                 // Invalidate list requests started before this deletion completed.
                 libraryRequestId++;
-                appState.allTorrents = appState.allTorrents.filter(t => String(t.id) !== String(torrentId));
+                if (usenet) usenetDownloads = usenetDownloads.filter(item => !isDeletedItem(item));
+                else appState.allTorrents = appState.allTorrents.filter(item => !isDeletedItem(item));
                 metadataCache.delete(deletedTorrent?.hash);
-                if (cloudGrid) renderList(renderedCloudTorrents.filter(t => String(t.id) !== String(torrentId)));
+                if (cloudGrid) renderList(renderedCloudTorrents.filter(item => !isDeletedItem(item)));
             }
 
+            if (usenet) {
+                showToast('Deleted from TorBox.', 'success');
+                return true;
+            }
             try {
                 await removeHashFromAppLibrary(deletedTorrent?.hash, userId);
                 showToast("Deleted from TorBox and your library successfully!", 'success');
@@ -148,6 +157,7 @@ function getMetadataContext() {
     const userId = appState.currentUser?.id;
     if (!metadataContext || metadataContext.key !== key || metadataContext.userId !== userId) {
         metadataCache.clear();
+        usenetDownloads = [];
         metadataContext = { key, userId };
     }
     return metadataContext;
@@ -207,7 +217,7 @@ function getTorrentMetadata(torrent, isNeeded) {
     const entry = { sourceName: torrent.name, mediaText, metadata: null, promise: null, consumers: [isNeeded] };
     const isCurrent = () => context === getMetadataContext()
         && metadataCache.get(torrent.hash) === entry
-        && appState.allTorrents.some(t => t.hash === torrent.hash && t.name === torrent.name);
+        && getCloudDownloads().some(t => t.hash === torrent.hash && t.name === torrent.name);
     entry.promise = new Promise(resolve => {
         metadataQueue.push({ resolve, task: async () => {
             if (!isCurrent() || !entry.consumers.some(needed => needed())) return null;
@@ -247,7 +257,7 @@ export function getMediaText(torrent, mediaInfo = parseMediaData(torrent.name)) 
 
 export async function searchLibrary(searchString) {
     getMetadataContext();
-    renderList(appState.allTorrents, searchString.trim().toLowerCase());
+    renderList(getCloudDownloads(), searchString.trim().toLowerCase());
 }
 
 async function fetchTorrentMetadata(torrent) {
@@ -276,7 +286,10 @@ let cloudGrid = null;
 let renderedCloudTorrents = [];
 
 export function renderList(torrents, query = document.getElementById('library-search-input')?.value.trim().toLowerCase() || '') {
-    torrents = torrents.filter(t => t.name.toLowerCase().includes(query));
+    // Both APIs return their own lists. Merge their chronology before the
+    // virtual grid chooses the first visible rows.
+    torrents = torrents.filter(t => t.name.toLowerCase().includes(query))
+        .sort((a, b) => (Date.parse(b.created_at) || 0) - (Date.parse(a.created_at) || 0));
     cloudGrid?.destroy();
     cloudGrid = null;
     renderedCloudTorrents = torrents;
@@ -358,7 +371,7 @@ function updateCardMetadata(card, item) {
 function updateAddLibraryButton(card, item) {
     const button = card.querySelector('[data-action="add-library"]');
     const id = item.tmdbId?.id;
-    button.classList.toggle('hidden', !Number.isSafeInteger(id) || id <= 0);
+    button.classList.toggle('hidden', item.torrent.torboxType === 'usenet' || !Number.isSafeInteger(id) || id <= 0);
     if (button.getAttribute('aria-busy') === 'true') return;
     const label = button.dataset.added === 'true' ? 'Added to library' : `Add ${item.name} to library`;
     button.title = label;
@@ -378,6 +391,7 @@ function renderItem(item) {
         item.mediaText,
         item.size
     );
+    if (t.torboxType === 'usenet') card.querySelector('.library-type').textContent = `${item.mediaText} · Usenet`;
     updateAddLibraryButton(card, item);
 
     // Handle Clicks cleanly
@@ -387,6 +401,7 @@ function renderItem(item) {
         // Handle Actions
         if (btn?.dataset.action === 'add-library') {
             event.stopPropagation();
+            if (t.torboxType === 'usenet') return;
             if (btn.disabled || context !== getMetadataContext() || !card.isConnected) return;
             if (!Number.isSafeInteger(item.tmdbId?.id) || item.tmdbId.id <= 0) return;
             if (!appState.currentUser) {
@@ -419,13 +434,13 @@ function renderItem(item) {
             event.stopPropagation();
 
             // Wait for the delete function to finish
-            await deleteTorrent(t.id, event);
+            await deleteTorrent(t.id, event, t.torboxType);
             return;
         }
         if (btn?.dataset.action === 'download') {
             event.stopPropagation();
             return playableFile
-                ? downloadFile(t.id, playableFile.id, playableFile.name)
+                ? downloadFile(t.id, playableFile.id, playableFile.name, t.torboxType)
                 : showToast("No playable files found.", "error");
         }
 
@@ -438,7 +453,7 @@ function renderItem(item) {
         if (!item.tmdbId) {
             const metadata = await getTorrentMetadata(t, () => card.isConnected && context === getMetadataContext());
             if (context !== getMetadataContext() || !card.isConnected
-                || !appState.allTorrents.some(torrent => torrent.hash === t.hash)) return;
+                || !getCloudDownloads().some(torrent => torrent.hash === t.hash)) return;
             if (metadata) {
                 Object.assign(item, metadata);
                 updateCardMetadata(card, item);
@@ -451,6 +466,7 @@ function renderItem(item) {
             const torrentInfo = parseMediaData(t.name);
             const current = startQueueFromItem({
                 tid: t.id, fid: playableFile.id, torrentName: t.name, fileName: playableFile.name,
+                torboxType: t.torboxType,
                 hash: t.hash,
                 title: item.name, thumbnail: item.poster,
                 tmdbId: item.tmdbId?.id,

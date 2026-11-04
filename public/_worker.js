@@ -147,7 +147,10 @@ const TORBOX_ROUTES = new Map([
   ['/v1/api/torrents/requestdl', 'GET'],
   ['/v1/api/torrents/createtorrent', 'POST'],
   ['/v1/api/torrents/controltorrent', 'POST'],
-  ['/v1/api/torrents/edittorrent', 'PUT']
+  ['/v1/api/torrents/edittorrent', 'PUT'],
+  ['/v1/api/usenet/mylist', 'GET'],
+  ['/v1/api/usenet/requestdl', 'GET'],
+  ['/v1/api/usenet/controlusenetdownload', 'POST']
 ]);
 const MAX_REQUEST_BYTES = 1024 * 1024;
 const MAX_ADDON_BYTES = 16 * 1024 * 1024;

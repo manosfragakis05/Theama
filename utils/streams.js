@@ -7,3 +7,9 @@ export function getStreamHash(stream = {}, fallbackLink = '') {
     }
     return '';
 }
+
+export function isUsenetStream(stream = {}) {
+    return Boolean(stream.nzbUrl || stream.streamData?.type === 'usenet'
+        || stream.behaviorHints?.bingeGroup?.split('|').includes('usenet')
+        || /\b(?:Newznab|NZBHydra2?|Usenet)\b/i.test(stream.name || ''));
+}

@@ -391,6 +391,7 @@ const renderLine = (lineData) => lineData.map(item => {
 //#region Main Card
 export async function submitStreamSource(raw, selectedMedia) {
     const hash = getStreamHash(raw);
+    console.log(raw);
     const finalLink = hash ? `magnet:?xt=urn:btih:${hash}` : raw.url;
     await addStreamtoTorbox(finalLink, selectedMedia, raw);
 }

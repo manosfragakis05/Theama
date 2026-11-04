@@ -264,7 +264,7 @@ function preProcessEpisodeTorrentData(videoFiles, fallbackShowName = 'Season 1',
 }
 
 function getTorrentKey(torrent) {
-    return torrent.hash ? `hash:${String(torrent.hash).toLowerCase()}` : `id:${torrent.id}`;
+    return `${torrent.torboxType || 'torrent'}:${torrent.hash ? `hash:${String(torrent.hash).toLowerCase()}` : `id:${torrent.id}`}`;
 }
 
 function buildPickerGroups(torrents) {
@@ -666,6 +666,7 @@ function preparePickerQueue(torrent, franchiseGroups, cleanName, tmdbId, fallbac
 
                 return {
                     tid: sourceTorrent.id,
+                    torboxType: sourceTorrent.torboxType,
                     fid: originalFile.id,
                     hash: sourceTorrent.hash,
                     tmdbId: fileType === 'TV' ? tmdbId : null,
@@ -970,7 +971,7 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName, tmdbId
                         if (queueItem.sourceType === 'addon') {
                             import('../pages/addon-library.js').then(({ downloadAddonQueueItem }) => downloadAddonQueueItem(queueItem))
                                 .catch(error => showToast(error.message || 'Could not download this episode.', 'error'));
-                        } else downloadFile(queueItem.tid, queueItem.fid, queueItem.fileName);
+                        } else downloadFile(queueItem.tid, queueItem.fid, queueItem.fileName, queueItem.torboxType);
                     } else {
                         addToQueue(queueItem);
                     }

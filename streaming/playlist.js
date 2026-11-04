@@ -83,6 +83,7 @@ function createQueueItem(data, uid = crypto.randomUUID()) {
         uid,
         tid: data.tid,
         fid: data.fid,
+        torboxType: data.torboxType === 'usenet' ? 'usenet' : 'torrent',
         hash: text(data.hash),
         sourceType: data.sourceType === 'addon' ? 'addon' : 'torrent',
         sourceMediaId: text(data.sourceMediaId),

@@ -13,11 +13,14 @@ import { mediaStore } from '../api.js';
 
 import { fetchLibrary } from '../pages/library.js';
 import { addToAppLibrary, linkHashToMedia } from '../pages/app-library.js';
+
 import { requestTorboxDeviceCode, waitForTorboxDeviceToken } from './torbox-device-auth.js';
-import { requestLink } from '../streaming/player.js';
+import { requestLink, startPlayer } from '../streaming/player.js';
+
 import { buildSeriesQueue, startQueueFromEpisode, startQueueFromItem } from '../streaming/playlist.js';
 import { buildSelectedTorrentQueue } from '../metadata/picker.js';
-import { getStreamHash } from '../utils/streams.js';
+
+import { getStreamHash, isUsenetStream } from '../utils/streams.js';
 
 let pairingController = null;
 let pairingUserId;
@@ -221,6 +224,19 @@ export async function logoutTorBox() {
 //#region Add to Library
 export async function addStreamtoTorbox(finalLink, selectedMedia = mediaStore.get(), rawStream = {}) {
     const media = { ...selectedMedia };
+    if (isUsenetStream(rawStream)) {
+        let source;
+        try { source = new URL(rawStream.url); } catch { /* Report the missing playback URL below. */ }
+        if (!source || !['http:', 'https:'].includes(source.protocol)) {
+            showToast('This Usenet source has no direct playback URL.', 'error');
+            return;
+        }
+        closeStreamPicker();
+        startPlayer(rawStream.url, rawStream.behaviorHints?.filename || rawStream.streamData?.filename
+            || media.title || 'Usenet stream', null, null, media.resumePosition || 0);
+        return;
+    }
+
     const key = getCurrentUserSettings().user_preferences.torboxApiKey;
     if (!key || /^https?:\/\//i.test(finalLink || '')) {
         const directUrl = rawStream.url || finalLink;
@@ -239,8 +255,11 @@ export async function addStreamtoTorbox(finalLink, selectedMedia = mediaStore.ge
         const name = rawStream.behaviorHints?.filename
             || (/\.(mkv|mp4|avi|mov|m4v|webm|ts)$/i.test(fileName) ? fileName : media.title)
             || 'Direct stream';
-        const userId = appState.currentUser?.id;
+
+        console.log(rawStream, finalLink);
         const hash = getStreamHash(rawStream, finalLink);
+            
+        const userId = appState.currentUser?.id;
         const item = userId ? startQueueFromItem({
             sourceType: 'addon', sourceMediaId: String(media.id), streamId: media.streamId || '',
             sourceHashes: hash ? [hash] : [], hash,
@@ -250,7 +269,8 @@ export async function addStreamtoTorbox(finalLink, selectedMedia = mediaStore.ge
             watchEpisodeNumber: media.episodeNumber, title: media.title,
             thumbnail: media.poster, torrentName: media.title, fileName: name
         }) : null;
-        // The queue contains metadata and hashes only; playback URLs stay in memory.
+
+        // The queue contains metadata and hashes only, playback URLs stay in memory.
         closeStreamPicker();
         const started = await requestLink(item?.tid ?? null, item?.fid ?? null, media.title, name,
             item?.uid ?? null, media.resumePosition || 0, { sourceUrl: directUrl });
@@ -269,6 +289,7 @@ export async function addStreamtoTorbox(finalLink, selectedMedia = mediaStore.ge
     const userId = appState.currentUser?.id;
     const isCurrent = () => userId === appState.currentUser?.id
         && key === getCurrentUserSettings().user_preferences.torboxApiKey;
+
     if (finalLink?.startsWith("magnet")) {
         const createData = await sendMagnetToTorbox(finalLink, media);
         if (!isCurrent()) return;

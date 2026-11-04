@@ -1,5 +1,6 @@
 import { getCurrentUserSettings } from '../user-data/user-settings.js';
 import { smartFetch, showToast } from '../services/config.js';
+import { getTorboxDownloadRequest } from '../services/torbox-cloud.js';
 
 // --- DOWNLOAD ---
 
@@ -13,7 +14,7 @@ import { smartFetch, showToast } from '../services/config.js';
  * @param {string|number} fileId
  * @param {string} fileName - used as the share-sheet title on iOS fallback
  */
-export async function downloadFile(torrentId, fileId, fileName) {
+export async function downloadFile(torrentId, fileId, fileName, torboxType = 'torrent') {
     const key = getCurrentUserSettings().user_preferences.torboxApiKey;
     if (!key) {
         showToast("API key not found.", "error");
@@ -23,7 +24,7 @@ export async function downloadFile(torrentId, fileId, fileName) {
     showToast("Starting download...", "info");
 
     try {
-        const apiUrl = `https://api.torbox.app/v1/api/torrents/requestdl?token=${key}&torrent_id=${torrentId}&file_id=${fileId}`;
+        const apiUrl = getTorboxDownloadRequest(torrentId, fileId, key, torboxType);
         const response = await smartFetch(apiUrl);
         const result = await response.json();
 
