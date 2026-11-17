@@ -144,12 +144,14 @@ const TORBOX_ROUTES = new Map([
   ['/v1/api/user/auth/device/start', 'GET'],
   ['/v1/api/user/auth/device/token', 'POST'],
   ['/v1/api/torrents/mylist', 'GET'],
+  ['/v1/api/torrents/torrentinfo', 'GET'],
   ['/v1/api/torrents/requestdl', 'GET'],
   ['/v1/api/torrents/createtorrent', 'POST'],
   ['/v1/api/torrents/controltorrent', 'POST'],
   ['/v1/api/torrents/edittorrent', 'PUT'],
   ['/v1/api/usenet/mylist', 'GET'],
   ['/v1/api/usenet/requestdl', 'GET'],
+  ['/v1/api/usenet/createusenetdownload', 'POST'],
   ['/v1/api/usenet/controlusenetdownload', 'POST']
 ]);
 const MAX_REQUEST_BYTES = 1024 * 1024;
@@ -383,6 +385,12 @@ async function fetchProxy(request, rawUrl, mode) {
       if (contentType && contentType !== 'text/plain'
           && !/^application\/(?:json|[a-z0-9!#$&^_.+-]+\+json)$/.test(contentType)) {
         await upstream.body?.cancel();
+        // Providers can return HTML block/rate-limit pages to Cloudflare IPs.
+        // Preserve the failure status without serving their HTML on our origin.
+        if (!upstream.ok) return jsonResponse(
+          { error: `Upstream request failed (HTTP ${upstream.status}).` },
+          upstream.status, upstream.headers.get('Retry-After')
+        );
         throw new ProxyError(502, 'Upstream did not return JSON or playable media.');
       }
       const bytes = await readLimitedBody(upstream, isTorbox ? MAX_TORBOX_BYTES : MAX_ADDON_BYTES, 502, controller.signal);

@@ -1,7 +1,5 @@
 import { getCurrentUserSettings } from '../user-data/user-settings.js';
 import { smartFetch, showToast } from '../services/config.js';
-import { getTorboxDownloadRequest } from '../services/torbox-cloud.js';
-
 // --- DOWNLOAD ---
 
 /**
@@ -24,7 +22,17 @@ export async function downloadFile(torrentId, fileId, fileName, torboxType = 'to
     showToast("Starting download...", "info");
 
     try {
-        const apiUrl = getTorboxDownloadRequest(torrentId, fileId, key, torboxType);
+        if (String(torrentId).startsWith('library:')) {
+            const { resolveLibraryTorrentFile } = await import('../utils/streams.js');
+            const file = await resolveLibraryTorrentFile(torrentId, fileId);
+            torrentId = file.torrentId;
+            fileId = file.fileId;
+        }
+        const isUsenet = torboxType === 'usenet';
+        const params = new URLSearchParams({
+            token: key, [isUsenet ? 'usenet_id' : 'torrent_id']: String(torrentId), file_id: String(fileId)
+        });
+        const apiUrl = `https://api.torbox.app/v1/api/${isUsenet ? 'usenet' : 'torrents'}/requestdl?${params}`;
         const response = await smartFetch(apiUrl);
         const result = await response.json();
 

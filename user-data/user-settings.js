@@ -28,7 +28,6 @@ export function shouldPlayOnAdd() {
 }
 
 export function getLibraryActionLabel() {
-    if (!userSettings.user_preferences.torboxApiKey) return 'Play';
     return shouldPlayOnAdd() ? 'Add & Play' : 'Add to library';
 }
 

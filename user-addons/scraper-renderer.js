@@ -54,7 +54,7 @@ export const streamState = {
 };
 
 // Panel with streams from each addon
-export function showStreamPicker(mainTitle, selectedMedia, addonResults = []) {
+export function showStreamPicker(mainTitle, addonResults = []) {
     const modal = document.getElementById('stream-picker-modal');
     const tabsContainer = document.getElementById('addon-tabs-container');
     const list = document.getElementById('stream-picker-list');
@@ -63,8 +63,8 @@ export function showStreamPicker(mainTitle, selectedMedia, addonResults = []) {
 
     const userAddons = getScrapingProviders();
 
-    streamState.addons = {}; // Clean slate!
-    streamState.selectedMedia = { ...selectedMedia };
+    const pickerAddons = streamState.addons = {};
+    let hasSelectedAddon = false;
 
     // 2. --- PREPARE CONTAINERS ---
     tabsContainer.innerHTML = '';
@@ -83,7 +83,10 @@ export function showStreamPicker(mainTitle, selectedMedia, addonResults = []) {
         }
 
         btn.innerText = name;
-        btn.addEventListener('click', () => switchAddonTab(name));
+        btn.addEventListener('click', () => {
+            hasSelectedAddon = true;
+            switchAddonTab(name);
+        });
         tabsContainer.appendChild(btn);
     };
 
@@ -132,10 +135,21 @@ export function showStreamPicker(mainTitle, selectedMedia, addonResults = []) {
     }
 
     modal.classList.remove('hidden');
-    for (const result of addonResults) {
-        streamState.addons[result.addonName] = result;
+
+    const updateAddon = (result) => {
+        // Ignore requests that belong to a picker replaced by a newer one.
+        if (streamState.addons !== pickerAddons) return;
+        pickerAddons[result.addonName] = result;
         renderAddonData(result);
-    }
+
+        if (!hasSelectedAddon && (result.bucket4K.length || result.bucket1080p.length || result.bucketOther.length)) {
+            hasSelectedAddon = true;
+            switchAddonTab(result.addonName);
+        }
+    };
+
+    addonResults.forEach(updateAddon);
+    return updateAddon;
 }
 
 // TAB SWITCHER
@@ -184,7 +198,7 @@ const createHeader = (title, colorClass, borderClass, bgClass) => {
 };
 
 // THE RENDERER
-export function renderAddonData(packedData) {
+function renderAddonData(packedData) {
     // 1. Unpack the data
     const { addonName, bucket4K, bucket1080p, bucketOther } = packedData;
 
@@ -199,6 +213,14 @@ export function renderAddonData(packedData) {
     if (loadingSpinner) loadingSpinner.classList.add('hidden');
     contentContainer.classList.remove('hidden');
     contentContainer.innerHTML = '';
+
+    if (packedData.error) {
+        const message = document.createElement('p');
+        message.className = 'p-6 text-center text-red-400 text-sm font-bold bg-red-900/10 border border-red-500/20 rounded-xl mt-4';
+        message.textContent = packedData.error;
+        contentContainer.appendChild(message);
+        return;
+    }
 
     // 4. Check for Empty State
     const totalStreams = bucket4K.length + bucket1080p.length + bucketOther.length;
@@ -389,16 +411,13 @@ const renderLine = (lineData) => lineData.map(item => {
 
 
 //#region Main Card
-export async function submitStreamSource(raw, selectedMedia) {
+export async function submitStreamSource(raw) {
     const hash = getStreamHash(raw);
-    console.log(raw);
-    const finalLink = hash ? `magnet:?xt=urn:btih:${hash}` : raw.url;
-    await addStreamtoTorbox(finalLink, selectedMedia, raw);
+    await addStreamtoTorbox(hash, raw);
 }
 
 function createStreamCard(stream, isRecommended) {
     const raw = stream.rawStream;
-    const selectedMedia = streamState.selectedMedia;
     const rawTitle = (raw.description || raw.title || '').replace(/(?:\r\n|\r|\n|\\n)/g, '<br>');
     const rawInfo = `${raw.name}<br>${rawTitle}`;
 
@@ -421,7 +440,7 @@ function createStreamCard(stream, isRecommended) {
         if (btn.disabled) return;
         btn.disabled = true;
         try {
-            await submitStreamSource(raw, selectedMedia);
+            await submitStreamSource(raw);
         } finally {
             btn.disabled = false;
         }

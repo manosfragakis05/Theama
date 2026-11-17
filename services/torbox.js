@@ -12,15 +12,12 @@ import { getCurrentUserSettings, saveTorboxKey, deleteTorboxKey, shouldPlayOnAdd
 import { mediaStore } from '../api.js';
 
 import { fetchLibrary } from '../pages/library.js';
-import { addToAppLibrary, linkHashToMedia } from '../pages/app-library.js';
+import { addToAppLibrary } from '../pages/app-library.js';
 
 import { requestTorboxDeviceCode, waitForTorboxDeviceToken } from './torbox-device-auth.js';
-import { requestLink, startPlayer } from '../streaming/player.js';
+import { requestLink } from '../streaming/player.js';
 
-import { buildSeriesQueue, startQueueFromEpisode, startQueueFromItem } from '../streaming/playlist.js';
-import { buildSelectedTorrentQueue } from '../metadata/picker.js';
-
-import { getStreamHash, isUsenetStream } from '../utils/streams.js';
+import { startQueueFromItem } from '../streaming/playlist.js';
 
 let pairingController = null;
 let pairingUserId;
@@ -222,134 +219,58 @@ export async function logoutTorBox() {
 
 
 //#region Add to Library
-export async function addStreamtoTorbox(finalLink, selectedMedia = mediaStore.get(), rawStream = {}) {
-    const media = { ...selectedMedia };
-    if (isUsenetStream(rawStream)) {
-        let source;
-        try { source = new URL(rawStream.url); } catch { /* Report the missing playback URL below. */ }
-        if (!source || !['http:', 'https:'].includes(source.protocol)) {
-            showToast('This Usenet source has no direct playback URL.', 'error');
-            return;
-        }
-        closeStreamPicker();
-        startPlayer(rawStream.url, rawStream.behaviorHints?.filename || rawStream.streamData?.filename
-            || media.title || 'Usenet stream', null, null, media.resumePosition || 0);
-        return;
-    }
-
+export async function addStreamtoTorbox(hash, rawStream) {
     const key = getCurrentUserSettings().user_preferences.torboxApiKey;
-    if (!key || /^https?:\/\//i.test(finalLink || '')) {
-        const directUrl = rawStream.url || finalLink;
-        let parsedUrl;
-        try {
-            parsedUrl = new URL(directUrl);
-        } catch {
-            // Hash-only sources cannot be played without a torrent service.
-        }
-        if (!parsedUrl || !['http:', 'https:'].includes(parsedUrl.protocol)) {
-            showToast('This source has no direct video URL. Choose a direct stream or connect TorBox.', 'error');
-            return;
-        }
-        let fileName = parsedUrl.pathname.split('/').pop();
-        try { fileName = decodeURIComponent(fileName); } catch { /* Keep the original filename. */ }
-        const name = rawStream.behaviorHints?.filename
-            || (/\.(mkv|mp4|avi|mov|m4v|webm|ts)$/i.test(fileName) ? fileName : media.title)
-            || 'Direct stream';
 
-        console.log(rawStream, finalLink);
-        const hash = getStreamHash(rawStream, finalLink);
-            
-        const userId = appState.currentUser?.id;
-        const item = userId ? startQueueFromItem({
-            sourceType: 'addon', sourceMediaId: String(media.id), streamId: media.streamId || '',
-            sourceHashes: hash ? [hash] : [], hash,
+    const magnetLink = hash ? `magnet:?xt=urn:btih:${hash}` : null;
+
+    const media = mediaStore.get();
+    const playOnAdd = shouldPlayOnAdd();
+
+    console.log(media, rawStream);
+
+    let response;
+    if (magnetLink && key) {
+        response = await sendMagnetToTorbox(magnetLink, media);
+    } else {
+        response = await sendUrltoTorbox(rawStream.url);
+    }
+    
+    if (!response) return;
+    await Promise.all([
+        (async () => {
+            try {
+                await addToAppLibrary(media, hash || rawStream.url);
+                showToast(`Added ${media.title} to library`, 'success');
+            } catch (error) {
+                showToast('Added to TorBox, but could not save to your Theama library.', 'error');
+                console.error('App library save failed:', error);
+            }
+        })(),
+        playOnAdd ? playAddedItem(rawStream.url, { ...media, hash }) : Promise.resolve()
+    ]);
+}
+
+async function playAddedItem(source, media = mediaStore.get()) {
+    try {
+        const current = startQueueFromItem({
+            sourceType: 'addon', sourceMediaId: String(media.id), streamId: media.streamId,
+            hash: media.hash,
             tid: `addon:${media.id}`, fid: `addon:${media.seasonNumber ?? 1}:${media.episodeNumber ?? 1}`,
             tmdbId: media.tmdbId, mediaType: media.type === 'movie' ? 'movie' : 'tv',
             seasonNumber: media.seasonNumber, episodeNumber: media.episodeNumber,
-            watchEpisodeNumber: media.episodeNumber, title: media.title,
-            thumbnail: media.poster, torrentName: media.title, fileName: name
-        }) : null;
-
-        // The queue contains metadata and hashes only, playback URLs stay in memory.
+            watchEpisodeNumber: media.episodeNumber,
+            title: media.title, thumbnail: media.poster, torrentName: media.title,
+            fileName: media.fileName || media.title || 'Stream'
+        });
         closeStreamPicker();
-        const started = await requestLink(item?.tid ?? null, item?.fid ?? null, media.title, name,
-            item?.uid ?? null, media.resumePosition || 0, { sourceUrl: directUrl });
-        if (started && userId && userId === appState.currentUser?.id && !media.skipLibrarySave) {
-            try {
-                await addToAppLibrary(media);
-                if (userId === appState.currentUser?.id) await linkHashToMedia(media, hash || null, true);
-            } catch (error) {
-                console.error('App library save failed:', error);
-                showToast('Playback started, but this title could not be saved to your library.', 'error');
-            }
-        }
-        return;
-    }
-    const playOnAdd = shouldPlayOnAdd();
-    const userId = appState.currentUser?.id;
-    const isCurrent = () => userId === appState.currentUser?.id
-        && key === getCurrentUserSettings().user_preferences.torboxApiKey;
 
-    if (finalLink?.startsWith("magnet")) {
-        const createData = await sendMagnetToTorbox(finalLink, media);
-        if (!isCurrent()) return;
-        if (createData) {
-            // Start playback without waiting for the cloud library refresh.
-            await Promise.all([
-                (async () => {
-                    try {
-                        await addToAppLibrary(media);
-                        if (isCurrent()) await linkHashToMedia(media, createData.hash, true);
-                    } catch (error) {
-                        if (isCurrent()) showToast('Added to TorBox, but could not save to your Theama library.', 'error');
-                        console.error('App library save failed:', error);
-                    }
-                })(),
-                playOnAdd ? playAddedTorrent(createData, media, key, isCurrent) : Promise.resolve()
-            ]);
-        }
-    }
-}
-
-async function playAddedTorrent(created, media, key, isCurrent) {
-    try {
-        const torrentId = created.torrent_id ?? created.id;
-        if (torrentId == null) throw new Error('TorBox did not return a torrent ID.');
-        const res = await smartFetch(
-            `https://api.torbox.app/v1/api/torrents/mylist?bypass_cache=true&id=${encodeURIComponent(torrentId)}`,
-            { headers: { Authorization: `Bearer ${key}` } }
-        );
-        if (!isCurrent()) return;
-        if (!res.ok) throw new Error('Could not load the added torrent.');
-        const result = await res.json();
-        if (!isCurrent()) return;
-        if (!result.success || !result.data) throw new Error(result.detail || 'Could not load the added torrent.');
-        const torrent = result.data;
-        if (String(torrent.id) !== String(torrentId)) throw new Error('TorBox returned a different torrent.');
-        if (!torrent.download_finished) throw new Error('This torrent is not ready yet. Check its download in TorBox.');
-
-        let current;
-        if (media.type === 'series' || media.type === 'tv') {
-            const episodes = await buildSelectedTorrentQueue(torrent, media);
-            if (!isCurrent()) return;
-            if (!episodes.length) throw new Error('The selected episode was not found in this torrent.');
-            buildSeriesQueue(episodes);
-            current = startQueueFromEpisode();
-        } else {
-            const files = (torrent.files || []).filter(file => /\.(mkv|mp4|avi|mov|m4v|webm|ts)$/i.test(file.name));
-            const file = files.filter(file => !/(?:^|[\W_])sample(?:[\W_]|$)/i.test(file.name))
-                .sort((a, b) => (b.size || 0) - (a.size || 0))[0] || files[0];
-            if (!file) throw new Error('No playable file was found in this torrent.');
-            current = startQueueFromItem({
-                tid: torrent.id, fid: file.id, hash: torrent.hash,
-                torrentName: torrent.name, fileName: file.name,
-                tmdbId: media.tmdbId, mediaType: 'movie', title: media.title, thumbnail: media.poster
-            });
-        }
-        await requestLink(current.tid, current.fid, current.torrentName, current.fileName, current.uid);
+        return await requestLink(current.tid, current.fid, current.torrentName, current.fileName, current.uid,
+            media.resumePosition || 0, { sourceUrl: source });
     } catch (error) {
         console.error('Play after add failed:', error);
-        if (isCurrent()) showToast(`Added to library, but could not play: ${error.message}`, 'error');
+        showToast(`Could not play: ${error.message}`, 'error');
+        return false;
     }
 }
 
@@ -364,8 +285,7 @@ async function sendMagnetToTorbox(magnetLink, currentMedia) {
     const customName = currentMedia.year ? `${currentMedia.title} (${currentMedia.year})` : currentMedia.title;
 
     try {
-        const createUrl =
-            'https://api.torbox.app/v1/api/torrents/createtorrent';
+        const createUrl = 'https://api.torbox.app/v1/api/torrents/createtorrent';
 
         const formData = new FormData();
 
@@ -389,13 +309,44 @@ async function sendMagnetToTorbox(magnetLink, currentMedia) {
         }
 
         closeStreamPicker();
-        showToast('Successfully added to library', 'success');
 
         return createData.data;
 
     } catch (e) {
         console.error('TorBox create failed:', e);
         showToast(`Failed to add: ${e.message}`, 'error');
+    }
+}
+
+// Ping the configured add-on without following playback redirects or reading
+// media. The add-on's TorBox submission cannot be validated by this request.
+async function sendUrltoTorbox(streamUrl) {
+    try {
+        let source;
+        try { source = new URL(streamUrl); } catch { /* Report invalid input below. */ }
+        if (!source || !['http:', 'https:'].includes(source.protocol)) {
+            throw new Error('Provide an HTTP or HTTPS add-on playback URL.');
+        }
+
+        const response = await fetch(source.href, {
+            method: 'GET',
+            redirect: 'manual',
+            credentials: 'omit',
+            referrerPolicy: 'no-referrer',
+            cache: 'no-store'
+        });
+        await response.body?.cancel();
+        const redirected = response.type === 'opaqueredirect'
+            || [301, 302, 303, 307, 308].includes(response.status);
+        if (!response.ok && !redirected) {
+            throw new Error(`Add-on request failed (HTTP ${response.status}).`);
+        }
+
+        showToast('Add-on pinged. TorBox addition is not validated.', 'info');
+        return { response };
+    } catch (error) {
+        console.error('[TorBox] Add-on request failed:', error);
+        showToast(`Could not request this source: ${error.message}`, 'error');
     }
 }
 
@@ -463,4 +414,24 @@ async function editTorboxInfo(torrentId) {
 export function closeStreamPicker() {
     document.getElementById('stream-picker-modal').classList.add('hidden');
 };
+//#endregion
+
+//#region Cloud
+export async function getTorboxCloudList(key, torboxType = 'torrent') {
+    const section = torboxType === 'usenet' ? 'usenet' : 'torrents';
+    const response = await smartFetch(`https://api.torbox.app/v1/api/${section}/mylist?bypass_cache=true`, {
+        headers: { Authorization: `Bearer ${key}` }
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success || !Array.isArray(result.data)) {
+        throw new Error(`Could not load your TorBox ${section} downloads.`);
+    }
+    return result.data.map(item => ({ ...item, torboxType }));
+}
+
+export function isReadyCloudDownload(item) {
+    return Boolean(item.download_finished && (item.torboxType !== 'usenet'
+        || (item.cached !== false && item.download_present !== false)));
+}
+
 //#endregion

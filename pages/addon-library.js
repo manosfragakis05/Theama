@@ -13,23 +13,28 @@ const metadataCache = new Map();
 
 async function loadAddonMedia(media) {
     const userId = appState.currentUser?.id;
-    const cacheKey = `${userId}:${media.media_type || media.mediaType}:${media.id}:${media.tmdb_id || media.tmdbId}`;
+    
+    const cacheKey = `${userId}:${media.media_type}:${media.id}:${media.tmdb_id}`;
     if (metadataCache.has(cacheKey)) return metadataCache.get(cacheKey);
+
     const promise = (async () => {
         let record = media;
-        const tmdbId = Number(media.tmdb_id || media.tmdbId);
-        if (!tmdbId && !media.base_url && !media.baseUrl) {
+        
+        const tmdbId = Number(media.tmdb_id);
+        if (!tmdbId && !media.base_url) {
             const { data, error } = await supabase.from('global_media').select('*').eq('media_id', media.id).maybeSingle();
             if (error) throw error;
             if (data) record = { ...media, ...data };
         }
-        const type = (record.media_type || record.mediaType || record.type) === 'movie' ? 'movie' : 'series';
-        const id = Number(record.tmdb_id || record.tmdbId);
+
+        const type = (record.media_type) === 'movie' ? 'movie' : 'series';
+        const id = Number(record.tmdb_id);
+
         let details;
         if (Number.isSafeInteger(id) && id > 0) {
             details = await fetchTMDBEndpoint(`${type === 'movie' ? 'movie' : 'tv'}/${id}?append_to_response=external_ids`);
         } else {
-            const baseUrl = record.base_url || record.baseUrl;
+            const baseUrl = record.base_url;
             if (!baseUrl) throw new Error('This saved title has no metadata source.');
             const response = await smartFetch(`${baseUrl}/meta/${type}/${record.id}.json`);
             if (!response.ok) throw new Error('Could not load this title from its add-on.');
@@ -63,6 +68,8 @@ async function loadAddonMedia(media) {
 export async function resolveAddonQueueSource(item) {
     const userId = appState.currentUser?.id;
     if (!userId) throw new Error('Sign in to play your saved library.');
+    const hashes = new Set([...(item.sourceHashes || []), item.hash].filter(Boolean).map(hash => hash.toLowerCase()));
+    if (!hashes.size) throw new Error('No source is linked to this saved item. Choose a source in Discover.');
     const context = await loadAddonMedia({
         id: item.sourceMediaId, tmdbId: item.tmdbId, mediaType: item.mediaType,
         title: item.seriesTitle || item.title, poster: item.thumbnail
@@ -77,7 +84,6 @@ export async function resolveAddonQueueSource(item) {
         { id: item.streamId || context.streamId, episode: selection.activeEpisode },
         context.tmdbId && { id: `tmdb:${context.tmdbId}`, episode: selection.activeEpisode }
     ].filter(Boolean);
-    const hashes = new Set([...(item.sourceHashes || []), item.hash].filter(Boolean).map(hash => hash.toLowerCase()));
     const seen = new Set();
     for (const request of requests) {
         const key = `${request.id}:${request.episode}`;
@@ -86,7 +92,7 @@ export async function resolveAddonQueueSource(item) {
         const streams = await getAddonStreams(context.type, request.id, selection.activeSeason, request.episode);
         if (userId !== appState.currentUser?.id) throw new Error('Your account changed. Open this title again.');
         const stream = streams.find(stream => /^https?:\/\//i.test(stream.url || '')
-            && (!hashes.size || hashes.has(getStreamHash(stream))));
+            && hashes.has(getStreamHash(stream)));
         if (stream) return { url: stream.url, fileName: stream.behaviorHints?.filename || '', hash: getStreamHash(stream) };
     }
     throw new Error('Your add-ons are not returning this saved source for the selected episode. Choose another source in Discover.');
@@ -109,7 +115,7 @@ export function createAddonQueueItem(context, sources, seasonNumber = null, epis
 
 export async function downloadAddonQueueItem(item) {
     const source = await resolveAddonQueueSource(item);
-    const url = await getTorboxLink(null, null, undefined, source.url);
+    const url = await getTorboxLink(null, null, source.url);
     if (!url) return;
     const anchor = document.createElement('a');
     anchor.href = url;
@@ -122,8 +128,9 @@ export async function downloadAddonQueueItem(item) {
 export async function openAddonLibraryMedia(media, { download = false, resume = null } = {}) {
     const userId = appState.currentUser?.id;
     if (!userId) throw new Error('Sign in to view your library.');
-    const context = await loadAddonMedia(media);
     if (userId !== appState.currentUser?.id) return;
+
+    const context = await loadAddonMedia(media);
     const sources = media.sources || [];
     if (context.type === 'movie' || resume) {
         const item = createAddonQueueItem(context, sources, resume?.season, resume?.episode);

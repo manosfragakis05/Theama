@@ -2,7 +2,7 @@ import { fetchTMDBEndpoint } from '../user-addons/catalogs.js';
 import { appState, showToast } from '../services/config.js';
 import { supabase } from '../user-data/db.js';
 import { getCurrentUserSettings } from '../user-data/user-settings.js';
-import { resolveLibraryTorrents } from './app-library.js';
+import { resolveLibraryTorrents } from '../utils/streams.js';
 import { buildSeriesQueue, startQueueFromEpisode, startQueueFromItem } from '../streaming/playlist.js';
 import { buildRemainingTorrentQueue } from '../metadata/picker.js';
 import { requestLink } from '../streaming/player.js';
@@ -247,7 +247,6 @@ async function getRecommendationSeeds(type, userId, isCurrent) {
         const { data, error } = await supabase.from('added_sources')
             .select('global_media!inner(tmdb_id,media_type)')
             .eq('user_id', userId)
-            .eq('added_via_app', true)
             .in('global_media.media_type', type === 'tv' ? ['tv', 'series'] : ['movie'])
             .not('global_media.tmdb_id', 'is', null)
             .order('created_at', { ascending: false })

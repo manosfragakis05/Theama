@@ -1,6 +1,5 @@
 import { showToast, smartFetch, appState } from '../services/config.js';
 import { getCurrentUserSettings, getStorage, saveAddons } from '../user-data/user-settings.js';
-import { renderAddonData } from './scraper-renderer.js';
 
 // 1. In-Memory State: The single source of truth for the UI while the app is running
 let cachedAddons = [];

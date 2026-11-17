@@ -7,7 +7,7 @@
 
 import { getCurrentUserSettings } from '../user-data/user-settings.js';
 import { appState, smartFetch, showToast } from '../services/config.js';
-import { getTorboxCloudList, isReadyCloudDownload } from '../services/torbox-cloud.js';
+import { getTorboxCloudList, isReadyCloudDownload } from '../services/torbox.js';
 
 import { parseMediaData } from '../utils/parseMedia.js';
 import { getPosterForLibrary, getTmdbId } from '../metadata/metadata.js';
@@ -18,7 +18,7 @@ import { startQueueFromItem } from '../streaming/playlist.js';
 import { downloadFile } from '../streaming/download.js';
 import { createLibraryCard } from './library-renderer.js';
 import { createLibraryGrid } from './library-grid.js';
-import { loadAppLibrary, removeHashFromAppLibrary, addCloudItemToAppLibrary } from './app-library.js';
+import { loadAppLibrary, addToAppLibrary } from './app-library.js';
 
 export { downloadFile } from '../streaming/download.js';
 
@@ -123,7 +123,6 @@ export async function deleteTorrent(torrentId, event, torboxType = 'torrent') {
                 return true;
             }
             try {
-                await removeHashFromAppLibrary(deletedTorrent?.hash, userId);
                 showToast("Deleted from TorBox and your library successfully!", 'success');
             } catch (error) {
                 console.error('App library cleanup failed:', error);
@@ -170,7 +169,8 @@ function getTorrentDetails(torrent) {
         details = {
             sourceName: torrent.name, files: torrent.files, parsed,
             name: parsed.title.replace(/(^\w|[\s-]\w)/g, m => m.toUpperCase()),
-            mediaText: getMediaText(torrent, parsed)
+            mediaText: getMediaType(torrent, parsed).mediaText,
+            mediaType: getMediaType(torrent, parsed).mediaType,
         };
         torrentDetailsCache.set(torrent, details);
     }
@@ -178,7 +178,7 @@ function getTorrentDetails(torrent) {
 }
 
 function createLibraryItem(torrent) {
-    const { name, mediaText } = getTorrentDetails(torrent);
+    const { name, mediaText, mediaType } = getTorrentDetails(torrent);
     const entry = metadataCache.get(torrent.hash);
     const metadata = entry?.sourceName === torrent.name && entry.mediaText === mediaText
         ? entry.metadata : null;
@@ -186,6 +186,7 @@ function createLibraryItem(torrent) {
         torrent,
         name,
         mediaText,
+        mediaType,
         size: torrent.size,
         ...metadata
     };
@@ -219,14 +220,16 @@ function getTorrentMetadata(torrent, isNeeded) {
         && metadataCache.get(torrent.hash) === entry
         && getCloudDownloads().some(t => t.hash === torrent.hash && t.name === torrent.name);
     entry.promise = new Promise(resolve => {
-        metadataQueue.push({ resolve, task: async () => {
-            if (!isCurrent() || !entry.consumers.some(needed => needed())) return null;
-            const metadata = await fetchTorrentMetadata(torrent);
-            if (!isCurrent()) return null;
-            if (metadata.tmdbId) entry.metadata = metadata;
-            else metadataCache.delete(torrent.hash);
-            return metadata;
-        } });
+        metadataQueue.push({
+            resolve, task: async () => {
+                if (!isCurrent() || !entry.consumers.some(needed => needed())) return null;
+                const metadata = await fetchTorrentMetadata(torrent);
+                if (!isCurrent()) return null;
+                if (metadata.tmdbId) entry.metadata = metadata;
+                else metadataCache.delete(torrent.hash);
+                return metadata;
+            }
+        });
     }).then(metadata => {
         entry.consumers = [];
         if (!entry.metadata && metadataCache.get(torrent.hash) === entry) metadataCache.delete(torrent.hash);
@@ -242,7 +245,7 @@ function getTorrentMetadata(torrent, isNeeded) {
 //#region Metadata
 
 // Derive the label from current torrent files, regardless of metadata source.
-export function getMediaText(torrent, mediaInfo = parseMediaData(torrent.name)) {
+export function getMediaType(torrent, mediaInfo) {
     const videoFiles = (torrent.files || []).filter(f => /\.(mkv|mp4|avi|mov)$/i.test(f.name));
     const isSingle = videoFiles.length === 1;
     const hasSeason = (mediaInfo.seasons?.length || 0) > 0 || videoFiles.some(file => {
@@ -251,8 +254,18 @@ export function getMediaText(torrent, mediaInfo = parseMediaData(torrent.name)) 
             && ((parsed.episodes?.length || 0) > 0 || (parsed.seasons?.length || 0) > 0);
     });
 
-    if (hasSeason) return isSingle ? 'Single Episode' : 'Series';
-    return isSingle ? 'Movie' : 'Collection';
+    let mediaText = "";
+    let mediaType = "";
+
+    if (hasSeason) {
+        mediaText = isSingle ? 'Single Episode' : 'Series';
+        mediaType = "tv";
+    } else {
+        mediaText = isSingle ? 'Movie' : 'Collection';
+        mediaType = "movie";
+    }
+
+    return { mediaText, mediaType };
 }
 
 export async function searchLibrary(searchString) {
@@ -371,7 +384,7 @@ function updateCardMetadata(card, item) {
 function updateAddLibraryButton(card, item) {
     const button = card.querySelector('[data-action="add-library"]');
     const id = item.tmdbId?.id;
-    button.classList.toggle('hidden', item.torrent.torboxType === 'usenet' || !Number.isSafeInteger(id) || id <= 0);
+    button.classList.toggle('hidden', !Number.isSafeInteger(id) || id <= 0);
     if (button.getAttribute('aria-busy') === 'true') return;
     const label = button.dataset.added === 'true' ? 'Added to library' : `Add ${item.name} to library`;
     button.title = label;
@@ -401,19 +414,29 @@ function renderItem(item) {
         // Handle Actions
         if (btn?.dataset.action === 'add-library') {
             event.stopPropagation();
-            if (t.torboxType === 'usenet') return;
             if (btn.disabled || context !== getMetadataContext() || !card.isConnected) return;
             if (!Number.isSafeInteger(item.tmdbId?.id) || item.tmdbId.id <= 0) return;
             if (!appState.currentUser) {
                 showToast('Sign in to add cloud items to your library.', 'error');
                 return;
             }
+            
             btn.disabled = true;
             btn.title = 'Adding to library…';
             btn.setAttribute('aria-label', 'Adding to library');
             btn.setAttribute('aria-busy', 'true');
+
             try {
-                const saved = await addCloudItemToAppLibrary(item);
+                const libraryData = {
+                    id: item.tmdbId.id,
+                    tmdbId: item.tmdbId.id,
+                    title: item.tmdbId.officialName,
+                    type: item.mediaType,
+                    poster: item?.poster
+                }
+
+                const saved = await addToAppLibrary(libraryData, t?.hash);
+
                 if (saved && context === getMetadataContext() && card.isConnected) {
                     btn.dataset.added = 'true';
                     btn.querySelector('path').setAttribute('d', 'M5 12l4 4L19 6');
@@ -476,7 +499,6 @@ function renderItem(item) {
             });
             requestLink(current.tid, current.fid, current.torrentName, current.fileName, current.uid);
         } else {
-            console.log(item);
             openPicker(t, item.tmdbId?.id);
         }
     });

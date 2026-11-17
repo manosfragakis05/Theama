@@ -1,7 +1,8 @@
 import { showToast, MY_PROXY, TMDB_KEY, smartFetch, appState } from './services/config.js';
+
 import { loadAllAddonsParallel } from './user-addons/scrapers.js';
 import { showStreamPicker, submitStreamSource } from './user-addons/scraper-renderer.js';
-import { getTmdbId } from './metadata/metadata.js';
+
 import { getLibraryActionLabel, getCurrentUserSettings } from './user-data/user-settings.js';
 import { getMediaDurationMinutes, selectFirstSource } from './utils/auto-stream.js';
 import { loadAniListDetailRows } from './user-data/anilist-recommendations.js';
@@ -16,11 +17,11 @@ function originalBackdropUrl(path) {
 
 // Export a lightwight object for saving in lists and quick rendering
 export const mediaStore = (() => {
-    let state = { id: null, tmdbId: null, title: null, type: null, year: null, poster: null, baseUrl: null };
+    let state = { id: null, tmdbId: null, title: null, type: null, year: null, poster: null, baseUrl: null, activeEpisode: null, activeSeason: null };
     return {
         get: () => ({ ...state }),
         set: (newData) => { state = { ...state, ...newData }; },
-        clear: () => { state = { id: null, tmdbId: null, title: null, year: null, type: null, poster: null, baseUrl: null }; }
+        clear: () => { state = { id: null, tmdbId: null, title: null, year: null, type: null, poster: null, baseUrl: null, activeEpisode: null, activeSeason: null }; }
     };
 })();
 
@@ -415,6 +416,11 @@ export async function handlePlayAction(mediaObject) {
         episode = mediaObject.activeEpisode || null;
     }
 
+    mediaStore.set({
+        activeEpisode: episode,
+        activeSeason: season
+    });
+
     const playBtn = document.getElementById('add-library-btn');
     const originalContent = playBtn.innerHTML;
 
@@ -433,23 +439,22 @@ export async function handlePlayAction(mediaObject) {
             kitsuEpisode: mediaObject.kitsuEpisode,
             streamId: id
         };
+
         const preferences = { ...getCurrentUserSettings().user_preferences };
+        const updatePicker = preferences.playFirstSource ? null : showStreamPicker(mediaObject.title);
+        const addonResults = await loadAllAddonsParallel(type, id, season, episode, updatePicker);
+
+        // Play immidietly
         if (preferences.playFirstSource) {
-            const userId = appState.currentUser?.id;
             const durationMinutes = getMediaDurationMinutes(mediaObject);
-            const results = await loadAllAddonsParallel(type, id, season, episode, { render: false });
-            if (userId !== appState.currentUser?.id
-                || preferences.torboxApiKey !== getCurrentUserSettings().user_preferences.torboxApiKey) return;
-            const source = selectFirstSource(results, preferences, durationMinutes);
+            const source = selectFirstSource(addonResults, preferences, durationMinutes);
+
             if (source) {
-                await submitStreamSource(source, selectedMedia);
+                await submitStreamSource(source);
             } else {
                 showToast('No source matches your automatic selection settings. Choose a source manually.', 'info');
-                showStreamPicker(mediaObject.title, selectedMedia, results);
+                showStreamPicker(mediaObject.title, addonResults);
             }
-        } else {
-            showStreamPicker(mediaObject.title, selectedMedia);
-            await loadAllAddonsParallel(type, id, season, episode);
         }
     } catch (e) {
         console.error("Failed to load streams:", e);
