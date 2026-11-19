@@ -8,8 +8,10 @@ function emptyQueue() {
 
 function validItem(item) {
     return item && typeof item.uid === 'string' && item.uid.length > 0 &&
-        ['string', 'number'].includes(typeof item.tid) &&
-        ['string', 'number'].includes(typeof item.fid);
+        (item.sourceType === 'url'
+            ? typeof item.sourceUrl === 'string' && item.sourceUrl.trim().length > 0
+            : ['string', 'number'].includes(typeof item.tid) &&
+                ['string', 'number'].includes(typeof item.fid));
 }
 
 function loadQueue() {
@@ -74,18 +76,21 @@ function saveQueue() {
 }
 
 function createQueueItem(data, uid = crypto.randomUUID()) {
-    if (!data || !['string', 'number'].includes(typeof data.tid) ||
-        !['string', 'number'].includes(typeof data.fid)) {
-        throw new Error('Both tid (Torrent ID) and fid (File ID) are required.');
+    const isUrl = data?.sourceType === 'url';
+    if (!data || (isUrl
+        ? typeof data.sourceUrl !== 'string' || !data.sourceUrl.trim()
+        : !['string', 'number'].includes(typeof data.tid) || !['string', 'number'].includes(typeof data.fid))) {
+        throw new Error('A source URL or both tid (Torrent ID) and fid (File ID) are required.');
     }
     const text = value => typeof value === 'string' ? value : '';
     return {
         uid,
-        tid: data.tid,
-        fid: data.fid,
+        tid: data.tid ?? null,
+        fid: data.fid ?? null,
         torboxType: data.torboxType === 'usenet' ? 'usenet' : 'torrent',
         hash: text(data.hash),
-        sourceType: data.sourceType === 'addon' ? 'addon' : 'torrent',
+        sourceType: ['addon', 'url'].includes(data.sourceType) ? data.sourceType : 'torrent',
+        sourceUrl: text(data.sourceUrl),
         sourceMediaId: text(data.sourceMediaId),
         sourceHashes: Array.isArray(data.sourceHashes) ? data.sourceHashes.filter(hash => typeof hash === 'string') : [],
         streamId: text(data.streamId),

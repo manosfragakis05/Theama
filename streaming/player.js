@@ -78,8 +78,8 @@ export async function requestLink(tid, fid, torrentName, fileName, queueUid = nu
 
     const list = document.getElementById('file-list');
     if (list) list.style.opacity = '0.5';
-    let playbackSource = sourceUrl;
     const queued = queueUid ? getQueueState().current : null;
+    let playbackSource = sourceUrl || (queued?.sourceType === 'url' ? queued.sourceUrl : null);
     let playbackHash = queued?.hash;
     if (!playbackSource && queued?.sourceType === 'addon') {
         try {
