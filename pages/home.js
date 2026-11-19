@@ -2,7 +2,7 @@ import { fetchTMDBEndpoint } from '../user-addons/catalogs.js';
 import { appState, showToast } from '../services/config.js';
 import { supabase } from '../user-data/db.js';
 import { getCurrentUserSettings } from '../user-data/user-settings.js';
-import { resolveLibraryTorrents } from '../utils/streams.js';
+import { resolveLibraryTorrentFile } from '../utils/streams.js';
 import { buildSeriesQueue, startQueueFromEpisode, startQueueFromItem } from '../streaming/playlist.js';
 import { buildRemainingTorrentQueue } from '../metadata/picker.js';
 import { requestLink } from '../streaming/player.js';
@@ -153,9 +153,10 @@ export async function playWatchProgress(item) {
             return;
         }
         if (item.fileId === null) throw new Error('Choose this episode from your library to refresh its playback details.');
-        const [torrent] = await resolveLibraryTorrents([{ hash: item.currentHash }]);
+        const { torrentId } = await resolveLibraryTorrentFile(`library:${item.currentHash}`, item.fileId);
         if (version !== resumeVersion || userId !== appState.currentUser?.id) return;
-        const file = (torrent.files || []).find(candidate => String(candidate.id) === String(item.fileId));
+        const torrent = appState.allTorrents.find(candidate => String(candidate.id) === String(torrentId));
+        const file = (torrent?.files || []).find(candidate => String(candidate.id) === String(item.fileId));
         if (!file) throw new Error('The saved episode file is no longer available in this torrent.');
 
         const resumeItem = {

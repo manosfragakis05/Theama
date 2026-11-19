@@ -1,18 +1,26 @@
-import { appState, smartFetch } from '../services/config.js';
+import { appState, smartFetch, showToast } from '../services/config.js';
 import { supabase } from '../user-data/db.js';
 import { fetchTMDBEndpoint } from '../user-addons/catalogs.js';
 import { getAddonStreams } from '../user-addons/scrapers.js';
-import { getTmdbSeasonEpisodes } from '../metadata/metadata.js';
-import { openAddonPicker } from '../metadata/picker.js';
+import { openPicker } from '../metadata/picker.js';
 import { fetchAnimeMapping, updateActiveKitsuMapping } from '../api.js';
 import { startQueueFromItem } from '../streaming/playlist.js';
 import { getTorboxLink, requestLink } from '../streaming/player.js';
-import { getStreamHash } from '../utils/streams.js';
+import { getStreamHash, getTorrentObjectFromHash } from '../utils/streams.js';
 
 const metadataCache = new Map();
+const normalizeHash = hash => typeof hash === 'string' ? hash.trim().toLowerCase() : '';
 
 async function loadAddonMedia(media) {
     const userId = appState.currentUser?.id;
+    media = {
+        ...media,
+        id: media.id ?? media.sourceMediaId,
+        tmdb_id: media.tmdb_id ?? media.tmdbId,
+        media_type: media.media_type ?? media.mediaType ?? media.type,
+        base_url: media.base_url ?? media.baseUrl,
+        poster_path: media.poster_path ?? media.poster
+    };
     
     const cacheKey = `${userId}:${media.media_type}:${media.id}:${media.tmdb_id}`;
     if (metadataCache.has(cacheKey)) return metadataCache.get(cacheKey);
@@ -68,12 +76,13 @@ async function loadAddonMedia(media) {
 export async function resolveAddonQueueSource(item) {
     const userId = appState.currentUser?.id;
     if (!userId) throw new Error('Sign in to play your saved library.');
-    const hashes = new Set([...(item.sourceHashes || []), item.hash].filter(Boolean).map(hash => hash.toLowerCase()));
+    const hashes = new Set([...(item.sourceHashes || []), item.hash].map(normalizeHash).filter(Boolean));
     if (!hashes.size) throw new Error('No source is linked to this saved item. Choose a source in Discover.');
     const context = await loadAddonMedia({
         id: item.sourceMediaId, tmdbId: item.tmdbId, mediaType: item.mediaType,
         title: item.seriesTitle || item.title, poster: item.thumbnail
     });
+    if (userId !== appState.currentUser?.id) throw new Error('Your account changed. Open this title again.');
     const selection = {
         ...context, activeSeason: item.seasonNumber ?? 1,
         activeEpisode: item.watchEpisodeNumber ?? item.episodeNumber ?? 1
@@ -85,21 +94,32 @@ export async function resolveAddonQueueSource(item) {
         context.tmdbId && { id: `tmdb:${context.tmdbId}`, episode: selection.activeEpisode }
     ].filter(Boolean);
     const seen = new Set();
+    let lookupError;
+    let receivedStreams = false;
     for (const request of requests) {
         const key = `${request.id}:${request.episode}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        const streams = await getAddonStreams(context.type, request.id, selection.activeSeason, request.episode);
+        let streams;
+        try {
+            streams = await getAddonStreams(context.type, request.id, selection.activeSeason, request.episode);
+        } catch (error) {
+            if (userId !== appState.currentUser?.id) throw new Error('Your account changed. Open this title again.');
+            lookupError = error;
+            continue;
+        }
         if (userId !== appState.currentUser?.id) throw new Error('Your account changed. Open this title again.');
+        receivedStreams = true;
         const stream = streams.find(stream => /^https?:\/\//i.test(stream.url || '')
             && hashes.has(getStreamHash(stream)));
         if (stream) return { url: stream.url, fileName: stream.behaviorHints?.filename || '', hash: getStreamHash(stream) };
     }
+    if (!receivedStreams && lookupError) throw lookupError;
     throw new Error('Your add-ons are not returning this saved source for the selected episode. Choose another source in Discover.');
 }
 
 export function createAddonQueueItem(context, sources, seasonNumber = null, episodeNumber = null, episode = {}) {
-    const hashes = sources.map(source => source.hash).filter(Boolean);
+    const hashes = [...new Set(sources.map(source => normalizeHash(source.hash)).filter(Boolean))];
     return {
         sourceType: 'addon', sourceMediaId: String(context.id), streamId: episode.streamId || String(context.streamId),
         sourceHashes: hashes, hash: hashes[0] || '',
@@ -128,9 +148,9 @@ export async function downloadAddonQueueItem(item) {
 export async function openAddonLibraryMedia(media, { download = false, resume = null } = {}) {
     const userId = appState.currentUser?.id;
     if (!userId) throw new Error('Sign in to view your library.');
-    if (userId !== appState.currentUser?.id) return;
 
     const context = await loadAddonMedia(media);
+    if (userId !== appState.currentUser?.id) return;
     const sources = media.sources || [];
     if (context.type === 'movie' || resume) {
         const item = createAddonQueueItem(context, sources, resume?.season, resume?.episode);
@@ -138,24 +158,34 @@ export async function openAddonLibraryMedia(media, { download = false, resume = 
         const current = startQueueFromItem(item);
         return requestLink(current.tid, current.fid, current.torrentName, current.fileName, current.uid, resume?.positionSeconds || 0);
     }
-    const seasons = context.tmdbId
-        ? await Promise.all((context.details.seasons || []).filter(season => season.season_number > 0).map(async season => ({
-            seasonNumber: season.season_number, name: season.name,
-            episodes: (await getTmdbSeasonEpisodes(context.tmdbId, season.season_number)).map(episode => ({
-                episodeNumber: episode.episode_number, title: episode.name,
-                thumbnail: episode.still_path ? `https://image.tmdb.org/t/p/w500${episode.still_path}` : context.poster
-            }))
-        })))
-        : [...new Set((context.details.videos || []).map(video => Number(video.season) || 1))].map(season => ({
-            seasonNumber: season, name: `Season ${season}`,
-            episodes: (context.details.videos || []).filter(video => (Number(video.season) || 1) === season).map((video, index) => ({
-                episodeNumber: Number(video.episode) || index + 1, title: video.title || video.name,
-                thumbnail: video.thumbnail, streamId: video.id
-            }))
-        }));
+    // Build cards only from files belonging to saved hashes, never a show's full episode catalog.
+    const hashSources = new Map();
+    sources.forEach(source => {
+        const hash = normalizeHash(source.hash);
+        if (hash && !hashSources.has(hash)) hashSources.set(hash, source);
+    });
+    if (!hashSources.size) throw new Error('No torrent files are linked to this title. Open its saved playback URL instead.');
+    const results = await Promise.allSettled([...hashSources].map(async ([hash, source], index) => {
+        const cached = appState.allTorrents.find(torrent => normalizeHash(torrent.hash) === hash && Array.isArray(torrent.files));
+        const torrent = cached || await getTorrentObjectFromHash(hash);
+        if (torrent.hash && normalizeHash(torrent.hash) !== hash) throw new Error('The returned torrent does not match the saved hash.');
+        const files = (torrent.files || []).filter(file => typeof file?.name === 'string' && /\.(mkv|mp4|avi|mov)$/i.test(file.name));
+        if (!files.length) throw new Error('No video files were found for this saved source.');
+        return {
+            ...torrent,
+            id: `addon:${hash}`,
+            hash,
+            name: torrent.name || context.title,
+            files: files.map(file => ({ ...file, id: file.id ?? file.name, short_name: file.short_name || file.name.split(/[\\/]/).at(-1) })),
+            addonMedia: context,
+            addonSources: [{ ...source, hash }],
+            libraryAddedAt: source.addedAt || null,
+            librarySourceOrder: hashSources.size - index
+        };
+    }));
     if (userId !== appState.currentUser?.id) return;
-    const availableSeasons = seasons.filter(season => season.episodes.length)
-        .sort((a, b) => a.seasonNumber - b.seasonNumber);
-    if (!availableSeasons.length) throw new Error('No episodes are available for this saved title.');
-    return openAddonPicker(context, sources, availableSeasons);
+    const torrents = results.filter(result => result.status === 'fulfilled').map(result => result.value);
+    if (!torrents.length) throw results.find(result => result.status === 'rejected').reason;
+    if (torrents.length < results.length) showToast('Some saved sources could not load their files. Open this title again to retry.', 'info');
+    return openPicker(torrents, context.tmdbId, context.title);
 }

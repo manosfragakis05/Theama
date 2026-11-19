@@ -11,7 +11,7 @@ import { requestLink } from '../streaming/player.js';
 import { createLibraryCard } from './library-renderer.js';
 import { openPicker } from '../metadata/picker.js';
 import { mediaStore } from '../api.js';
-import { resolveLibraryTorrents } from '../utils/streams.js';
+import { getTorrentObjectFromHash } from '../utils/streams.js';
 
 import { getCurrentUserSettings } from '../user-data/user-settings.js';
 import { openAddonLibraryMedia } from './addon-library.js';
@@ -246,11 +246,10 @@ export async function fetchAppLibraryData() {
         const value = typeof row.added_hash === 'string' ? row.added_hash.trim() : '';
         const isUrl = /^https?:\/\//i.test(value);
         const source = {
-            key: row.added_hash ?? null,
-            hash: value && !isUrl ? row.added_hash : null,
-            url: isUrl ? row.added_hash : null,
+            [isUrl ? 'url' : 'hash']: value,
             addedAt: row.created_at
         };
+
         const tmdbId = row.global_media?.tmdb_id;
         const groupKey = tmdbId ? `tmdb:${tmdbId}` : `media:${row.media_id}`;
         let media = mediaGroups.get(groupKey);
@@ -258,6 +257,7 @@ export async function fetchAppLibraryData() {
             media = {
                 ...row.global_media,
                 id: row.media_id,
+                sourceEpisode: {},
                 mediaIds: [],
                 media_type: row.global_media?.media_type === 'series' ? 'tv' : row.global_media?.media_type,
                 sources: []
@@ -266,7 +266,10 @@ export async function fetchAppLibraryData() {
             mediaGroups.set(groupKey, media);
         }
         if (!media.mediaIds.includes(row.media_id)) media.mediaIds.push(row.media_id);
-        media.sources.push(source);
+        if (row.source_episode && isUrl) {
+            media.sourceEpisode[row.source_episode] ??= isUrl ? value : null;
+        }
+        if (value) media.sources.push(source);
     }
 
     return items;
@@ -283,6 +286,7 @@ export function renderAppLibrary(items) {
     for (const media of items) {
         const hashes = media.sources.filter(source => source.hash);
         const url = media.sources.find(source => source.url)?.url;
+
         const mediaIds = media.mediaIds || [media.id];
         const isPacked = media.sources.length > 1;
         const mediaText = media.media_type === 'tv' ? 'Series' : 'Movie';
@@ -333,20 +337,46 @@ export function renderAppLibrary(items) {
                     return;
                 }
 
-                if (!getCurrentUserSettings().user_preferences.torboxApiKey) {
-                    await openAddonLibraryMedia(
-                        { ...media, sources: hashes },
-                        { download: action === 'download' }
-                    );
-                    return;
+                //if (!getCurrentUserSettings().user_preferences.torboxApiKey) {
+                //    await openAddonLibraryMedia(
+                //        { ...media, sources: hashes },
+                //        { download: action === 'download' }
+                //    );
+                //    return;
+                //}
+
+                let libraryData = [];
+
+                // Local url/episode saves
+                const storageKey = `library_episode_urls_${userId}`;
+                const savedUrls = JSON.parse(localStorage.getItem(storageKey) || '{}');
+                const savedMedia = savedUrls[media.id]
+                
+                if(savedMedia) {
+                    libraryData.savedEpisodes = savedMedia;
+                }
+                
+                // URL ONLY SUPABASE EPISODES
+                if(Object.keys(media.sourceEpisode).length > 0) {
+                    libraryData.sourceEpisodes = media.sourceEpisode;
                 }
 
-                const torrents = await resolveLibraryTorrents(hashes);
-                console.log(torrents);
+                if (hashes.length > 0) {
+                    const torrents = await Promise.all(hashes.map(async (source) => {
+                        const torrent = await getTorrentObjectFromHash(source.hash);
+
+                        return torrent;
+                    }));
+
+                    libraryData.torrents = torrents;
+                }
+
+                console.log(libraryData);
+
                 if (userId !== appState.currentUser?.id) return;
 
                 await openPicker(
-                    torrents,
+                    libraryData,
                     media.tmdb_id,
                     media.title
                 );

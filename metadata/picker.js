@@ -453,29 +453,50 @@ async function loadEpisodeGroups(torrents, tmdbId) {
     return franchiseGroups;
 }
 
-export async function openPicker(torrentOrTorrents, tmdbId, title) {
+export async function openPicker(libraryData, tmdbId, title) {
     const generation = ++pickerGeneration;
-    const candidate = Number(tmdbId);
-    tmdbId = Number.isSafeInteger(candidate) && candidate > 0 ? candidate : null;
     const userId = appState.currentUser?.id;
-    const watchProgressPromise = fetchPickerWatchProgress(tmdbId, userId);
-    const torrents = Array.isArray(torrentOrTorrents) ? torrentOrTorrents : [torrentOrTorrents];
-    const torrent = torrents[0];
+
     const picker = document.getElementById('file-picker');
     const list = document.getElementById('picker-list');
 
+    const torrents = libraryData?.torrents;
+    const torrent = torrents[0];
+
+    const cloudEpisodes = libraryData?.sourceEpisodes;
+    const localEpisodes = libraryData?.savedEpisodes;
+
     picker.classList.remove('hidden');
     list.innerHTML = `<div class="col-span-full flex justify-center p-10">...Loading Spinner...</div>`;
+    const cleanName = title;
 
-    const baseInfo = parseMediaData(torrent.name);
-    const cleanName = title || baseInfo.title.replace(/(^\w|[\s-]\w)/g, m => m.toUpperCase());
+    const watchProgress = await fetchPickerWatchProgress(tmdbId, userId);
 
-    const franchiseGroups = await loadEpisodeGroups(torrents, tmdbId);
+    const urlEpisodes = { ...cloudEpisodes, ...localEpisodes };
+    const seasonsByNumber = new Map();
+    for (const [episodeKey, url] of Object.entries(urlEpisodes)) {
+        if (!/^\d+:\d+$/.test(episodeKey)) continue;
+        const [seasonNumber, episodeNumber] = episodeKey.split(':').map(Number);
+        if (!Number.isSafeInteger(seasonNumber) || !Number.isSafeInteger(episodeNumber) || episodeNumber < 1) continue;
 
-    const watchProgress = await watchProgressPromise;
+        if (!seasonsByNumber.has(seasonNumber)) {
+            seasonsByNumber.set(seasonNumber, { seasonNumber, episodes: [] });
+        }
+        seasonsByNumber.get(seasonNumber).episodes.push({ episodeNumber, url });
+    }
+
+    const urlGroups = [...seasonsByNumber.values()].sort((a, b) => a.seasonNumber - b.seasonNumber);
+    for (const season of urlGroups) {
+        season.episodes.sort((a, b) => a.episodeNumber - b.episodeNumber);
+    }
+    console.log(urlGroups);
+
+    const torrentGroups = torrents.length > 0 ? await loadEpisodeGroups(torrents, tmdbId) : null;
+    console.log(torrentGroups);
+
     if (generation !== pickerGeneration) return;
-    renderPickerUI(torrent, franchiseGroups, list, cleanName, tmdbId,
-        appState.currentUser?.id === userId ? watchProgress : null);
+
+    renderPickerUI(torrent, torrentGroups, list, cleanName, tmdbId, watchProgress);
 }
 
 // The existing picker can stage episode metadata when file listings are unavailable.
@@ -486,8 +507,10 @@ export async function openAddonPicker(media, sources, seasons) {
     const list = document.getElementById('picker-list');
     picker.classList.remove('hidden');
     list.replaceChildren();
-    const torrent = { id: `addon:${media.id}`, name: media.title,
-        hash: sources[0]?.hash || '', addonMedia: media, addonSources: sources };
+    const torrent = {
+        id: `addon:${media.id}`, name: media.title,
+        hash: sources[0]?.hash || '', addonMedia: media, addonSources: sources
+    };
     const groups = {};
     seasons.forEach((season, index) => {
         const number = Number(season.seasonNumber);
@@ -739,44 +762,14 @@ export async function buildRemainingTorrentQueue(torrent, tmdbId, fileId, title,
     return items.slice(index);
 }
 
-// Match the selected detail-view episode using the same numbering as the picker.
-export async function buildSelectedTorrentQueue(torrent, media) {
-    const franchiseGroups = await loadEpisodeGroups([torrent], media.tmdbId);
-    const { sortedGroupKeys, getSelectedGroup, getChainedMultiSeasonQueue } =
-        preparePickerQueue(torrent, franchiseGroups, media.title, media.tmdbId, media.poster);
-    const items = sortedGroupKeys.flatMap(key => getSelectedGroup(key)?.queueItems || []);
-    const season = Number(media.seasonNumber ?? 1);
-    const episode = Number(media.episodeNumber ?? 1);
-    let selected = items.find(item => item.fileType === 'TV'
-        && Number(item.seasonNumber) === season
-        && Number(item.watchEpisodeNumber) === episode);
-
-    // Kitsu providers can use absolute episode numbers instead of TMDB seasons.
-    if (!selected && media.kitsuEpisode != null) {
-        selected = items.find(item => item.fileType === 'TV'
-            && Number(item.episodeNumber) === Number(media.kitsuEpisode));
-    }
-    // A single episode may have no episode number in its filename.
-    if (!selected && items.length === 1 && items[0].fileType === 'TV') {
-        const file = torrent.files.find(file => String(file.id) === String(items[0].fid));
-        if (!parseMediaData(file.name).episodes?.length) selected = items[0];
-    }
-    if (!selected) return [];
-    const groupKey = sortedGroupKeys.find(key => getSelectedGroup(key)?.queueItems.includes(selected));
-    const queue = getChainedMultiSeasonQueue(groupKey);
-    const index = queue.indexOf(selected);
-    queue[index] = {
-        ...selected, seasonNumber: season, episodeNumber: episode, watchEpisodeNumber: episode
-    };
-    return queue.slice(index);
-}
-
 function renderPickerUI(torrent, franchiseGroups, listElement, cleanName, tmdbId, watchProgress) {
     closeEpisodeMenus();
     pickerHeaderListeners?.abort();
     pickerHeaderListeners = new AbortController();
+
     listElement.addEventListener('scroll', closeEpisodeMenus, { passive: true, signal: pickerHeaderListeners.signal });
     window.addEventListener('resize', closeEpisodeMenus, { signal: pickerHeaderListeners.signal });
+
     const titleElement = document.getElementById('picker-title');
     const watchedCounts = watchProgress?.watched_counts || {};
     const position = Number(watchProgress?.position_seconds);
@@ -785,6 +778,7 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName, tmdbId
         ? Math.max(0, Math.min(position / duration * 100, 100)) : null;
 
     const fallbackImage = document.getElementById(`img-${torrent.id}`)?.src || '';
+
     const { sortedGroupKeys, seasonSources, selectedSources, overlappingSeasons, getSelectedGroup, getChainedMultiSeasonQueue } =
         preparePickerQueue(torrent, franchiseGroups, cleanName, tmdbId, fallbackImage);
 
@@ -857,6 +851,9 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName, tmdbId
     }, { signal: pickerHeaderListeners.signal });
 
     document.getElementById('picker-queue-btn')?.addEventListener('click', () => {
+        if (!activeGroupKey) return;
+        buildSeriesQueue(getChainedMultiSeasonQueue(activeGroupKey));
+
         const count = queueStagedSeries();
         if (count > 0) {
             showToast(`Added ${count} episodes to queue`, 'success');
@@ -869,8 +866,13 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName, tmdbId
     // Guard playback within this picker instead so the first episode click works.
     let playbackRequested = false;
     const playEpisode = (index = 0, shuffled = false) => {
-        if (playbackRequested) return;
-        const episode = shuffled ? startShuffledQueue() : startQueueFromEpisode(index);
+        if (playbackRequested || !activeGroupKey) return;
+
+        buildSeriesQueue(getChainedMultiSeasonQueue(activeGroupKey));
+        const episode = shuffled
+            ? startShuffledQueue()
+            : startQueueFromEpisode(index);
+
         if (!episode) return;
         playbackRequested = true;
         closePicker();
@@ -893,7 +895,6 @@ function renderPickerUI(torrent, franchiseGroups, listElement, cleanName, tmdbId
     let activeGroupKey;
     const stageGroup = (groupKey) => {
         activeGroupKey = groupKey;
-        buildSeriesQueue(getChainedMultiSeasonQueue(groupKey));
     };
 
     const renderGroup = (groupKey) => {
