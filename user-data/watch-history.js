@@ -16,6 +16,7 @@ export async function upsertWatchProgress(positionSeconds, durationSeconds, {
     const mediaType = media.mediaType;
     const season = media.seasonNumber;
     const episode = media.watchEpisodeNumber ?? media.episodeNumber;
+    console.log(media);
 
     if (!Number.isSafeInteger(tmdbId) || tmdbId <= 0 || !['movie', 'tv'].includes(mediaType)) return null;
     if (mediaType === 'tv' && (!Number.isInteger(season) || season < 0
@@ -31,6 +32,7 @@ export async function upsertWatchProgress(positionSeconds, durationSeconds, {
 
     const hash = media?.hash;
     const fileId = media?.fid;
+    const url = media?.sourceUrl;
 
     try {
         const payload = {
@@ -41,6 +43,7 @@ export async function upsertWatchProgress(positionSeconds, durationSeconds, {
             position_seconds: position,
             duration_seconds: duration,
             current_hash: hash ? hash : null,
+            current_url: url ? url : null,
             t_id: fileId ?? null,
             last_watched_at: new Date().toISOString()
         };

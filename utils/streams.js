@@ -3,6 +3,7 @@ import { getAddonStreams } from "../user-addons/scrapers";
 import { getCurrentUserSettings } from "../user-data/user-settings";
 
 export async function getPlayableSource(episode) {
+    console.log(episode);
     const hasTorbox = getCurrentUserSettings().user_preferences.torboxApiKey != "";
     const hash = episode.hash;
     const url = episode.sourceUrl;
@@ -10,6 +11,7 @@ export async function getPlayableSource(episode) {
 
     if(hasTorbox && hash) {
         const torrent = await getTorboxTorrentFromHash(hash);
+        console.log(torrent);
         if (!torrent?.download_finished) return;
         const params = new URLSearchParams({
             token: getCurrentUserSettings().user_preferences.torboxApiKey,

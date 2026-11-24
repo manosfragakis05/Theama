@@ -2,10 +2,10 @@ import { fetchTMDBEndpoint } from '../user-addons/catalogs.js';
 import { appState, showToast } from '../services/config.js';
 import { supabase } from '../user-data/db.js';
 import { getCurrentUserSettings } from '../user-data/user-settings.js';
-import { resolveLibraryTorrentFile } from '../utils/streams.js';
+import { getPlayableSource, resolveLibraryTorrentFile } from '../utils/streams.js';
 import { startQueue, startQueueFromItem } from '../streaming/playlist.js';
 import { buildRemainingTorrentQueue } from '../metadata/picker.js';
-import { requestLink } from '../streaming/player.js';
+import { requestLink, startPlayer } from '../streaming/player.js';
 import {
     renderHomeCarousel, renderHomeMessage, renderWatchProgress, renderWatchProgressMessage,
     renderHomeRecommendations, renderHomeRecommendationsMessage
@@ -61,6 +61,7 @@ function renderVisibleWatchProgress() {
     if (!root) return;
     const userId = appState.currentUser?.id ?? null;
     const hidden = getHiddenProgress(userId);
+
     const items = progressItems.filter(item => item.userId === userId && !hidden.has(`${item.type}:${item.id}`));
     renderWatchProgress(root, items, playWatchProgress, {
         onHide: hideWatchProgress,
@@ -101,6 +102,7 @@ function fetchHomeMetadata(endpoint) {
 export async function formatWatchProgress(row, userId = appState.currentUser?.id) {
     const id = Number(row.tmdb_id);
     const type = row.media_type;
+
     if (!Number.isSafeInteger(id) || id <= 0 || !['movie', 'tv'].includes(type)) return null;
     const match = type === 'tv' ? /^(\d+):([1-9]\d*)$/.exec(row.current_episode || '') : null;
     const season = match ? Number(match[1]) : null;
@@ -114,10 +116,12 @@ export async function formatWatchProgress(row, userId = appState.currentUser?.id
     const duration = Math.max(0, Number(row.duration_seconds) || 0);
     const position = Math.max(0, Math.min(Number(row.position_seconds) || 0, duration));
     const progress = duration > 0 ? position / duration * 100 : 0;
+
     return {
         id, type, season, episode,
         userId,
-        currentHash: typeof row.current_hash === 'string' ? row.current_hash.trim() : '',
+        currentHash: typeof row.current_hash === 'string' ? row.current_hash.trim() : null,
+        currentUrl: typeof row.current_url === 'string' ? row.current_url.trim() : null,
         fileId: row.t_id != null && Number.isInteger(Number(row.t_id)) && Number(row.t_id) >= 0
             ? Number(row.t_id) : null,
         title: title?.title || title?.name || (type === 'movie' ? 'Movie' : 'Series'),
@@ -133,8 +137,26 @@ export async function formatWatchProgress(row, userId = appState.currentUser?.id
 }
 
 export async function playWatchProgress(item) {
+    console.log(item);
     const version = ++resumeVersion;
     const userId = appState.currentUser?.id;
+    
+    const formatedItem = {
+        hash: item.currentHash,
+        fid: item.fileId,
+        sourceUrl: item.currentUrl,
+        mediaType: item.type,
+        id: item.id,
+        episodeNumber: item.episode,
+        seasonNumber: item.season
+    }
+
+    const source = await getPlayableSource(formatedItem);
+    console.log(source);
+
+    startPlayer(source, item.title, null, item);
+    return;
+    
     try {
         if (!userId || item.userId !== userId) throw new Error('Sign in to resume your watch history.');
         if (!item.currentHash) {
@@ -143,10 +165,9 @@ export async function playWatchProgress(item) {
         if (item.type === 'tv' && (!Number.isInteger(item.season) || !Number.isInteger(item.episode))) {
             throw new Error('Choose this episode from your library to save its playback details.');
         }
-        if (!getCurrentUserSettings().user_preferences.torboxApiKey) {
-            // FIX !!
-        }
-        if (item.fileId === null) throw new Error('Choose this episode from your library to refresh its playback details.');
+
+        
+
         const { torrentId } = await resolveLibraryTorrentFile(`library:${item.currentHash}`, item.fileId);
         if (version !== resumeVersion || userId !== appState.currentUser?.id) return;
         const torrent = appState.allTorrents.find(candidate => String(candidate.id) === String(torrentId));
@@ -209,13 +230,14 @@ export function loadWatchProgress() {
     const request = (async () => {
         try {
             const { data, error } = await supabase.from('watch_progress')
-                .select('tmdb_id,media_type,current_episode,position_seconds,duration_seconds,last_watched_at,current_hash,t_id')
+                .select('tmdb_id,media_type,current_episode,position_seconds,duration_seconds,last_watched_at,current_hash,current_url,t_id')
                 .eq('user_id', userId)
                 .order('last_watched_at', { ascending: false })
                 .limit(20);
             if (error) throw error;
-            if (!isCurrent()) return;
+
             const items = (await Promise.all((data || []).map(row => formatWatchProgress(row, userId)))).filter(Boolean);
+
             if (!isCurrent()) return;
             progressItems = items;
             renderVisibleWatchProgress();
