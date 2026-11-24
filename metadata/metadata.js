@@ -75,7 +75,7 @@ export async function getTmdbId(title, year, type = 'tv') {
 
 export async function getTmdbShowDetails(tmdbId) {
     try {
-        const url = `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_KEY}`;
+        const url = `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_KEY}&append_to_response=external_ids`;
         const res = await fetch(url);
         if (!res.ok) throw new Error('TMDB Fetch Failed');
         return await res.json();

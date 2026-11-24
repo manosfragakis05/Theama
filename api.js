@@ -432,19 +432,11 @@ export async function handlePlayAction(mediaObject) {
     </svg> Loading...`;
 
     try {
-        const selectedMedia = {
-            ...mediaStore.get(),
-            seasonNumber: mediaObject.activeSeason,
-            episodeNumber: mediaObject.activeEpisode,
-            kitsuEpisode: mediaObject.kitsuEpisode,
-            streamId: id
-        };
-
         const preferences = { ...getCurrentUserSettings().user_preferences };
         const updatePicker = preferences.playFirstSource ? null : showStreamPicker(mediaObject.title);
         const addonResults = await loadAllAddonsParallel(type, id, season, episode, updatePicker);
 
-        // Play immidietly
+        // Play immedietly
         if (preferences.playFirstSource) {
             const durationMinutes = getMediaDurationMinutes(mediaObject);
             const source = selectFirstSource(addonResults, preferences, durationMinutes);

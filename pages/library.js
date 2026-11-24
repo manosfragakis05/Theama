@@ -82,14 +82,13 @@ export async function fetchLibrary() {
 
 // --- API ACTIONS ---
 
-export async function deleteTorrent(torrentId, event, torboxType = 'torrent') {
+export async function deleteFromTorbox(torrentId, event, torboxType = 'torrent') {
     if (event) event.stopPropagation();
     if (!confirm("Are you sure you want to delete this from TorBox?")) return false;
 
     const key = getCurrentUserSettings().user_preferences.torboxApiKey;
     if (!key) return false;
 
-    const userId = appState.currentUser?.id ?? null;
     const context = getMetadataContext();
     const usenet = torboxType === 'usenet';
     const isDeletedItem = item => String(item.id) === String(torrentId)
@@ -121,12 +120,6 @@ export async function deleteTorrent(torrentId, event, torboxType = 'torrent') {
             if (usenet) {
                 showToast('Deleted from TorBox.', 'success');
                 return true;
-            }
-            try {
-                showToast("Deleted from TorBox and your library successfully!", 'success');
-            } catch (error) {
-                console.error('App library cleanup failed:', error);
-                showToast('Deleted from TorBox, but could not update your app library. Please try removing it from Library.', 'error');
             }
 
             return true; // The TorBox card must disappear even if database cleanup failed.
@@ -457,7 +450,7 @@ function renderItem(item) {
             event.stopPropagation();
 
             // Wait for the delete function to finish
-            await deleteTorrent(t.id, event, t.torboxType);
+            await deleteFromTorbox(t.id, event, t.torboxType);
             return;
         }
         if (btn?.dataset.action === 'download') {
@@ -499,7 +492,9 @@ function renderItem(item) {
             });
             requestLink(current.tid, current.fid, current.torrentName, current.fileName, current.uid);
         } else {
-            openPicker(t, item.tmdbId?.id);
+            let libraryData = { torrents: [] };
+            libraryData.torrents.push(t);
+            openPicker(libraryData, item.tmdbId?.id);
         }
     });
 

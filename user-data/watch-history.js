@@ -5,12 +5,10 @@
  */
 
 import { appState } from '../services/config.js';
-import { getQueueState } from '../streaming/playlist.js';
 import { supabase } from './db.js';
 
 export async function upsertWatchProgress(positionSeconds, durationSeconds, {
-    media = getQueueState().current,
-    countCompletion = true,
+    media,
     userId = appState.currentUser?.id
 } = {}) {
     if (!userId || appState.currentUser?.id !== userId || !media) return null;
@@ -18,6 +16,7 @@ export async function upsertWatchProgress(positionSeconds, durationSeconds, {
     const mediaType = media.mediaType;
     const season = media.seasonNumber;
     const episode = media.watchEpisodeNumber ?? media.episodeNumber;
+
     if (!Number.isSafeInteger(tmdbId) || tmdbId <= 0 || !['movie', 'tv'].includes(mediaType)) return null;
     if (mediaType === 'tv' && (!Number.isInteger(season) || season < 0
         || !Number.isInteger(episode) || episode <= 0)) return null;
@@ -28,9 +27,10 @@ export async function upsertWatchProgress(positionSeconds, durationSeconds, {
     const position = Math.min(Math.floor(positionSeconds), duration);
     const episodeKey = mediaType === 'tv' ? `${season}:${episode}` : 'movie';
     const completed = positionSeconds >= durationSeconds * 0.9;
-    const torrent = appState.allTorrents.find(item => String(item.id) === String(media.tid));
-    const hash = media.hash || torrent?.hash;
-    const fileId = media.sourceType !== 'addon' && media.fid != null ? Number(media.fid) : NaN;
+    const shouldCountCompletion = completed && !media.completionCounted;
+
+    const hash = media?.hash;
+    const fileId = media?.fid;
 
     try {
         const payload = {
@@ -38,15 +38,15 @@ export async function upsertWatchProgress(positionSeconds, durationSeconds, {
             tmdb_id: tmdbId,
             media_type: mediaType,
             current_episode: mediaType === 'tv' ? episodeKey : null,
-            current_hash: typeof hash === 'string' && hash.trim() ? hash.trim() : null,
-            t_id: Number.isInteger(fileId) && fileId >= 0 && fileId <= 2_147_483_647 ? fileId : null,
             position_seconds: position,
             duration_seconds: duration,
+            current_hash: hash ? hash : null,
+            t_id: fileId ?? null,
             last_watched_at: new Date().toISOString()
         };
-        if (completed && countCompletion) {
-            // Only completion changes counts. Ordinary upserts omit this column,
-            // preserving it on updates and using the table default on inserts.
+
+        // Read the full map only when adding a watch, preserving other episodes.
+        if (shouldCountCompletion) {
             const { data, error: readError } = await supabase.from('watch_progress')
                 .select('watched_counts')
                 .eq('user_id', userId).eq('media_type', mediaType).eq('tmdb_id', tmdbId)
@@ -54,16 +54,23 @@ export async function upsertWatchProgress(positionSeconds, durationSeconds, {
             if (readError) throw readError;
             if (appState.currentUser?.id !== userId) return null;
 
+            const allWatchedCounts = data?.watched_counts || {};
             payload.watched_counts = {
-                ...data?.watched_counts,
-                [episodeKey]: (data?.watched_counts?.[episodeKey] || 0) + 1
+                ...allWatchedCounts,
+                [episodeKey]: (Number(allWatchedCounts[episodeKey]) || 0) + 1
             };
         }
-        // No select(): the write returns no row data.
+
         const { error } = await supabase.from('watch_progress').upsert(payload, {
             onConflict: 'user_id,media_type,tmdb_id'
         });
+
         if (error) throw error;
+        if (shouldCountCompletion) {
+            media.completionCounted = true;
+            media.watchedCounts = payload.watched_counts[episodeKey];
+        }
+
         window.dispatchEvent(new CustomEvent('watch-progress:saved', {
             detail: { userId, tmdbId, mediaType, positionSeconds: position }
         }));
@@ -74,3 +81,19 @@ export async function upsertWatchProgress(positionSeconds, durationSeconds, {
     }
 }
 
+export async function fetchWatchProgress(tmdbId, userId) {
+    if (!tmdbId || !userId) return null;
+    try {
+        const { data, error } = await supabase.from('watch_progress')
+            .select('watched_counts,current_episode,position_seconds,duration_seconds')
+            .eq('user_id', userId)
+            .eq('media_type', 'tv')
+            .eq('tmdb_id', tmdbId)
+            .maybeSingle();
+        if (error) throw error;
+        return data;
+    } catch (error) {
+        console.warn('Could not load watched episodes:', error);
+        return null;
+    }
+}

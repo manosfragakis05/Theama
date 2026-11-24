@@ -3,10 +3,9 @@ import { appState, showToast } from '../services/config.js';
 import { supabase } from '../user-data/db.js';
 import { getCurrentUserSettings } from '../user-data/user-settings.js';
 import { resolveLibraryTorrentFile } from '../utils/streams.js';
-import { buildSeriesQueue, startQueueFromEpisode, startQueueFromItem } from '../streaming/playlist.js';
+import { startQueue, startQueueFromItem } from '../streaming/playlist.js';
 import { buildRemainingTorrentQueue } from '../metadata/picker.js';
 import { requestLink } from '../streaming/player.js';
-import { openAddonLibraryMedia } from './addon-library.js';
 import {
     renderHomeCarousel, renderHomeMessage, renderWatchProgress, renderWatchProgressMessage,
     renderHomeRecommendations, renderHomeRecommendationsMessage
@@ -145,12 +144,7 @@ export async function playWatchProgress(item) {
             throw new Error('Choose this episode from your library to save its playback details.');
         }
         if (!getCurrentUserSettings().user_preferences.torboxApiKey) {
-            await openAddonLibraryMedia({
-                id: String(item.id), tmdb_id: item.id, media_type: item.type,
-                title: item.title, poster_path: item.image,
-                sources: [{ hash: item.currentHash }]
-            }, { resume: { season: item.season, episode: item.episode, positionSeconds: item.positionSeconds } });
-            return;
+            // FIX !!
         }
         if (item.fileId === null) throw new Error('Choose this episode from your library to refresh its playback details.');
         const { torrentId } = await resolveLibraryTorrentFile(`library:${item.currentHash}`, item.fileId);
@@ -177,8 +171,7 @@ export async function playWatchProgress(item) {
         if (episodes.length > 0) {
             // Keep the saved episode mapping and position for the exact resumed file.
             episodes[0] = { ...episodes[0], ...resumeItem };
-            buildSeriesQueue(episodes);
-            current = startQueueFromEpisode();
+            current = startQueue(episodes);
         } else {
             current = startQueueFromItem(resumeItem);
         }

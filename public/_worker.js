@@ -271,12 +271,12 @@ function isMediaType(contentType) {
 async function mediaResponse(request, target, upstream, signal) {
   const headers = new Headers({
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified',
+    'Access-Control-Expose-Headers': 'Content-Disposition, Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified',
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
     'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'; sandbox"
   });
-  for (const name of ['Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges', 'ETag', 'Last-Modified']) {
+  for (const name of ['Content-Type', 'Content-Disposition', 'Content-Length', 'Content-Range', 'Accept-Ranges', 'ETag', 'Last-Modified']) {
     if (upstream.headers.has(name)) headers.set(name, upstream.headers.get(name));
   }
   let body = upstream.body;

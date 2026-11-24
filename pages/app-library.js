@@ -5,7 +5,7 @@
  */
 
 import { supabase } from '../user-data/db.js';
-import { appState, smartFetch, showToast } from '../services/config.js';
+import { appState, showToast } from '../services/config.js';
 
 import { requestLink } from '../streaming/player.js';
 import { createLibraryCard } from './library-renderer.js';
@@ -13,8 +13,6 @@ import { openPicker } from '../metadata/picker.js';
 import { mediaStore } from '../api.js';
 import { getTorrentObjectFromHash } from '../utils/streams.js';
 
-import { getCurrentUserSettings } from '../user-data/user-settings.js';
-import { openAddonLibraryMedia } from './addon-library.js';
 
 const NO_SOURCE_MESSAGE = 'No files was found for this item.';
 
@@ -337,15 +335,9 @@ export function renderAppLibrary(items) {
                     return;
                 }
 
-                //if (!getCurrentUserSettings().user_preferences.torboxApiKey) {
-                //    await openAddonLibraryMedia(
-                //        { ...media, sources: hashes },
-                //        { download: action === 'download' }
-                //    );
-                //    return;
-                //}
-
                 let libraryData = [];
+
+                libraryData.savedId = media.id || mediaIds[0];
 
                 // Local url/episode saves
                 const storageKey = `library_episode_urls_${userId}`;
@@ -371,10 +363,8 @@ export function renderAppLibrary(items) {
                     libraryData.torrents = torrents;
                 }
 
-                console.log(libraryData);
-
                 if (userId !== appState.currentUser?.id) return;
-
+                
                 await openPicker(
                     libraryData,
                     media.tmdb_id,

@@ -3,6 +3,57 @@ let wasm = null;
 let wasmLoading = null;
 let liveEngineCount = 0;
 
+/**
+ * Probe response metadata without reading the video body or initializing Wasm.
+ * Returns a lowercase container name (e.g. 'mkv', 'mp4', 'webm'), or null.
+ * Usage in player.js: const container = await detectContainer(url);
+ */
+export async function detectContainer(url) {
+    const mimeTypes = {
+        'video/x-matroska': 'mkv', 'video/matroska': 'mkv',
+        'application/x-matroska': 'mkv', 'video/webm': 'webm',
+        'video/mp4': 'mp4', 'application/mp4': 'mp4', 'video/x-m4v': 'mp4',
+        'video/quicktime': 'mov', 'video/x-msvideo': 'avi',
+        'video/mp2t': 'ts', 'video/mpeg': 'mpeg', 'video/ogg': 'ogg',
+        'application/ogg': 'ogg', 'video/x-flv': 'flv',
+        'video/x-ms-asf': 'asf', 'video/x-ms-wmv': 'asf',
+    };
+    const fromName = name => {
+        let path = String(name || '').split(/[?#]/)[0];
+        try { path = decodeURIComponent(path); } catch (_) { }
+        const extension = /\.(mkv|mp4|m4v|webm|mov|qt|avi|ts|m2ts|mts|mpeg|mpg|ogg|ogv|flv|asf|wmv)$/i.exec(path)?.[1].toLowerCase();
+        return ({ m4v: 'mp4', qt: 'mov', m2ts: 'ts', mts: 'ts', mpg: 'mpeg',
+            ogv: 'ogg', wmv: 'asf' })[extension] || extension || null;
+    };
+
+    for (const method of ['HEAD', 'GET']) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        let response;
+        try {
+            response = await fetch(url, {
+                method, referrerPolicy: 'no-referrer', signal: controller.signal,
+            });
+            if (!response.ok) continue;
+            const mime = response.headers.get('content-type')?.split(';')[0].trim().toLowerCase();
+            const disposition = response.headers.get('content-disposition') || '';
+            const filename = /filename\*\s*=\s*(?:UTF-8'')?([^;]+)/i.exec(disposition)?.[1]
+                || /filename\s*=\s*(?:"([^"]+)"|([^;]+))/i.exec(disposition)?.slice(1).find(Boolean);
+            const container = mimeTypes[mime] || fromName(filename?.trim())
+                || fromName(response.url) || fromName(url);
+            if (container) return container;
+        } catch (_) {
+            // HEAD can be blocked or unsupported; try GET before giving up.
+        } finally {
+            clearTimeout(timeoutId);
+            // Abort even if the server ignores cancellation of the GET body.
+            controller.abort();
+            if (response?.body) await response.body.cancel().catch(() => {});
+        }
+    }
+    return null;
+}
+
 async function ensureWasm() {
     if (wasm) return wasm;
     if (!wasmLoading) {

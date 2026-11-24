@@ -237,9 +237,11 @@ function createWatchProgressCard(item, onPlay, onHide) {
     progress.setAttribute('aria-label', `${item.title}: ${Math.round(item.progress)}% watched`);
     card.querySelector('.home-watch-status').textContent = item.completed ? 'Watched'
         : item.durationSeconds > 0 ? `${item.remainingMinutes} min left` : 'In progress';
+        
     const button = card.querySelector('.home-watch-play');
     const episode = item.type === 'tv' && item.season !== null && item.episode !== null
         ? `, season ${item.season}, episode ${item.episode}` : '';
+
     button.setAttribute('aria-label', `Resume ${item.title}${episode}`);
     button.addEventListener('click', async () => {
         if (isDragging || button.disabled || !onPlay) return;

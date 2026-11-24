@@ -64,7 +64,6 @@ function loadQueue() {
 }
 
 let queueState = loadQueue();
-let stagedSeriesItems = [];
 
 function saveQueue() {
     try {
@@ -122,18 +121,14 @@ function shuffleArray(array) {
     return result;
 }
 
-export function buildSeriesQueue(episodeItems) {
-    stagedSeriesItems = episodeItems.map(item => createQueueItem(item));
-}
-
-function startStagedQueue(index, shuffled) {
-    if (stagedSeriesItems.length === 0) return null;
-    const context = stagedSeriesItems.map((item, originalIndex) => ({
-        item, listType: 'context', originalIndex
+export function startQueue(episodeItems, { shuffled = false } = {}) {
+    if (episodeItems.length === 0) return null;
+    const context = episodeItems.map((item, originalIndex) => ({
+        item: createQueueItem(item), listType: 'context', originalIndex
     }));
     const pendingPriority = queueState.entries.slice(queueState.nextIndex)
         .filter(entry => entry.listType === 'priority');
-    const ordered = shuffled ? shuffleArray(context) : context.slice(index);
+    const ordered = shuffled ? shuffleArray(context) : context;
     queueState = {
         entries: [ordered[0], ...pendingPriority, ...ordered.slice(1)],
         currentUid: ordered[0].item.uid,
@@ -145,19 +140,9 @@ function startStagedQueue(index, shuffled) {
     return { ...ordered[0].item };
 }
 
-export function startQueueFromEpisode(clickedIndex = 0) {
-    const index = Number.isInteger(clickedIndex) && clickedIndex >= 0 && clickedIndex < stagedSeriesItems.length
-        ? clickedIndex : 0;
-    return startStagedQueue(index, false);
-}
-
-export function startShuffledQueue() {
-    return startStagedQueue(0, true);
-}
-
-export function queueStagedSeries() {
-    if (stagedSeriesItems.length === 0) return 0;
-    const items = stagedSeriesItems.map(item => createQueueItem(item));
+export function addItemsToQueue(episodeItems) {
+    if (episodeItems.length === 0) return 0;
+    const items = episodeItems.map(item => createQueueItem(item));
     if (queueState.entries.slice(queueState.nextIndex).length === 0 && !queueState.currentUid) {
         queueState = emptyQueue();
         queueState.entries = items.map((item, originalIndex) => ({ item, listType: 'context', originalIndex }));

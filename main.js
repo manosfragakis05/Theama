@@ -21,11 +21,11 @@ import {
 
 import { goHome, switchTab, handleSearch, toggleSidebar } from './utils/ui.js';
 
-import { deleteTorrent, initializeLibraryTabs } from './pages/library.js';
+import { initializeLibraryTabs } from './pages/library.js';
 import { loadAppLibrary } from './pages/app-library.js';
 
 import { closePicker } from './metadata/picker.js';
-import { playDirect, stopPlayback } from './streaming/player.js';
+import { stopPlayback } from './streaming/player.js';
 import { initializeQueueRenderer } from './streaming/playlist-renderer.js';
 
 import { updatePublicProfile, fetchPublicProfile, fetchFriendsList, handleFollowToggle } from './user-data/network.js';

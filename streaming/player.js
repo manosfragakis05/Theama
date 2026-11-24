@@ -1,4 +1,4 @@
-import { MKVPlayer } from '../engine/mkv_lib.js';
+import { MKVPlayer, detectContainer } from '../engine/mkv_lib.js';
 import { appState, smartFetch, showToast } from '../services/config.js';
 import { getCurrentUserSettings } from '../user-data/user-settings.js';
 import { upsertWatchProgress } from '../user-data/watch-history.js';
@@ -17,110 +17,20 @@ window.addEventListener('queue:updated', ({ detail }) => {
     if (queuePlaybackUid && detail.current?.uid !== queuePlaybackUid) stopPlayback();
 });
 
-// LINK FETCHER
-export async function getTorboxLink(tid, fid, sourceUrl = null) {
-    let targetUrl = sourceUrl;
-
-    if (!targetUrl) {
-        const key = getCurrentUserSettings().user_preferences.torboxApiKey;
-        if (!key) {
-            showToast('Link TorBox in settings to play this file.', 'error');
-            return null;
-        }
-
-        const params = new URLSearchParams({
-            token: key,
-            torrent_id: String(tid),
-            file_id: String(fid)
-        });
-
-        targetUrl = `https://api.torbox.app/v1/api/torrents/requestdl?${params}`;
-    }
-
-    try {
-        if (!sourceUrl && String(tid).startsWith('library:')) {
-            const { resolveLibraryTorrentFile } = await import('../utils/streams.js');
-            const file = await resolveLibraryTorrentFile(tid, fid);
-            const params = new URLSearchParams(targetUrl.split('?')[1]);
-            params.set('torrent_id', String(file.torrentId));
-            params.set('file_id', String(file.fileId));
-            targetUrl = `https://api.torbox.app/v1/api/torrents/requestdl?${params}`;
-        }
-        const res = await smartFetch(targetUrl, sourceUrl ? { proxyMode: 'resolve' } : {});
-        const data = await res.json();
-
-        if (!res.ok || !data.success || typeof data.data !== 'string') {
-            throw new Error(data.detail || "Unknown API Error");
-        }
-
-        const resolvedUrl = new URL(data.data);
-        if (!['https:', 'http:'].includes(resolvedUrl.protocol)
-            || (resolvedUrl.hostname === 'api.torbox.app' && /^\/v1\/api\/(?:torrents|usenet)\/requestdl$/.test(resolvedUrl.pathname))) {
-            throw new Error('TorBox did not return a direct video URL.');
-        }
-        return data.data; // Returns just the raw CDN URL string
-
-    } catch (e) {
-        console.error("API Fetch Error:", e.message);
-        showToast("Couldnt fetch stream", 'error');
-        return null;
-    }
-}
-
-export async function requestLink(tid, fid, torrentName, fileName, queueUid = null, resumePosition = 0, { apiKey, sourceUrl } = {}) {
-    if (queueUid && getQueueState().current?.uid !== queueUid) return;
-    const generation = stopPlayback();
-    queuePlaybackUid = queueUid;
-    if (queueUid) setQueuePlaybackStatus(queueUid, 'loading');
-
-    await new Promise(r => setTimeout(r, 150));
-    if (generation !== playbackGeneration) return;
-
-    const list = document.getElementById('file-list');
-    if (list) list.style.opacity = '0.5';
-    const queued = queueUid ? getQueueState().current : null;
-    let playbackSource = sourceUrl || (queued?.sourceType === 'url' ? queued.sourceUrl : null);
-    let playbackHash = queued?.hash;
-    if (!playbackSource && queued?.sourceType === 'addon') {
-        try {
-            const { resolveAddonQueueSource } = await import('../pages/addon-library.js');
-            const source = await resolveAddonQueueSource(queued);
-            playbackSource = source.url;
-            playbackHash = source.hash || playbackHash;
-            fileName = source.fileName || fileName;
-        } catch (error) {
-            if (generation === playbackGeneration) {
-                if (list) list.style.opacity = '1';
-                setQueuePlaybackStatus(queueUid, 'failed');
-                showToast(error.message || 'Could not find this episode in your add-ons.', 'error');
-            }
-            return false;
-        }
-        if (generation !== playbackGeneration) return false;
-    }
-
-    const streamUrl = await getTorboxLink(tid, fid, playbackSource);
-
-    if (generation !== playbackGeneration) return;
-    if (list) list.style.opacity = '1';
-    if (streamUrl) {
-        startPlayer(streamUrl, fileName || torrentName || 'Untitled', null, queueUid, resumePosition, playbackHash);
-        return true;
-    }
-    if (queueUid) setQueuePlaybackStatus(queueUid, 'failed');
-    return false;
+export async function requestLink(mediaObject, source, resumePosition = 0) {
+    
 }
 
 //#region Player
-export function startPlayer(url, name, localFileObject = null, queueUid = null, resumePosition = 0, sourceHash = null) {
+export async function startPlayer(url, name, localFileObject = null, media) {
     stopPlayback();
-    queuePlaybackUid = queueUid;
+    media = media ? { ...media, completionCounted: false } : null;
+    
     const defaultPlayer = getCurrentUserSettings().user_preferences.defaultPlayer || 'Internal';
     if (defaultPlayer !== 'Internal') {
         openExternalPlayer(url, name, localFileObject, defaultPlayer);
         return;
     }
-    if (queueUid) setQueuePlaybackStatus(queueUid, 'loading');
 
     const generation = playbackGeneration;
     const openCurrentInExternalPlayer = () => {
@@ -133,7 +43,24 @@ export function startPlayer(url, name, localFileObject = null, queueUid = null, 
     if (wrapper) wrapper.classList.remove('hidden');
     document.getElementById('full-detail-view')?.classList.add('hidden', 'translate-y-full');
 
-    const isMkv = name.toLowerCase().endsWith('.mkv') || url.toLowerCase().split('?')[0].endsWith('.mkv');
+    let container = await detectContainer(url);
+    if (generation !== playbackGeneration) return;
+    if (!container && !localFileObject) {
+        try {
+            // Resolve redirects through the proxy when browser CORS hides the file headers.
+            const response = await smartFetch(url, { proxyMode: 'resolve' });
+            const result = await response.json();
+            if (generation !== playbackGeneration) return;
+            if (response.ok && result.success && typeof result.data === 'string') {
+                url = result.data;
+                container = await detectContainer(url);
+            }
+        } catch (_) {
+            console.warn('Could not resolve the video container through the proxy.');
+        }
+    }
+    if (generation !== playbackGeneration) return;
+    const isMkv = container === 'mkv';
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
     const videoType = isMkv ? 'wasm_mkv' : 'auto';
@@ -164,7 +91,7 @@ export function startPlayer(url, name, localFileObject = null, queueUid = null, 
         playbackRate: false,
 
         controls: [
-            ...(queueUid ? [
+            ...(false ? [
                 {
                     position: 'left',
                     index: 5,
@@ -248,12 +175,16 @@ export function startPlayer(url, name, localFileObject = null, queueUid = null, 
 
     const playerArt = art;
     const video = playerArt.video;
-    const resumeTime = Number(resumePosition);
+
+    const resumeTime = media?.progressInSeconds ?? 0;
     let resumePending = Number.isFinite(resumeTime) && resumeTime > 0;
+    
     const removeResumeListeners = () => {
         video.removeEventListener('loadedmetadata', restorePosition);
         video.removeEventListener('loadeddata', restorePosition);
     };
+    
+    // Skip to a timestamp
     const restorePosition = () => {
         if (!resumePending || art !== playerArt || generation !== playbackGeneration
             || video.readyState < 1 || !Number.isFinite(video.duration) || video.duration <= 0) return;
@@ -266,34 +197,36 @@ export function startPlayer(url, name, localFileObject = null, queueUid = null, 
             console.warn('Could not restore playback position:', error);
         }
     };
+
     if (resumePending) {
         video.addEventListener('loadedmetadata', restorePosition);
         video.addEventListener('loadeddata', restorePosition);
         restorePosition();
     }
 
-    const media = queueUid && getQueueState().current?.uid === queueUid
-        ? { ...getQueueState().current, ...(sourceHash ? { hash: sourceHash } : {}) } : null;
 
-    const completedForUsers = new Set();
     const progressUserId = appState.currentUser?.id;
     let lastSavedSample = null;
+
     const saveProgress = () => {
         const userId = appState.currentUser?.id;
         if (!media || !userId || userId !== progressUserId || resumePending) return;
         if (!Number.isFinite(video.currentTime) || !Number.isFinite(video.duration)
             || video.currentTime < 0 || video.duration < 1) return;
+
         const duration = Math.floor(video.duration);
         const position = Math.min(Math.floor(video.currentTime), duration);
         // Each sample gets its own upsert; serialize writes so episode counts stay ordered.
         progressSave = progressSave.then(async () => {
             if (lastSavedSample?.userId === userId && lastSavedSample.position === position
                 && lastSavedSample.duration === duration) return;
+
             const result = await upsertWatchProgress(position, duration, {
-                media, userId, countCompletion: !completedForUsers.has(userId)
-            });
+                media, userId });
+
             if (result) lastSavedSample = { userId, position, duration };
-            if (result?.completed) completedForUsers.add(userId);
+        }).catch(error => {
+            console.warn('Could not save watch progress:', error);
         });
     };
     saveActiveProgress = saveProgress;
@@ -310,9 +243,12 @@ export function startPlayer(url, name, localFileObject = null, queueUid = null, 
     };
     if (media) document.addEventListener('visibilitychange', onVisibilityChange);
     playerArt.on('video:pause', saveCurrentProgress);
+
     const closePlayerButton = document.getElementById('close-player-btn');
+
     const externalPlayerButton = document.getElementById('external-player-btn');
     externalPlayerButton?.addEventListener('click', openCurrentInExternalPlayer);
+
     playerArt.on('destroy', () => {
         removeResumeListeners();
         clearInterval(progressInterval);
@@ -321,6 +257,7 @@ export function startPlayer(url, name, localFileObject = null, queueUid = null, 
         externalPlayerButton?.classList.add('hidden');
         if (saveActiveProgress === saveProgress) saveActiveProgress = null;
     });
+
     const syncPlayerButtons = () => {
         if (art !== playerArt || generation !== playbackGeneration) return;
         closePlayerButton?.classList.toggle('hidden', !playerArt.controls.show);
@@ -359,7 +296,6 @@ export function startPlayer(url, name, localFileObject = null, queueUid = null, 
     let scoutSent = false;
     playerArt.on('video:playing', async () => {
         if (art !== playerArt || generation !== playbackGeneration) return;
-        if (queueUid) setQueuePlaybackStatus(queueUid, 'playing');
         if (isMkv && !scoutSent && playerArt.mkvEngine) {
 
             scoutSent = true;
