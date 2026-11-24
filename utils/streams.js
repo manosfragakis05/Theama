@@ -5,18 +5,32 @@ import { getCurrentUserSettings } from "../user-data/user-settings";
 export async function getPlayableSource(episode) {
     console.log(episode);
     const hasTorbox = getCurrentUserSettings().user_preferences.torboxApiKey != "";
+
     const hash = episode.hash;
     const url = episode.sourceUrl;
     if(!hash && !url) return;
+    
+    let file_id = episode?.fid;
+
+    const type = episode.mediaType || episode.media_type;
 
     if(hasTorbox && hash) {
-        const torrent = await getTorboxTorrentFromHash(hash);
+        let torrent = {};
+        if(!file_id) {
+            torrent = await getTorboxTorrentFromHash(hash, true);
+            const videoFiles = (torrent.files || []).filter(f => /\.(mkv|mp4|avi|mov)$/i.test(f.name));
+            console.log(videoFiles);
+
+            file_id = videoFiles[0].id;
+        }
+        torrent = await getTorboxTorrentFromHash(hash);
         console.log(torrent);
         if (!torrent?.download_finished) return;
+
         const params = new URLSearchParams({
             token: getCurrentUserSettings().user_preferences.torboxApiKey,
             torrent_id: String(torrent.id),
-            file_id: String(episode.fid),
+            file_id: file_id,
             redirect: 'true'
         });
         return `https://api.torbox.app/v1/api/torrents/requestdl?${params}`;
@@ -26,7 +40,7 @@ export async function getPlayableSource(episode) {
         let targetStream;
 
         await getAddonStreams(
-            episode.mediaType, episode.id, episode.seasonNumber, episode.episodeNumber,
+            type, episode.id, episode.seasonNumber, episode.episodeNumber,
             (streams, addonName) => {
                 if (targetStream) return true;
                 targetStream = getTargetStreamFromHash(hash, streams);
@@ -103,7 +117,7 @@ export async function getTorrentObjectFromHash(hash) {
 }
 
 // Return the matching account torrent unchanged, without its file listing.
-export async function getTorboxTorrentFromHash(hash) {
+export async function getTorboxTorrentFromHash(hash, withFiles = false) {
     if (typeof hash !== 'string' || !hash.trim()) throw new Error('A torrent hash is required.');
     const key = getCurrentUserSettings().user_preferences.torboxApiKey;
     if (!key) throw new Error('Link TorBox in settings to look up this torrent.');
@@ -111,7 +125,7 @@ export async function getTorboxTorrentFromHash(hash) {
     const normalizedHash = hash.trim().toLowerCase();
     const pageSize = 1000;
     for (let offset = 0; ; offset += pageSize) {
-        const params = new URLSearchParams({ files: 'false', offset: String(offset), limit: String(pageSize) });
+        const params = new URLSearchParams({ files: withFiles, offset: String(offset), limit: String(pageSize) });
         const response = await smartFetch(`https://api.torbox.app/v1/api/torrents/mylist?${params}`, {
             headers: { Authorization: `Bearer ${key}` }
         });

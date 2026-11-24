@@ -771,7 +771,6 @@ let pickerGeneration = 0;
 export async function openPicker(libraryData, tmdbId, title) {
     const generation = ++pickerGeneration;
     const userId = appState.currentUser?.id;
-    console.log(libraryData);
 
     const picker = document.getElementById('file-picker');
     const list = document.getElementById('picker-list');
@@ -846,7 +845,6 @@ function renderPickerUI(pickerData, listElement) {
         if (playbackRequested) return;
 
         const source = await getPlayableSource(selectedEpisode);
-        console.log(selectedEpisode);
 
         //const episodes = selectedEpisode?.fileType === 'Theme'
         //    ? [selectedEpisode] : preparePickerQueue(visibleEpisodes, selectedEpisode);

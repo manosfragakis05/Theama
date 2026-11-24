@@ -7,11 +7,11 @@
 import { supabase } from '../user-data/db.js';
 import { appState, showToast } from '../services/config.js';
 
-import { requestLink } from '../streaming/player.js';
+import { requestLink, startPlayer } from '../streaming/player.js';
 import { createLibraryCard } from './library-renderer.js';
 import { openPicker } from '../metadata/picker.js';
 import { mediaStore } from '../api.js';
-import { getTorrentObjectFromHash } from '../utils/streams.js';
+import { getPlayableSource, getTorrentObjectFromHash } from '../utils/streams.js';
 
 
 const NO_SOURCE_MESSAGE = 'No files was found for this item.';
@@ -330,8 +330,21 @@ export function renderAppLibrary(items) {
 
             // Normal click
             try {
-                if (url && !isPacked) {
-                    await requestLink(null, null, media.title, media.title || 'Stream', null, 0, { sourceUrl: url });
+                if (!isPacked && mediaText == "Movie") {
+                    const formattedMedia = {
+                        hash: hashes[0].hash,
+                        fid: media.fid || null,
+                        sourceUrl: url,
+                        id: mediaIds[0],
+                        mediaType: media.media_type,
+                        seasonNumber: media.seasonNumber,
+                        episodeNumber: media.episodeNumber
+                    }
+                    console.log(formattedMedia);
+                    
+                    const source = await getPlayableSource(formattedMedia);
+                    console.log(source);
+                    startPlayer(source, media.title, formattedMedia)
                     return;
                 }
 
@@ -362,8 +375,6 @@ export function renderAppLibrary(items) {
 
                     libraryData.torrents = torrents;
                 }
-
-                if (userId !== appState.currentUser?.id) return;
                 
                 await openPicker(
                     libraryData,
