@@ -15,23 +15,105 @@ import {
 } from '../streaming/playlist.js';
 
 import { fetchAnimeMapping } from '../api.js';
-import { downloadFile } from '../pages/library.js';
-import { getTmdbSeasonEpisodes, getTmdbShowDetails } from './metadata.js';
+import { getTmdbId, getTmdbSeasonEpisodes, getTmdbShowDetails } from './metadata.js';
 import { getPlayableSource } from '../utils/streams.js';
 import { fetchWatchProgress } from '../user-data/watch-history.js';
+
+//#region Open Logic
+let pickerGeneration = 0;
+export async function openPicker(libraryData, tmdbId, title) {
+    const generation = ++pickerGeneration;
+    const userId = appState.currentUser?.id;
+
+    const picker = document.getElementById('file-picker');
+    const list = document.getElementById('picker-list');
+    const sourceContainer = document.getElementById('library-torrent-select');
+    sourceContainer.replaceChildren();
+    sourceContainer.classList.add('hidden');
+
+    const torrents = libraryData?.torrents || [];
+
+    const cloudEpisodes = libraryData?.sourceEpisodes;
+    const localEpisodes = libraryData?.savedEpisodes;
+
+    picker.classList.remove('hidden');
+    list.innerHTML = `<div class="col-span-full flex justify-center p-10">...Loading Spinner...</div>`;
+    const cleanName = title || (torrents[0]?.name ? parseMediaData(torrents[0].name).title : null) || 'Episodes';
+
+    const watchProgress = await fetchWatchProgress(tmdbId, userId);
+
+    const torrentGroups = await buildTorrentGroups(torrents);
+
+    const urlEpisodes = { ...cloudEpisodes, ...localEpisodes };
+    const urlGroups = buildUrlGroups(urlEpisodes, libraryData.type, cleanName);
+
+    let groups = await loadEpisodeGroups(mergePickerGroups(torrentGroups, urlGroups), tmdbId);
+    groups.savedId = libraryData.savedId;
+
+    if (generation !== pickerGeneration) return;
+    if (userId !== appState.currentUser?.id) return;
+
+    console.log(groups);
+    const normalizedGroups = normalizePickerGroups(groups);
+    console.log(normalizedGroups);
+
+    const fallbackImage = torrents.map(torrent => document.getElementById(`img-${torrent.id}`)?.src).find(Boolean) || '';
+    const pickerData = preparePickerGroups(normalizedGroups, { title: cleanName, tmdbId, fallbackImage, watchProgress });
+
+    renderPickerUI(pickerData, list);
+}
+
+export function closePicker() {
+    pickerGeneration++;
+    closeEpisodeMenus();
+    pickerHeaderListeners?.abort();
+    document.getElementById('file-picker').classList.add('hidden');
+}
+//#endregion
 
 //#region Data Grouping
 const SWITCH_WORDS_REGEX = /(?:^|[\s._\-\[\]()])(MOVIE|OVA|OAD|ODA|ONA|SPECIAL|RECAP|SP|OPENING|NCOP|OP|ENDING|NCED|ED|THEME|PROMO|TEASER|TRAILER|PV|CM)(?:S?\d*[a-z]?)?(?=$|[\s._\-\[\]()])/i;
 const EXTENDED_WORDS_REGEX = /(?:^|[\s._\-\[\]()])(EXTEND(?:ED)?(?:[\s._\-]+(?:EDITION|CUT|VERSION|VER))?|DIRECTOR'?S[\s._\-]+(?:EDITION|CUT|VERSION|VER)|UNCUT|UNRATED)(?=$|[\s._\-\[\]()])/i;
+const MENU_WORDS_REGEX = /(?:^|[\s._\-\[\]()\\/])(?:BD|DVD|BLU[\s._-]*RAY|DISC|DISK)[\s._-]*MENUS?\d*(?=$|[\s._\-\[\]()\\/])/i;
+const FILE_TYPE_LABELS = {
+    MOVIE: 'Movie',
+    OVA: 'Original Video Animation',
+    OAD: 'Original Animation DVD',
+    ODA: 'Original DVD Animation',
+    ONA: 'Original Net Animation',
+    SPECIAL: 'Special',
+    RECAP: 'Recap',
+    SP: 'Special',
+    OPENING: 'Opening',
+    NCOP: 'Opening',
+    OP: 'Opening',
+    ENDING: 'Ending',
+    NCED: 'Ending',
+    ED: 'Ending',
+    THEME: 'Theme',
+    PROMO: 'Promotional Video',
+    TEASER: 'Teaser',
+    TRAILER: 'Trailer',
+    PV: 'Promotional Video',
+    CM: 'Commercial'
+};
 
-function classifyFileType(fileName) {
-    const match = fileName.match(SWITCH_WORDS_REGEX);
-    const matchedWord = match ? match[1].toUpperCase() : 'TV';
-    const fileTypeLabel = match
-        ? match[0].replace(/^[\s._\-\[\]()]+|[\s._\-\[\]()]+$/g, '').toUpperCase()
-        : null;
-
+function classifyFileType(fileName, episode, season) {
     const isExtended = EXTENDED_WORDS_REGEX.test(fileName);
+    if (MENU_WORDS_REGEX.test(fileName)) {
+        return { fileType: 'Trailer', fileTypeLabel: 'Menu', isExtended };
+    }
+
+    const match = fileName.match(SWITCH_WORDS_REGEX);
+    const matchedWord = match ? match[1].toUpperCase()
+        : episode == null && season == null ? 'MOVIE' : 'TV';
+    const suffix = match
+        ? match[0].replace(/^[\s._\-\[\]()]+|[\s._\-\[\]()]+$/g, '').toUpperCase()
+            .slice(matchedWord.length).replace(/^S/, '')
+        : '';
+    const fileTypeLabel = match
+        ? `${FILE_TYPE_LABELS[matchedWord] || matchedWord}${suffix ? ` ${suffix}` : ''}`
+        : null;
 
     let fileType = 'TV';
 
@@ -75,7 +157,156 @@ function classifyFileType(fileName) {
     return { fileType, fileTypeLabel: fileTypeLabel || fileType, isExtended };
 }
 
-function preProcessEpisodeTorrentData(videoFiles, fallbackShowName = 'Season 1', fallbackSeason = null) {
+function mergePickerGroups(...groupSets) {
+    const mergedGroups = {};
+    for (const groups of groupSets) {
+        for (const [key, group] of Object.entries(groups || {})) {
+            if (!mergedGroups[key]) mergedGroups[key] = { ...group, files: [] };
+            mergedGroups[key].files.push(...group.files.map(file => ({ ...file })));
+            mergedGroups[key].episodeCount = mergedGroups[key].files.length;
+        }
+    }
+    const seasons = [...new Map(Object.values(mergedGroups).map(group => [group.seasonKey, group])).values()]
+        .sort((a, b) => a.seasonNumber != null && b.seasonNumber != null
+            ? a.seasonNumber - b.seasonNumber
+            : a.seasonLabel.localeCompare(b.seasonLabel, undefined, { numeric: true }));
+    const seasonOrder = new Map(seasons.map((group, index) => [group.seasonKey, index + 1]));
+    for (const group of Object.values(mergedGroups)) group.seasonOrder = seasonOrder.get(group.seasonKey);
+    return mergedGroups;
+}
+
+// Give torrent and URL groups the same shape before preparePickerGroups.
+// Preserve source references and metadata mappings without changing the input.
+function normalizePickerGroups(groups = {}) {
+    const normalized = {};
+    if (groups?.savedId != null) normalized.savedId = groups.savedId;
+
+    for (const [key, group] of Object.entries(groups || {})) {
+        if (!group || !Array.isArray(group.files)) continue;
+
+        const fileType = group.fileType ?? 'TV';
+        const seasonLabel = group.seasonLabel ?? group.title ?? '';
+        const tmdbSeason = group.tmdbSeason ?? group.seasonNumber ?? null;
+        const files = group.files.map(file => {
+            const sourceType = file.sourceType ?? (file.sourceUrl ? 'url'
+                : file.sourceTorrent?.addonMedia ? 'addon' : 'torrent');
+            const isUrl = sourceType === 'url';
+            const itemFileType = file.fileType ?? fileType;
+
+            return {
+                originalFile: isUrl ? null : file.originalFile ?? null,
+                sourceType,
+                sourceUrl: isUrl ? file.sourceUrl ?? null : null,
+                sourceTorrent: isUrl ? null : file.sourceTorrent ?? null,
+                id: file.id ?? null,
+                tmdbId: file.tmdbId ?? null,
+                mediaType: file.mediaType ?? null,
+                imdbId: file.imdbId ?? null,
+                streamId: file.streamId ?? null,
+                fileTitle: file.fileTitle ?? '',
+                year: file.year ?? null,
+                season: file.season ?? seasonLabel,
+                tmdbSeason: file.tmdbSeason ?? tmdbSeason,
+                episode: file.episode ?? null,
+                relativeEpisode: file.relativeEpisode ?? null,
+                watchSeason: file.watchSeason ?? null,
+                watchEpisode: file.watchEpisode ?? null,
+                displayTitle: file.displayTitle ?? null,
+                displayThumbnail: file.displayThumbnail ?? null,
+                fileType: itemFileType,
+                fileTypeLabel: file.fileTypeLabel ?? itemFileType,
+                isExtended: Boolean(file.isExtended),
+                isExtra: Boolean(file.isExtra ?? (itemFileType === 'Trailer')),
+                sizeMB: file.sizeMB ?? null
+            };
+        });
+
+        normalized[key] = {
+            title: group.title ?? seasonLabel,
+            seasonLabel,
+            seasonKey: group.seasonKey ?? key,
+            seasonNumber: group.seasonNumber ?? null,
+            seasonOrder: group.seasonOrder ?? 0,
+            tmdbSeason,
+            fileType,
+            files,
+            episodeCount: files.length
+        };
+    }
+
+    return normalized;
+}
+
+//#region Process Groups
+// Movie URL keys are TMDB IDs; series URL keys are "season:episode".
+function buildUrlGroups(urlEpisodes = {}, mediaType = 'tv', title = '') {
+    const urlGroups = {};
+    const isMovie = mediaType === 'movie';
+
+    for (const [episodeKey, url] of Object.entries(urlEpisodes || {})) {
+        if (typeof url !== 'string' || !url.trim()) continue;
+        let tmdbId = null;
+        let seasonNumber = null;
+        let episodeNumber = null;
+        if (isMovie) {
+            if (!/^\d+$/.test(episodeKey)) continue;
+            tmdbId = Number(episodeKey);
+            if (!Number.isSafeInteger(tmdbId) || tmdbId < 1) continue;
+        } else {
+            if (!/^\d+:\d+$/.test(episodeKey)) continue;
+            [seasonNumber, episodeNumber] = episodeKey.split(':').map(Number);
+            if (!Number.isSafeInteger(seasonNumber) || !Number.isSafeInteger(episodeNumber) || episodeNumber < 1) continue;
+        }
+
+        const fileType = isMovie ? 'Movie' : 'TV';
+        const seasonKey = isMovie ? 'MOVIES' : `S_${seasonNumber}`;
+        const groupKey = `${seasonKey}_${fileType}`;
+        const seasonLabel = isMovie ? 'Movies' : `Season ${seasonNumber}`;
+        if (!urlGroups[groupKey]) {
+            urlGroups[groupKey] = {
+                title: seasonLabel,
+                seasonLabel,
+                seasonKey,
+                seasonNumber,
+                seasonOrder: 0,
+                tmdbSeason: seasonNumber,
+                fileType,
+                files: []
+            };
+        }
+
+        urlGroups[groupKey].files.push({
+            originalFile: null,
+            fileTitle: isMovie ? title || `Movie ${tmdbId}` : `Episode ${episodeNumber}`,
+            year: null,
+            tmdbId,
+            mediaType: isMovie ? 'movie' : 'tv',
+            sourceType: 'url',
+            sourceUrl: url,
+            sourceTorrent: null,
+            season: seasonLabel,
+            tmdbSeason: seasonNumber,
+            episode: episodeNumber,
+            fileType,
+            fileTypeLabel: fileType,
+            isExtended: false,
+            isExtra: false,
+            sizeMB: null
+        });
+    }
+
+    const sortedGroups = Object.entries(urlGroups)
+        .sort(([, a], [, b]) => a.seasonNumber - b.seasonNumber);
+    sortedGroups.forEach(([, group], index) => {
+        group.seasonOrder = index + 1;
+        group.files.sort((a, b) => a.episode - b.episode);
+        group.episodeCount = group.files.length;
+    });
+
+    return Object.fromEntries(sortedGroups);
+}
+
+async function preProcessEpisodeTorrentData(videoFiles, fallbackShowName = 'Season 1', fallbackSeason = null, movieLookups = new Map()) {
     const torrentGroups = {};
     const baseSeasonsMap = new Map();
 
@@ -96,7 +327,7 @@ function preProcessEpisodeTorrentData(videoFiles, fallbackShowName = 'Season 1',
 
         const rawSeason = parsedFile.seasons?.[0] ?? fullParsed?.seasons?.[0] ?? fallbackSeason;
         const fileEpisode = parsedFile.episodes?.[0] ?? fullParsed?.episodes?.[0];
-        const { fileType, fileTypeLabel, isExtended } = classifyFileType(fileName);
+        const { fileType, fileTypeLabel, isExtended } = classifyFileType(fileName, fileEpisode, rawSeason);
 
         // Extract clean season/show name if no season number exists
         let candidateTitle = (parsedFile.title || fullParsed?.title || fallbackShowName).trim();
@@ -108,6 +339,7 @@ function preProcessEpisodeTorrentData(videoFiles, fallbackShowName = 'Season 1',
             file,
             fileName,
             parsedFile,
+            year: parsedFile.year ?? fullParsed?.year ?? null,
             rawSeason,
             fileEpisode,
             fileType,
@@ -117,6 +349,21 @@ function preProcessEpisodeTorrentData(videoFiles, fallbackShowName = 'Season 1',
             sizeInMB: file.size / (1024 * 1024)
         };
     });
+
+    // Resolve each distinct movie title/year once before assigning its group.
+    await Promise.all(parsedEntries.filter(entry => entry.fileType === 'Movie').map(async entry => {
+        const key = JSON.stringify([entry.candidateTitle.toLowerCase(), entry.year]);
+        if (!movieLookups.has(key)) {
+            movieLookups.set(key, getTmdbId(entry.candidateTitle, entry.year, 'movie').catch(() => null));
+        }
+        const match = await movieLookups.get(key);
+        if (Number.isSafeInteger(match?.id) && match.id > 0) {
+            entry.tmdbId = match.id;
+            entry.displayTitle = match.officialName || null;
+            entry.fullTMDB = match.full;
+        }
+    }));
+    console.log(parsedEntries);
 
     // Detect if the torrent uses season numbers; if so, default any untagged files to Season 1
     const torrentHasSeasons = parsedEntries.some(
@@ -242,7 +489,10 @@ function preProcessEpisodeTorrentData(videoFiles, fallbackShowName = 'Season 1',
         torrentGroups[groupKey].files.push({
             originalFile: entry.file,
             fileTitle: entry.parsedFile.title,
-            year: entry.parsedFile.year,
+            year: entry.year,
+            tmdbId: entry.tmdbId ?? null,
+            mediaType: entry.fileType === 'Movie' ? 'movie' : null,
+            displayTitle: entry.displayTitle ?? null,
             season: targetSeason.label,
             tmdbSeason: targetSeason.tmdbSeasonNumber,
             episode: entry.fileEpisode,
@@ -265,9 +515,10 @@ function getTorrentKey(torrent) {
     return `${torrent.hash ? `hash:${String(torrent.hash).toLowerCase()}` : `id:${torrent.id}`}`;
 }
 
-function buildTorrentGroups(torrents = []) {
+async function buildTorrentGroups(torrents = []) {
     const parsedTorrentGroups = {};
     const seenTorrents = new Set();
+    const movieLookups = new Map();
 
     for (const torrent of torrents || []) {
         const sourceKey = getTorrentKey(torrent);
@@ -277,7 +528,7 @@ function buildTorrentGroups(torrents = []) {
         const videoFiles = (torrent.files || []).filter(file => /\.(mkv|mp4|avi|mov)$/i.test(file.name));
         const baseInfo = parseMediaData(torrent.name);
         const fallbackSeason = baseInfo.seasons?.length === 1 ? baseInfo.seasons[0] : null;
-        const sourceGroups = preProcessEpisodeTorrentData(videoFiles, baseInfo.title, fallbackSeason);
+        const sourceGroups = await preProcessEpisodeTorrentData(videoFiles, baseInfo.title, fallbackSeason, movieLookups);
 
         // Parse each source in its own context before combining matching seasons.
         for (const [key, group] of Object.entries(sourceGroups)) {
@@ -304,79 +555,10 @@ function buildTorrentGroups(torrents = []) {
 
     return parsedTorrentGroups;
 }
-
-// Group saved "season:episode" URLs using the same season keys as torrent groups.
-function buildUrlGroups(urlEpisodes = {}) {
-    const urlGroups = {};
-
-    for (const [episodeKey, url] of Object.entries(urlEpisodes || {})) {
-        if (!/^\d+:\d+$/.test(episodeKey) || typeof url !== 'string' || !url.trim()) continue;
-        const [seasonNumber, episodeNumber] = episodeKey.split(':').map(Number);
-        if (!Number.isSafeInteger(seasonNumber) || !Number.isSafeInteger(episodeNumber) || episodeNumber < 1) continue;
-
-        const seasonKey = `S_${seasonNumber}`;
-        const groupKey = `${seasonKey}_TV`;
-        const seasonLabel = `Season ${seasonNumber}`;
-        if (!urlGroups[groupKey]) {
-            urlGroups[groupKey] = {
-                title: seasonLabel,
-                seasonLabel,
-                seasonKey,
-                seasonNumber,
-                seasonOrder: 0,
-                tmdbSeason: seasonNumber,
-                fileType: 'TV',
-                files: []
-            };
-        }
-
-        urlGroups[groupKey].files.push({
-            originalFile: null,
-            fileTitle: `Episode ${episodeNumber}`,
-            year: null,
-            sourceType: 'url',
-            sourceUrl: url,
-            sourceTorrent: null,
-            season: seasonLabel,
-            tmdbSeason: seasonNumber,
-            episode: episodeNumber,
-            fileType: 'TV',
-            fileTypeLabel: 'TV',
-            isExtended: false,
-            isExtra: false,
-            sizeMB: null
-        });
-    }
-
-    const sortedGroups = Object.entries(urlGroups)
-        .sort(([, a], [, b]) => a.seasonNumber - b.seasonNumber);
-    sortedGroups.forEach(([, group], index) => {
-        group.seasonOrder = index + 1;
-        group.files.sort((a, b) => a.episode - b.episode);
-        group.episodeCount = group.files.length;
-    });
-
-    return Object.fromEntries(sortedGroups);
-}
+//#endregion
 
 // Preserve every source when torrent and URL groups contain the same season.
-function mergePickerGroups(...groupSets) {
-    const mergedGroups = {};
-    for (const groups of groupSets) {
-        for (const [key, group] of Object.entries(groups || {})) {
-            if (!mergedGroups[key]) mergedGroups[key] = { ...group, files: [] };
-            mergedGroups[key].files.push(...group.files.map(file => ({ ...file })));
-            mergedGroups[key].episodeCount = mergedGroups[key].files.length;
-        }
-    }
-    const seasons = [...new Map(Object.values(mergedGroups).map(group => [group.seasonKey, group])).values()]
-        .sort((a, b) => a.seasonNumber != null && b.seasonNumber != null
-            ? a.seasonNumber - b.seasonNumber
-            : a.seasonLabel.localeCompare(b.seasonLabel, undefined, { numeric: true }));
-    const seasonOrder = new Map(seasons.map((group, index) => [group.seasonKey, index + 1]));
-    for (const group of Object.values(mergedGroups)) group.seasonOrder = seasonOrder.get(group.seasonKey);
-    return mergedGroups;
-}
+
 
 const MERGED_SOURCE = 'merged';
 
@@ -504,7 +686,6 @@ function preparePickerGroups(franchiseGroups, { title: cleanName = '', tmdbId = 
             let nextEpisode = Math.max(0, ...sortedFiles.map(file => pickerEpisodeNumber(file) ?? 0)) + 1;
 
             const episodes = sortedFiles.map(fileObj => {
-                //console.log(fileObj);
                 const { originalFile, displayTitle, displayThumbnail, fileType, fileTypeLabel, isExtra, isExtended } = fileObj;
                 const isUrl = fileObj.sourceType === 'url';
                 const sourceTorrent = isUrl ? null : fileObj.sourceTorrent;
@@ -529,20 +710,20 @@ function preparePickerGroups(franchiseGroups, { title: cleanName = '', tmdbId = 
                 const fileSize = isUrl || sourceTorrent?.addonMedia || !Number.isFinite(originalFile?.size)
                     ? '' : (originalFile.size / 1073741824).toFixed(2) + ' GB';
                 const cardImage = displayThumbnail || fallbackImage;
-                const episodeTmdbId = fileType === 'TV' ? tmdbId : null;
-                const seasonNumber = fileObj.watchSeason ?? fileObj.tmdbSeason;
-                const watchEpisodeNumber = fileObj.watchEpisode ?? displayEpisode;
+                const episodeTmdbId = fileObj.tmdbId ?? (fileType === 'TV' ? tmdbId : null);
+                const seasonNumber = isMovieFile ? null : fileObj.watchSeason ?? fileObj.tmdbSeason;
+                const watchEpisodeNumber = isMovieFile ? null : fileObj.watchEpisode ?? displayEpisode;
                 const episodeKey = `${seasonNumber}:${watchEpisodeNumber}`;
 
                 const episodeData = {
                     savedId: franchiseGroups.savedId,
-                    id: fileObj.id ?? null,
+                    id: fileObj.id ?? (isMovieFile && episodeTmdbId != null ? `tmdb:${episodeTmdbId}` : null),
                     tid: sourceTorrent?.id ?? null,
                     fid: originalFile?.id ?? null,
                     hash: sourceTorrent?.hash ?? null,
                     tmdbId: episodeTmdbId,
                     imdbId: fileObj.imdbId ?? null,
-                    mediaType: 'tv',
+                    mediaType: fileObj.mediaType ?? (isMovieFile ? 'movie' : 'tv'),
                     seasonNumber,
                     watchEpisodeNumber,
                     seriesTitle: cleanName,
@@ -550,7 +731,7 @@ function preparePickerGroups(franchiseGroups, { title: cleanName = '', tmdbId = 
                     fileType: groupData.fileType,
                     isExtended,
                     isExtra,
-                    episodeNumber: displayEpisode,
+                    episodeNumber: isMovieFile ? null : displayEpisode,
                     badge: badgeText,
                     badgeColor: isExtra ? 'bg-emerald-600'
                         : isOvaFile ? 'bg-amber-600' : isThemeFile ? 'bg-purple-600' : 'bg-blue-600',
@@ -614,7 +795,7 @@ function preparePickerGroups(franchiseGroups, { title: cleanName = '', tmdbId = 
 async function loadEpisodeGroups(franchiseGroups, tmdbId) {
 
     // We only process TMDB metadata if we have a valid ID
-    if (tmdbId) {
+    if (tmdbId && Object.values(franchiseGroups).some(group => group.files?.length && group.fileType !== 'Movie')) {
         const showDetails = await getTmdbShowDetails(tmdbId);
 
         if (showDetails && showDetails.seasons) {
@@ -639,6 +820,7 @@ async function loadEpisodeGroups(franchiseGroups, tmdbId) {
 
             for (const groupKey in franchiseGroups) {
                 const group = franchiseGroups[groupKey];
+                if (group.fileType === 'Movie') continue;
                 if (group.fileType !== 'TV') {
                     for (const file of group.files) {
                         file.id = getMediaId(file.tmdbSeason ?? group.tmdbSeason, parseInt(file.episode));
@@ -766,50 +948,6 @@ function mapAbsoluteToTmdbRelative(absoluteEp, tmdbSeasons) {
 }
 //#endregion
 
-//#region Main Picker Logic
-let pickerGeneration = 0;
-export async function openPicker(libraryData, tmdbId, title) {
-    const generation = ++pickerGeneration;
-    const userId = appState.currentUser?.id;
-
-    const picker = document.getElementById('file-picker');
-    const list = document.getElementById('picker-list');
-
-    const torrents = libraryData?.torrents || [];
-
-    const cloudEpisodes = libraryData?.sourceEpisodes;
-    const localEpisodes = libraryData?.savedEpisodes;
-
-    picker.classList.remove('hidden');
-    list.innerHTML = `<div class="col-span-full flex justify-center p-10">...Loading Spinner...</div>`;
-    const cleanName = title || (torrents[0]?.name ? parseMediaData(torrents[0].name).title : null) || 'Episodes';
-
-    const watchProgress = await fetchWatchProgress(tmdbId, userId);
-
-    const urlEpisodes = { ...cloudEpisodes, ...localEpisodes };
-    const torrentGroups = buildTorrentGroups(torrents);
-    const urlGroups = buildUrlGroups(urlEpisodes);
-    let groups = await loadEpisodeGroups(mergePickerGroups(torrentGroups, urlGroups), tmdbId);
-    groups.savedId = libraryData.savedId;
-
-    if (generation !== pickerGeneration) return;
-    if (userId !== appState.currentUser?.id) return;
-
-    const fallbackImage = torrents.map(torrent => document.getElementById(`img-${torrent.id}`)?.src).find(Boolean) || '';
-    const pickerData = preparePickerGroups(groups, { title: cleanName, tmdbId, fallbackImage, watchProgress });
-
-    renderPickerUI(pickerData, list);
-}
-
-export function closePicker() {
-    pickerGeneration++;
-    closeEpisodeMenus();
-    pickerHeaderListeners?.abort();
-    document.getElementById('file-picker').classList.add('hidden');
-}
-
-let pickerHeaderListeners = null;
-
 function closeEpisodeMenus() {
     document.querySelectorAll('#file-picker .picker-episode-menu:popover-open')
         .forEach(menu => menu.hidePopover());
@@ -825,7 +963,7 @@ function preparePickerQueue(episodes, startEpisode = null) {
 
 // Resolve by file identity: TMDB numbering can differ from torrent episode numbering.
 export async function buildRemainingTorrentQueue(torrent, tmdbId, fileId, title, thumbnail = '') {
-    const franchiseGroups = await loadEpisodeGroups(buildTorrentGroups([torrent]), tmdbId);
+    const franchiseGroups = await loadEpisodeGroups(await buildTorrentGroups([torrent]), tmdbId);
     const pickerData = preparePickerGroups(franchiseGroups, { title, tmdbId, fallbackImage: thumbnail });
     const season = pickerData.seasons.find(season => season.episodes.some(
         item => String(item.fid) === String(fileId)));
@@ -834,6 +972,7 @@ export async function buildRemainingTorrentQueue(torrent, tmdbId, fileId, title,
     return preparePickerQueue(season.episodes, startEpisode);
 }
 
+//#region UI Rendering
 function renderPickerUI(pickerData, listElement) {
     const { title, seasons } = pickerData;
     const selectedSources = new Map();
@@ -890,56 +1029,18 @@ function renderPickerUI(pickerData, listElement) {
         }
     }, listElement);
 }
-//#endregion
 
-//#region UI Rendering
+let pickerHeaderListeners = null;
 // Render prepared seasons and episode cards; the caller supplies all source actions.
 function renderPickerView({ title, seasons, getSeason, onPlay, onShuffle, onQueue, onEpisodePlay, onEpisodeQueue, onEpisodeDownload }, listElement) {
     closeEpisodeMenus();
     pickerHeaderListeners?.abort();
     pickerHeaderListeners = new AbortController();
+    const headerListenerOptions = { signal: pickerHeaderListeners.signal };
 
     listElement.addEventListener('scroll', closeEpisodeMenus, { passive: true, signal: pickerHeaderListeners.signal });
     window.addEventListener('resize', closeEpisodeMenus, { signal: pickerHeaderListeners.signal });
 
-    const titleElement = document.getElementById('picker-title');
-    titleElement.innerHTML = `
-        <div class="flex w-full flex-wrap items-center gap-x-3 gap-y-2 md:flex-nowrap">
-            <span id="picker-series-title" class="max-w-full font-bold text-slate-100 text-base [overflow-wrap:anywhere] md:min-w-0 md:flex-1 md:truncate md:text-xl"></span>
-            <div class="flex min-w-0 max-w-full flex-auto items-center justify-end gap-2 md:flex-none md:gap-3">
-                <div id="season-dropdown-container" class="relative inline-flex min-w-0 flex-1 items-center md:flex-none"></div>
-                <div id="picker-actions" class="relative shrink-0">
-                    <button id="picker-actions-toggle" type="button" aria-label="Playback and queue options" aria-expanded="false" aria-controls="picker-actions-menu"
-                        class="group grid h-11 w-11 place-items-center rounded-lg text-slate-400 transition-colors hover:text-slate-200 aria-expanded:text-slate-200 md:hidden">
-                        <span class="pointer-events-none grid h-8 w-7 place-items-center rounded-lg bg-slate-700/20 transition-colors group-hover:bg-slate-700/40 group-aria-expanded:bg-slate-700/40">
-                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
-                                <circle cx="12" cy="5" r="1.75"></circle>
-                                <circle cx="12" cy="12" r="1.75"></circle>
-                                <circle cx="12" cy="19" r="1.75"></circle>
-                            </svg>
-                        </span>
-                    </button>
-                    <div id="picker-actions-menu" class="absolute right-0 top-full z-30 mt-2 hidden flex-col gap-1 w-48 max-w-[calc(100vw-6rem)] rounded-xl border border-slate-700 bg-slate-900 p-1.5 shadow-xl md:static md:mt-0 md:flex md:w-auto md:max-w-none md:flex-row md:gap-3 md:rounded-none md:border-0 md:bg-transparent md:p-0 md:shadow-none">
-                        <button id="picker-play-btn" type="button" class="flex min-h-11 shrink-0 items-center justify-start gap-2 rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 shadow-lg shadow-black/10 hover:bg-slate-700 cursor-pointer md:justify-center">
-                            Play
-                        </button>
-                        <button id="picker-shuffle-btn" type="button" class="flex min-h-11 shrink-0 items-center justify-start gap-2 rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 shadow-lg shadow-black/10 hover:bg-slate-700 cursor-pointer md:justify-center">
-                            <svg class="w-5 h-5 shrink-0" aria-hidden="true" focusable="false" fill="none" stroke="currentColor">
-                                <use href="#icon-shuffle"></use>
-                            </svg>
-                            Play Shuffled
-                        </button>
-                        <button id="picker-queue-btn" type="button" title="Add Series to Queue" class="flex min-h-11 shrink-0 items-center justify-start gap-1.5 rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 shadow-lg shadow-black/10 hover:bg-slate-700 cursor-pointer md:justify-center">
-                            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-                            </svg>
-                            Queue
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
     document.getElementById('picker-series-title').textContent = title;
 
     const actions = document.getElementById('picker-actions');
@@ -950,16 +1051,17 @@ function renderPickerView({ title, seasons, getSeason, onPlay, onShuffle, onQueu
         actionsMenu.classList.toggle('hidden', !open);
         actionsMenu.classList.toggle('flex', open);
     };
+    setActionsOpen(false);
     actionsToggle.addEventListener('click', () => {
         closeEpisodeMenus();
         setActionsOpen(actionsToggle.getAttribute('aria-expanded') !== 'true');
-    });
+    }, headerListenerOptions);
     actionsMenu.addEventListener('click', event => {
         if (event.target.closest('button')) {
             setActionsOpen(false);
             if (actionsToggle.offsetParent) actionsToggle.focus();
         }
-    });
+    }, headerListenerOptions);
     document.addEventListener('click', event => {
         if (!actions.contains(event.target)) setActionsOpen(false);
     }, { signal: pickerHeaderListeners.signal });
@@ -971,15 +1073,27 @@ function renderPickerView({ title, seasons, getSeason, onPlay, onShuffle, onQueu
         }
     }, { signal: pickerHeaderListeners.signal });
 
-    document.getElementById('picker-queue-btn')?.addEventListener('click', onQueue);
-    document.getElementById('picker-play-btn')?.addEventListener('click', onPlay);
-    document.getElementById('picker-shuffle-btn')?.addEventListener('click', onShuffle);
+    document.getElementById('picker-queue-btn')?.addEventListener('click', onQueue, headerListenerOptions);
+    document.getElementById('picker-play-btn')?.addEventListener('click', onPlay, headerListenerOptions);
+    document.getElementById('picker-shuffle-btn')?.addEventListener('click', onShuffle, headerListenerOptions);
 
     const seasonContainer = document.getElementById('season-dropdown-container');
+    const sourceContainer = document.getElementById('library-torrent-select');
+    sourceContainer.replaceChildren();
+    sourceContainer.classList.add('hidden');
 
     const renderGroup = (group) => {
+        const groupElement = document.getElementById('picker-episode-card-template').content.firstElementChild.cloneNode(true);
+        const row = groupElement.querySelector('.picker-episode-row');
+        const cardTemplate = row.querySelector('.picker-episode-card');
+        groupElement.querySelector('.picker-group-title').textContent = group.title;
+        groupElement.setAttribute('aria-label', group.title);
+        row.setAttribute('aria-label', group.title);
+        row.replaceChildren();
+        row.addEventListener('scroll', closeEpisodeMenus, { passive: true });
+
         group.episodes.forEach(episode => {
-            const card = document.getElementById('picker-episode-card-template').content.firstElementChild.cloneNode(true);
+            const card = cardTemplate.cloneNode(true);
             card.querySelector('.picker-episode-badge').classList.add(episode.badgeColor);
             card.querySelector('.picker-episode-extended').classList.toggle('hidden', !episode.isExtended);
             card.querySelector('.picker-episode-size').textContent = episode.size;
@@ -1046,50 +1160,40 @@ function renderPickerView({ title, seasons, getSeason, onPlay, onShuffle, onQueu
                 onEpisodePlay(episode);
             };
 
-            listElement.appendChild(card);
+            row.appendChild(card);
         });
+        listElement.appendChild(groupElement);
     };
 
     const renderSeason = (seasonKey) => {
         closeEpisodeMenus();
         listElement.replaceChildren();
-        listElement.scrollTop = 0;
         const { sourceSelector, groups } = getSeason(seasonKey);
+        sourceContainer.replaceChildren();
+        sourceContainer.classList.toggle('hidden', !sourceSelector);
         if (sourceSelector) {
-            const sourceSelect = document.createElement('select');
-            sourceSelect.id = sourceSelector.id;
-            sourceSelect.setAttribute('aria-label', sourceSelector.label);
-            sourceSelect.className = 'col-span-full min-h-11 w-full min-w-0 max-w-full rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 shadow-lg shadow-black/10 hover:bg-slate-700 cursor-pointer outline-none';
-            sourceSelect.innerHTML = `
-                <button type="button" class="flex w-full min-w-0 items-center justify-between gap-3 text-left">
-                    <selectedcontent class="min-w-0 truncate"></selectedcontent>
-                    <svg class="season-dropdown-icon w-4 h-4 shrink-0 text-slate-400 transition-transform duration-200" aria-hidden="true" focusable="false" fill="none" stroke="currentColor">
-                        <use href="#icon-arrow"></use>
-                    </svg>
-                </button>
-            `;
+            sourceContainer.setAttribute('aria-label', sourceSelector.label);
             sourceSelector.options.forEach(source => {
-                const option = document.createElement('option');
-                option.value = source.value;
-                option.textContent = source.label;
-                sourceSelect.appendChild(option);
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.value = source.value;
+                button.textContent = source.label;
+                button.title = source.label;
+                button.setAttribute('aria-pressed', String(source.value === sourceSelector.value));
+                button.className = 'min-h-11 max-w-[min(80vw,32rem)] shrink-0 truncate rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-300 transition-colors hover:border-slate-500 hover:text-white aria-pressed:border-blue-500 aria-pressed:bg-blue-500/15 aria-pressed:text-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400';
+                button.addEventListener('click', () => {
+                    if (source.value === sourceSelector.value) return;
+                    const picker = document.getElementById('file-picker');
+                    const scrollTop = picker.scrollTop;
+                    sourceSelector.onChange(source.value);
+                    renderSeason(seasonKey);
+                    [...sourceContainer.children].find(item => item.value === source.value)?.focus({ preventScroll: true });
+                    picker.scrollTop = scrollTop;
+                });
+                sourceContainer.appendChild(button);
             });
-            sourceSelect.value = sourceSelector.value;
-            sourceSelect.addEventListener('change', event => {
-                if (!sourceSelector.options.some(source => source.value === event.target.value)) return;
-                sourceSelector.onChange(event.target.value);
-                renderSeason(seasonKey);
-                document.getElementById(sourceSelector.id)?.focus({ preventScroll: true });
-            });
-            listElement.appendChild(sourceSelect);
         }
         for (const group of groups) {
-            if (groups.length > 1) {
-                const heading = document.createElement('h4');
-                heading.className = 'col-span-full font-semibold text-slate-300';
-                heading.textContent = group.title;
-                listElement.appendChild(heading);
-            }
             renderGroup(group);
         }
     };

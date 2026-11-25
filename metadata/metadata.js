@@ -58,9 +58,9 @@ export async function getTmdbId(title, year, type = 'tv') {
         // Return the first result's ID
         if (data.results && data.results.length > 0) {
             if(data.results.length > 1 && (data.results[1]?.vote_count > data.results[0]?.vote_count)) {
-                return { id: data.results[1].id, officialName: data.results[1].name || data.results[1].title };
+                return { id: data.results[1].id, officialName: data.results[1].name || data.results[1].title, full: data.results[1] };
             } else {
-                return { id: data.results[0].id, officialName: data.results[0].name || data.results[0].title };
+                return { id: data.results[0].id, officialName: data.results[0].name || data.results[0].title, full: data.results[0] };
             }
         }
 

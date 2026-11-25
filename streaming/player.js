@@ -25,6 +25,7 @@ export async function requestLink(mediaObject, source, resumePosition = 0) {
 export async function startPlayer(url, name, localFileObject = null, media) {
     stopPlayback();
     media = media ? { ...media, completionCounted: false } : null;
+    console.log(media);
     
     const defaultPlayer = getCurrentUserSettings().user_preferences.defaultPlayer || 'Internal';
     if (defaultPlayer !== 'Internal') {
@@ -176,6 +177,10 @@ export async function startPlayer(url, name, localFileObject = null, media) {
     const playerArt = art;
     const video = playerArt.video;
 
+    // ======================
+    // RESTORE POSITION 
+    //=======================
+    
     const resumeTime = media?.progressInSeconds ?? 0;
     let resumePending = Number.isFinite(resumeTime) && resumeTime > 0;
     
@@ -204,6 +209,9 @@ export async function startPlayer(url, name, localFileObject = null, media) {
         restorePosition();
     }
 
+    // ======================
+    // UPLOAD POSITION 
+    //=======================
 
     const progressUserId = appState.currentUser?.id;
     let lastSavedSample = null;

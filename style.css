@@ -487,6 +487,41 @@ option:hover {
 }
 
 
+/* Keep the existing picker title and controls within the full-screen hero. */
+#file-picker #picker-title > div {
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 1.5rem;
+}
+
+#file-picker #picker-title,
+#file-picker #picker-series-title {
+    font-size: clamp(2.25rem, 4vw, 3.75rem);
+    font-weight: 900;
+    letter-spacing: -.025em;
+    line-height: 1.1;
+}
+
+#file-picker #picker-series-title {
+    flex: 0 0 100%;
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: center;
+    text-shadow: 0 2px 8px #0005;
+}
+
+#file-picker #picker-title > div > div {
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+@media (min-width: 768px) {
+    #file-picker #picker-series-title { text-align: left; }
+    #file-picker #picker-title > div,
+    #file-picker #picker-title > div > div { justify-content: flex-start; }
+}
+
 #stream-picker-list {
     overscroll-behavior: contain;
     scrollbar-width: thin;

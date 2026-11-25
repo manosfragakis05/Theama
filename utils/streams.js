@@ -3,56 +3,71 @@ import { getAddonStreams } from "../user-addons/scrapers";
 import { getCurrentUserSettings } from "../user-data/user-settings";
 
 export async function getPlayableSource(episode) {
-    console.log(episode);
     const hasTorbox = getCurrentUserSettings().user_preferences.torboxApiKey != "";
 
     const hash = episode.hash;
     const url = episode.sourceUrl;
-    if(!hash && !url) return;
-    
+    if (!hash && !url) return;
+
     let file_id = episode?.fid;
 
     const type = episode.mediaType || episode.media_type;
 
-    if(hasTorbox && hash) {
+    if (hasTorbox && hash) {
         let torrent = {};
-        if(!file_id) {
+        if (file_id == null) {
             torrent = await getTorboxTorrentFromHash(hash, true);
-            const videoFiles = (torrent.files || []).filter(f => /\.(mkv|mp4|avi|mov)$/i.test(f.name));
-            console.log(videoFiles);
 
-            file_id = videoFiles[0].id;
+            file_id = getFirstVideoFile(torrent);
+        } else {
+            torrent = await getTorboxTorrentFromHash(hash, false);
         }
-        torrent = await getTorboxTorrentFromHash(hash);
-        console.log(torrent);
         if (!torrent?.download_finished) return;
+
+        let torboxType = 'torrents';
+
+        const isUsenet = torrent.torboxType === 'usenet';
+        if (isUsenet) torboxType = 'usenet'
 
         const params = new URLSearchParams({
             token: getCurrentUserSettings().user_preferences.torboxApiKey,
-            torrent_id: String(torrent.id),
+            [isUsenet ? 'usenet_id' : 'torrent_id']: String(torrent.id),
             file_id: file_id,
             redirect: 'true'
         });
-        return `https://api.torbox.app/v1/api/torrents/requestdl?${params}`;
+
+        return `https://api.torbox.app/v1/api/${torboxType}/requestdl?${params}`;
     }
 
-    if(!hasTorbox && hash) {
+    if (!hasTorbox && hash) {
         let targetStream;
 
         await getAddonStreams(
             type, episode.id, episode.seasonNumber, episode.episodeNumber,
-            (streams, addonName) => {
+            (streams) => {
                 if (targetStream) return true;
                 targetStream = getTargetStreamFromHash(hash, streams);
                 if (!targetStream) return false;
-                console.log(addonName, targetStream);
                 return true;
             }
         );
+        console.log(targetStream);
+
         return targetStream.url;
     }
-    
-    return episode.sourceUrl;
+
+    return episode.url;
+}
+
+function getFirstVideoFile(torrent) {
+    const hasTorbox = getCurrentUserSettings().user_preferences.torboxApiKey != "";
+    if (hasTorbox && torrent) {
+        const videoFiles = (torrent.files || []).filter(f => /\.(mkv|mp4|avi|mov)$/i.test(f.name));
+        const file_id = videoFiles[0]?.id;
+
+        return file_id;
+    }
+    return null;
 }
 
 function getTargetStreamFromHash(hash, streams) {
@@ -123,20 +138,29 @@ export async function getTorboxTorrentFromHash(hash, withFiles = false) {
     if (!key) throw new Error('Link TorBox in settings to look up this torrent.');
 
     const normalizedHash = hash.trim().toLowerCase();
+    const { getCloudDownloads } = await import('../pages/library.js');
+    const cached = getCloudDownloads().find(item => item.hash?.toLowerCase() === normalizedHash);
+    if (cached) return cached;
+
     const pageSize = 1000;
-    for (let offset = 0; ; offset += pageSize) {
-        const params = new URLSearchParams({ files: withFiles, offset: String(offset), limit: String(pageSize) });
-        const response = await smartFetch(`https://api.torbox.app/v1/api/torrents/mylist?${params}`, {
-            headers: { Authorization: `Bearer ${key}` }
-        });
-        const result = await response.json();
-        if (!response.ok || !result.success || !Array.isArray(result.data)) {
-            throw new Error(result.detail || 'Could not load your TorBox torrents.');
+    const lists = await Promise.all(['torrents', 'usenet'].map(async section => {
+        const downloads = [];
+        for (let offset = 0; ; offset += pageSize) {
+            const params = new URLSearchParams({ files: withFiles, bypass_cache: 'true', offset: String(offset), limit: String(pageSize) });
+            const response = await smartFetch(`https://api.torbox.app/v1/api/${section}/mylist?${params}`, {
+                headers: { Authorization: `Bearer ${key}` }
+            });
+            const result = await response.json();
+            if (!response.ok || !result.success || !Array.isArray(result.data)) {
+                throw new Error(result.detail || `Could not load your TorBox ${section} downloads.`);
+            }
+            downloads.push(...result.data.map(item => ({
+                ...item, torboxType: section === 'usenet' ? 'usenet' : 'torrent'
+            })));
+            if (result.data.length < pageSize) return downloads;
         }
-        const torrent = result.data.find(item => item.hash?.toLowerCase() === normalizedHash);
-        if (torrent) return torrent;
-        if (result.data.length < pageSize) return null;
-    }
+    }));
+    return lists.flat().find(item => item.hash?.toLowerCase() === normalizedHash) || null;
 }
 
 // Match a public filename or a saved numeric file ID to a TorBox account item.

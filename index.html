@@ -1284,30 +1284,148 @@
     </div>
 
     <div id="file-picker"
-        class="hidden fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6">
+        class="hidden fixed inset-0 z-[100] h-[100dvh] overflow-y-auto overscroll-none bg-slate-900 custom-scrollbar"
+        role="dialog" aria-modal="true" aria-label="Media files">
 
-        <div
-            class="bg-slate-900 rounded-2xl w-full max-w-5xl flex flex-col shadow-2xl border border-slate-700 max-h-[85dvh] overflow-hidden">
+        <button id="close-episode-picker-btn" type="button" aria-label="Close file picker"
+            class="fixed top-[max(1.5rem,env(safe-area-inset-top))] right-6 z-20 bg-slate-900/40 backdrop-blur-xl p-3 rounded-full text-slate-200 hover:text-white hover:bg-blue-600 border border-white/10 shadow-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" aria-hidden="true">
+                <use href="#icon-close"></use>
+            </svg>
+        </button>
 
-            <div
-                class="flex items-center justify-between p-4 sm:p-5 border-b border-slate-800 bg-slate-800/50 shrink-0">
-                <h3 id="picker-title" class="min-w-0 flex-1 pr-2 font-bold text-xl text-white sm:pr-4"></h3>
+        <!-- Presentation placeholders; metadata will be connected separately. -->
+        <div id="picker-backdrop"
+            class="relative h-[45vh] md:h-[65vh] w-full bg-slate-800 bg-cover bg-[center_top_20%]" aria-hidden="true">
+            <div class="absolute inset-0 bg-gradient-to-br from-blue-900/20 via-transparent to-slate-900/50"></div>
+            <div class="absolute bottom-0 left-0 w-full h-[70%] bg-gradient-to-t from-slate-900 via-slate-900/60 to-transparent"></div>
+        </div>
 
-                <button id="close-episode-picker-btn"
-                    class="text-slate-400 hover:text-white bg-slate-700/30 hover:bg-slate-700 p-2 rounded-full transition-colors shrink-0 outline-none">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
-                        </path>
-                    </svg>
-                </button>
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 relative z-10 -mt-32 md:-mt-48 pb-[max(5rem,env(safe-area-inset-bottom))]">
+            <div class="flex flex-col md:flex-row gap-8 md:gap-12 items-center md:items-start">
+                <div class="shrink-0 w-[60vw] sm:w-[220px] md:w-[260px] lg:w-[320px] aspect-[2/3] relative rounded-2xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] border border-slate-700/50 bg-slate-800">
+                    <div class="absolute inset-0 flex flex-col items-center justify-center gap-3 text-slate-500" aria-hidden="true">
+                        <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <rect x="3" y="3" width="18" height="18" rx="2" stroke-width="1.5"></rect>
+                            <circle cx="8.5" cy="8.5" r="1.5" stroke-width="1.5"></circle>
+                            <path d="m21 15-5-5L5 21" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+                        </svg>
+                        <span class="text-sm">Poster</span>
+                    </div>
+                    <img id="picker-poster" class="absolute inset-0 w-full h-full object-cover [&:not([src])]:hidden" alt="Poster">
+                </div>
+
+                <div class="flex-1 min-w-0 w-full mt-4 md:mt-0">
+                    <div id="picker-title" class="min-w-0 text-white">
+                        <div class="flex w-full flex-wrap items-center gap-x-3 gap-y-2 md:flex-nowrap">
+                            <span id="picker-series-title" class="max-w-full font-bold text-slate-100 text-base [overflow-wrap:anywhere] md:min-w-0 md:flex-1 md:truncate md:text-xl"></span>
+                            <div class="flex min-w-0 max-w-full flex-auto items-center justify-end gap-2 md:flex-none md:gap-3">
+                                <div id="season-dropdown-container" class="relative inline-flex min-w-0 flex-1 items-center md:flex-none"></div>
+                                <div id="picker-actions" class="relative shrink-0">
+                                    <button id="picker-actions-toggle" type="button" aria-label="Playback and queue options" aria-expanded="false" aria-controls="picker-actions-menu"
+                                        class="group grid h-11 w-11 place-items-center rounded-lg text-slate-400 transition-colors hover:text-slate-200 aria-expanded:text-slate-200 md:hidden">
+                                        <span class="pointer-events-none grid h-8 w-7 place-items-center rounded-lg bg-slate-700/20 transition-colors group-hover:bg-slate-700/40 group-aria-expanded:bg-slate-700/40">
+                                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+                                                <circle cx="12" cy="5" r="1.75"></circle>
+                                                <circle cx="12" cy="12" r="1.75"></circle>
+                                                <circle cx="12" cy="19" r="1.75"></circle>
+                                            </svg>
+                                        </span>
+                                    </button>
+                                    <div id="picker-actions-menu" class="absolute right-0 top-full z-30 mt-2 hidden flex-col gap-1 w-48 max-w-[calc(100vw-6rem)] rounded-xl border border-slate-700 bg-slate-900 p-1.5 shadow-xl md:static md:mt-0 md:flex md:w-auto md:max-w-none md:flex-row md:gap-3 md:rounded-none md:border-0 md:bg-transparent md:p-0 md:shadow-none">
+                                        <button id="picker-play-btn" type="button" class="flex min-h-11 shrink-0 items-center justify-start gap-2 rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 shadow-lg shadow-black/10 hover:bg-slate-700 cursor-pointer md:justify-center">
+                                            Play
+                                        </button>
+                                        <button id="picker-shuffle-btn" type="button" class="flex min-h-11 shrink-0 items-center justify-start gap-2 rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 shadow-lg shadow-black/10 hover:bg-slate-700 cursor-pointer md:justify-center">
+                                            <svg class="w-5 h-5 shrink-0" aria-hidden="true" focusable="false" fill="none" stroke="currentColor">
+                                                <use href="#icon-shuffle"></use>
+                                            </svg>
+                                            Play Shuffled
+                                        </button>
+                                        <button id="picker-queue-btn" type="button" title="Add Series to Queue" class="flex min-h-11 shrink-0 items-center justify-start gap-1.5 rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 shadow-lg shadow-black/10 hover:bg-slate-700 cursor-pointer md:justify-center">
+                                            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                                            </svg>
+                                            Queue
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <p id="picker-description" class="mt-6 text-center md:text-left text-slate-300 text-base md:text-lg leading-relaxed max-w-4xl">
+                        No description available.
+                    </p>
+                </div>
             </div>
 
-            <div id="picker-list"
-                class="flex-1 overflow-y-auto p-4 sm:p-6 grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 auto-rows-max content-start custom-scrollbar overscroll-contain bg-slate-900/50">
-            </div>
-
+            <section class="mt-10 md:mt-12 border-t border-slate-700/50 pt-6" aria-label="Media files">
+                <div id="library-torrent-select" role="group" aria-label="Source"
+                    class="hidden flex items-center gap-2 mb-5 overflow-x-auto custom-scrollbar overscroll-x-contain pb-2">
+                </div>
+                <div id="picker-list"
+                    class="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 auto-rows-max content-start">
+                </div>
+            </section>
         </div>
     </div>
+
+    <template id="picker-episode-card-template">
+        <section class="picker-episode-group col-span-full w-full min-w-0" aria-label="Episode group">
+            <h3 class="picker-group-title mb-2 text-lg font-bold text-slate-200">Episodes</h3>
+                    <div class="picker-episode-row draggable-row custom-scrollbar flex w-full min-w-0 items-start gap-4 overflow-x-auto overscroll-x-contain px-1 py-3 cursor-grab select-none active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded-lg"
+                        tabindex="0" role="list" aria-label="Files and episodes">
+                        <!-- Clone this card within its group row. Use data-artwork="poster" for portrait artwork. -->
+                        <article data-artwork="thumbnail" role="listitem"
+                            class="picker-episode-card group relative flex w-48 min-w-0 flex-none flex-col overflow-hidden rounded-xl border-2 border-slate-700/50 bg-slate-800/40 cursor-pointer transition-colors hover:border-blue-400 focus-within:border-blue-400 md:w-64 data-[artwork=poster]:w-32 md:data-[artwork=poster]:w-40">
+                    <div class="picker-episode-artwork relative aspect-video w-full shrink-0 overflow-hidden border-b border-slate-700 bg-slate-900 group-data-[artwork=poster]:aspect-[2/3]">
+                        <img loading="lazy" draggable="false" class="absolute inset-0 h-full w-full object-cover transition-opacity md:group-hover:opacity-60 md:group-focus-within:opacity-60" alt="">
+                        <span class="picker-episode-watched pointer-events-none absolute right-2 top-2 z-20 hidden h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg flex" role="img" aria-label="Watched" title="Watched">
+                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                        </span>
+                        <div class="absolute inset-0 z-10 hidden items-center justify-center gap-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 md:flex">
+                            <button type="button" data-action="download" class="flex h-10 w-10 items-center justify-center rounded-full border border-slate-600 bg-slate-800/90 text-white shadow-xl backdrop-blur-md transition-colors hover:bg-slate-700" title="Download to Device">
+                                <svg class="h-[22px] w-[22px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                            </button>
+                            <button type="button" data-action="queue" class="flex h-10 w-10 items-center justify-center rounded-full border border-slate-600 bg-slate-800/90 text-white shadow-xl backdrop-blur-md transition-colors hover:bg-slate-700" title="Add to Queue">
+                                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+                            </button>
+                        </div>
+                        <div class="picker-episode-size pointer-events-none absolute bottom-2 right-2 rounded bg-black/80 px-2 py-1 text-xs font-bold text-white"></div>
+                    </div>
+                    <div class="pointer-events-none flex min-w-0 flex-1 flex-col gap-2 p-3">
+                        <div class="picker-episode-progress mb-1 hidden h-1 w-full overflow-hidden rounded-full bg-slate-700" role="progressbar" aria-label="Playback progress" aria-valuemin="0" aria-valuemax="100">
+                            <div class="picker-episode-progress-fill h-full bg-blue-500"></div>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-1.5">
+                            <span class="picker-episode-badge max-w-full rounded px-2 py-0.5 text-xs font-bold text-white break-words"></span>
+                            <span class="picker-episode-extended hidden max-w-full rounded bg-rose-600 px-2 py-0.5 text-xs font-bold text-white">Extended</span>
+                        </div>
+                        <p class="picker-episode-title min-h-10 line-clamp-2 text-sm font-medium leading-5 text-slate-300 group-hover:text-white"></p>
+                    </div>
+                    <div class="flex shrink-0 items-center justify-end border-t border-slate-700/50 px-1 md:hidden">
+                        <button type="button" class="picker-episode-options flex h-11 w-11 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-700/40 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" aria-label="Episode options" aria-expanded="false">
+                            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+                                <circle cx="12" cy="5" r="1.75"></circle>
+                                <circle cx="12" cy="12" r="1.75"></circle>
+                                <circle cx="12" cy="19" r="1.75"></circle>
+                            </svg>
+                        </button>
+                        <div popover="auto" class="picker-episode-menu fixed inset-auto m-0 w-48 rounded-xl border border-slate-700 bg-slate-900 p-1.5 text-slate-200 shadow-xl md:!hidden" role="group" aria-label="Episode actions">
+                            <button type="button" data-action="download" class="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
+                                <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                Download
+                            </button>
+                            <button type="button" data-action="queue" class="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
+                                <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+                                Queue episode
+                            </button>
+                        </div>
+                    </div>
+                </article>
+            </div>
+        </section>
+    </template>
 
     <div id="stream-picker-modal"
         class="hidden fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6">
@@ -1579,55 +1697,6 @@
                 <svg class="h-4 w-4" fill="none" stroke="currentColor" aria-hidden="true"><use href="#icon-close"></use></svg>
             </button>
         </article>
-    </template>
-
-    <template id="picker-episode-card-template">
-        <div class="relative flex min-h-24 w-full min-w-0 overflow-hidden rounded-xl border border-slate-700/50 bg-slate-800/40 cursor-pointer transition-all hover:border-blue-500 group select-none md:min-h-0 md:flex-col md:border-2 md:border-slate-700 md:bg-slate-800">
-            <div class="relative w-24 shrink-0 self-stretch overflow-hidden border-r border-slate-700 bg-slate-900 sm:w-28 md:aspect-video md:w-full md:border-r-0 md:border-b">
-                <img loading="lazy" draggable="false" class="absolute inset-0 h-full w-full object-cover md:opacity-60 transition-opacity md:group-hover:opacity-40" alt="">
-                <span class="picker-episode-watched pointer-events-none absolute right-2 top-2 z-20 hidden h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg flex" role="img" aria-label="Watched" title="Watched">
-                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></svg>
-                </span>
-                <div class="absolute inset-0 z-10 hidden items-center justify-center gap-3 opacity-0 transition-opacity group-hover:opacity-100 md:flex">
-                    <button type="button" data-action="download" class="flex h-10 w-10 items-center justify-center rounded-full border border-slate-600 bg-slate-800/90 text-white shadow-xl backdrop-blur-md transition-colors hover:bg-slate-700" title="Download to Device">
-                        <svg class="h-[22px] w-[22px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                    </button>
-                    <button type="button" data-action="queue" class="flex h-10 w-10 items-center justify-center rounded-full border border-slate-600 bg-slate-800/90 text-white shadow-xl backdrop-blur-md transition-colors hover:bg-slate-700" title="Add to Queue">
-                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-                    </button>
-                </div>
-                <div class="picker-episode-size pointer-events-none absolute bottom-1 right-1 rounded bg-black/80 px-1.5 py-0.5 text-[9px] font-bold text-white md:bottom-2 md:right-2 md:px-2 md:py-1 md:text-[11px]"></div>
-            </div>
-            <div class="pointer-events-none flex min-w-0 flex-1 flex-col justify-center gap-1 px-3 py-2 md:p-3">
-                <div class="picker-episode-progress mb-1 hidden h-1 w-full overflow-hidden rounded-full bg-slate-700" role="progressbar" aria-label="Playback progress" aria-valuemin="0" aria-valuemax="100">
-                    <div class="picker-episode-progress-fill h-full bg-blue-500"></div>
-                </div>
-                <div class="flex flex-wrap items-center gap-1.5">
-                    <span class="picker-episode-badge w-max rounded px-2 py-0.5 text-[10px] font-bold text-white"></span>
-                    <span class="picker-episode-extended hidden w-max rounded bg-rose-600 px-2 py-0.5 text-[10px] font-bold text-white">Extended</span>
-                </div>
-                <p class="picker-episode-title mt-1 line-clamp-2 text-xs font-medium leading-tight text-slate-200 group-hover:text-white md:font-normal md:leading-4 md:text-slate-300"></p>
-            </div>
-            <div class="flex shrink-0 items-center pr-1 md:hidden">
-                <button type="button" class="picker-episode-options flex h-11 w-11 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-700/40 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" aria-label="Episode options" aria-expanded="false">
-                    <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
-                        <circle cx="12" cy="5" r="1.75"></circle>
-                        <circle cx="12" cy="12" r="1.75"></circle>
-                        <circle cx="12" cy="19" r="1.75"></circle>
-                    </svg>
-                </button>
-                <div popover="auto" class="picker-episode-menu fixed inset-auto m-0 w-48 rounded-xl border border-slate-700 bg-slate-900 p-1.5 text-slate-200 shadow-xl md:!hidden" role="group" aria-label="Episode actions">
-                    <button type="button" data-action="download" class="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
-                        <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                        Download
-                    </button>
-                    <button type="button" data-action="queue" class="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
-                        <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-                        Queue episode
-                    </button>
-                </div>
-            </div>
-        </div>
     </template>
 
     <template id="addon-panel-template">

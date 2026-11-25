@@ -7,16 +7,14 @@
 import { appState } from '../services/config.js';
 import { supabase } from './db.js';
 
-export async function upsertWatchProgress(positionSeconds, durationSeconds, {
-    media,
-    userId = appState.currentUser?.id
-} = {}) {
-    if (!userId || appState.currentUser?.id !== userId || !media) return null;
-    const tmdbId = Number(media.tmdbId);
+export async function upsertWatchProgress(positionSeconds, durationSeconds, media) {
+    const userId = appState.currentUser?.id;
+    if (!positionSeconds || !userId || !media) return null;
+
+    const tmdbId = media.tmdbId || media.id;
     const mediaType = media.mediaType;
     const season = media.seasonNumber;
     const episode = media.watchEpisodeNumber ?? media.episodeNumber;
-    console.log(media);
 
     if (!Number.isSafeInteger(tmdbId) || tmdbId <= 0 || !['movie', 'tv'].includes(mediaType)) return null;
     if (mediaType === 'tv' && (!Number.isInteger(season) || season < 0

@@ -13,12 +13,13 @@ import { parseMediaData } from '../utils/parseMedia.js';
 import { getPosterForLibrary, getTmdbId } from '../metadata/metadata.js';
 import { openPicker } from '../metadata/picker.js';
 
-import { requestLink } from '../streaming/player.js';
+import { requestLink, startPlayer } from '../streaming/player.js';
 import { startQueueFromItem } from '../streaming/playlist.js';
 import { downloadFile } from '../streaming/download.js';
 import { createLibraryCard } from './library-renderer.js';
 import { createLibraryGrid } from './library-grid.js';
 import { loadAppLibrary, addToAppLibrary } from './app-library.js';
+import { getPlayableSource } from '../utils/streams.js';
 
 export { downloadFile } from '../streaming/download.js';
 
@@ -44,7 +45,7 @@ export function initializeLibraryTabs() {
 //#region Torbox
 let libraryRequestId = 0;
 let usenetDownloads = [];
-const getCloudDownloads = () => [...appState.allTorrents, ...usenetDownloads];
+export const getCloudDownloads = () => [...appState.allTorrents, ...usenetDownloads];
 
 export async function fetchLibrary() {
     const key = getCurrentUserSettings().user_preferences.torboxApiKey;
@@ -413,7 +414,7 @@ function renderItem(item) {
                 showToast('Sign in to add cloud items to your library.', 'error');
                 return;
             }
-            
+
             btn.disabled = true;
             btn.title = 'Adding to library…';
             btn.setAttribute('aria-label', 'Adding to library');
@@ -476,26 +477,10 @@ function renderItem(item) {
             }
         }
 
-        if (item.mediaText == "Movie" || item.mediaText == "Single Episode") {
-            if (!playableFile) return showToast("No playable files found.", "error");
-            const parsed = parseMediaData(playableFile.short_name || playableFile.name);
-            const torrentInfo = parseMediaData(t.name);
-            const current = startQueueFromItem({
-                tid: t.id, fid: playableFile.id, torrentName: t.name, fileName: playableFile.name,
-                torboxType: t.torboxType,
-                hash: t.hash,
-                title: item.name, thumbnail: item.poster,
-                tmdbId: item.tmdbId?.id,
-                mediaType: item.mediaText === 'Movie' ? 'movie' : 'tv',
-                seasonNumber: parsed.seasons?.[0] ?? torrentInfo.seasons?.[0] ?? 1,
-                episodeNumber: parsed.episodes?.[0] ?? torrentInfo.episodes?.[0]
-            });
-            requestLink(current.tid, current.fid, current.torrentName, current.fileName, current.uid);
-        } else {
-            let libraryData = { torrents: [] };
-            libraryData.torrents.push(t);
-            openPicker(libraryData, item.tmdbId?.id);
-        }
+        let libraryData = { torrents: [] };
+        libraryData.torrents.push(t);
+
+        openPicker(libraryData, item.tmdbId?.id);
     });
 
     return card;

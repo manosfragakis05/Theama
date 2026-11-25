@@ -7,14 +7,10 @@
 import { supabase } from '../user-data/db.js';
 import { appState, showToast } from '../services/config.js';
 
-import { requestLink, startPlayer } from '../streaming/player.js';
 import { createLibraryCard } from './library-renderer.js';
 import { openPicker } from '../metadata/picker.js';
-import { mediaStore } from '../api.js';
-import { getPlayableSource, getTorrentObjectFromHash } from '../utils/streams.js';
+import { getTorrentObjectFromHash } from '../utils/streams.js';
 
-
-const NO_SOURCE_MESSAGE = 'No files was found for this item.';
 
 //#region Manage Library
 export async function addToGlobalMedia(mediaData) {
@@ -33,11 +29,11 @@ export async function addToGlobalMedia(mediaData) {
 }
 
 export async function linkHashToMedia(mediaData, sourceKey = null) {
-    if (!appState.currentUser) return;
+    if (!appState.currentUser || typeof sourceKey !== 'string' || !sourceKey) return;
     const userId = appState.currentUser.id;
 
     let sourceEpisode = "";
-    if (mediaData.activeEpisode && mediaData.activeSeason) {
+    if (mediaData.activeEpisode != null && mediaData.activeSeason != null) {
         sourceEpisode = `${mediaData.activeSeason}:${mediaData.activeEpisode}`;
     }
 
@@ -96,52 +92,62 @@ export async function linkHashToMedia(mediaData, sourceKey = null) {
     }
 }
 
-export async function addToAppLibrary(item, sourceKey = null) {
-    const type = item.type;
-
-    const userId = appState.currentUser?.id;
-    if (!userId) throw new Error('Sign in to add cloud items to your library.');
+export async function addToAppLibrary(item, sourceKey) {
+    if (!item || !sourceKey) return;
 
     const mediaData = {
         id: item.id,
         tmdbId: item.tmdbId,
-        type,
+        type: item.type,
         title: item.title,
         poster: item.poster || null,
         baseUrl: item.baseUrl || null
     };
+    if (Object.values(mediaData).some(value => !value || (typeof value === 'string' && !value.trim()))) return;
+
+    const userId = appState.currentUser?.id;
+    if (!userId) throw new Error('Sign in to add cloud items to your library.');
+
     await addToGlobalMedia(mediaData);
 
-    const globalMedia = mediaStore.get();
-    if (globalMedia && globalMedia.activeEpisode && globalMedia.activeSeason) {
-        mediaData.activeEpisode = globalMedia.activeEpisode;
-        mediaData.activeSeason = globalMedia.activeSeason;
-    }
-    console.log(mediaData, sourceKey);
+    mediaData.activeEpisode = item.activeEpisode ?? null;
+    mediaData.activeSeason = item.activeSeason ?? null;
 
-    if (sourceKey) {
-        try {
-            saveEpisodeUrl(mediaData, sourceKey);
-            await linkHashToMedia(mediaData, sourceKey);
-        } catch (error) {
-            showToast(error.message || 'Could not add this source.', 'error');
-        }
+    try {
+        saveEpisodeUrl(mediaData, sourceKey);
+        await linkHashToMedia(mediaData, sourceKey);
+    } catch (error) {
+        showToast(error.message || 'Could not add this source.', 'error');
+        return;
     }
 
     await loadAppLibrary();
     return true;
 }
 
+function readEpisodeUrls(userId) {
+    try {
+        const urls = JSON.parse(localStorage.getItem(`library_episode_urls_${userId}`) || '{}');
+        if (!urls || typeof urls !== 'object' || Array.isArray(urls)) return {};
+        return Object.fromEntries(Object.entries(urls).filter(([, episodes]) =>
+            episodes && typeof episodes === 'object' && !Array.isArray(episodes)));
+    } catch {
+        return {};
+    }
+}
+
 export function saveEpisodeUrl(mediaData, sourceKey) {
     const url = typeof sourceKey === 'string' ? sourceKey.trim() : '';
     const userId = appState.currentUser?.id;
 
-    if (!userId || !mediaData.id || !/^https?:\/\//i.test(url)
-        || mediaData.activeSeason == null || mediaData.activeEpisode == null) return;
+    if (!userId || !mediaData.id || !/^https?:\/\//i.test(url)) return;
 
     const storageKey = `library_episode_urls_${userId}`;
-    const episodeUrls = JSON.parse(localStorage.getItem(storageKey) || '{}');
-    const episode = `${mediaData.activeSeason}:${mediaData.activeEpisode}`;
+    const episodeUrls = readEpisodeUrls(userId);
+    const episode = mediaData.type === 'movie'
+        ? mediaData.tmdbId
+        : `${mediaData.activeSeason}:${mediaData.activeEpisode}`;
+
     episodeUrls[mediaData.id] ??= {};
     episodeUrls[mediaData.id][episode] = url;
     localStorage.setItem(storageKey, JSON.stringify(episodeUrls));
@@ -157,6 +163,13 @@ async function removeFromAppLibrary(mediaIds, { message = 'Remove this media fro
             .in('media_id', mediaIds);
         if (error) throw error;
         if (userId !== appState.currentUser?.id) return;
+        try {
+            const episodeUrls = readEpisodeUrls(userId);
+            for (const mediaId of mediaIds) delete episodeUrls[mediaId];
+            localStorage.setItem(`library_episode_urls_${userId}`, JSON.stringify(episodeUrls));
+        } catch (error) {
+            console.warn('Could not clear local library URLs:', error);
+        }
         await loadAppLibrary();
         showToast('Removed from your library.', 'success');
     } catch (error) {
@@ -264,8 +277,9 @@ export async function fetchAppLibraryData() {
             mediaGroups.set(groupKey, media);
         }
         if (!media.mediaIds.includes(row.media_id)) media.mediaIds.push(row.media_id);
-        if (row.source_episode && isUrl) {
-            media.sourceEpisode[row.source_episode] ??= isUrl ? value : null;
+        const sourceEpisode = row.global_media?.media_type === 'movie' ? tmdbId : row.source_episode;
+        if (sourceEpisode && isUrl) {
+            media.sourceEpisode[sourceEpisode] ??= value;
         }
         if (value) media.sources.push(source);
     }
@@ -278,8 +292,6 @@ export function renderAppLibrary(items) {
     if (!list) return;
     const userId = appState.currentUser?.id;
     const cards = document.createDocumentFragment();
-
-    console.log(items);
 
     for (const media of items) {
         const hashes = media.sources.filter(source => source.hash);
@@ -307,15 +319,12 @@ export function renderAppLibrary(items) {
             const action = event.target.closest('button')?.dataset.action;
             if (action) event.stopPropagation();
             if (busy || userId !== appState.currentUser?.id) return;
+
             if (action === 'delete') {
                 await removeFromAppLibrary(mediaIds, { userId });
                 return;
             }
             if (action === 'download' && url) return;
-            if (!hashes.length && !url) {
-                showToast(NO_SOURCE_MESSAGE, 'info');
-                return;
-            }
             if (!action && appState.clickCooldown) {
                 showToast('Please wait a moment.');
                 return;
@@ -330,52 +339,41 @@ export function renderAppLibrary(items) {
 
             // Normal click
             try {
-                if (!isPacked && mediaText == "Movie") {
-                    const formattedMedia = {
-                        hash: hashes[0].hash,
-                        fid: media.fid || null,
-                        sourceUrl: url,
-                        id: mediaIds[0],
-                        mediaType: media.media_type,
-                        seasonNumber: media.seasonNumber,
-                        episodeNumber: media.episodeNumber
-                    }
-                    console.log(formattedMedia);
-                    
-                    const source = await getPlayableSource(formattedMedia);
-                    console.log(source);
-                    startPlayer(source, media.title, formattedMedia)
-                    return;
-                }
+                console.log(media);
 
                 let libraryData = [];
 
+                libraryData.type = media.media_type;
                 libraryData.savedId = media.id || mediaIds[0];
 
                 // Local url/episode saves
-                const storageKey = `library_episode_urls_${userId}`;
-                const savedUrls = JSON.parse(localStorage.getItem(storageKey) || '{}');
-                const savedMedia = savedUrls[media.id]
-                
-                if(savedMedia) {
+                const savedUrls = readEpisodeUrls(userId);
+                const savedMedia = {};
+                for (const mediaId of [...mediaIds].reverse()) {
+                    Object.assign(savedMedia, savedUrls[mediaId]);
+                }
+
+                if (Object.keys(savedMedia).length) {
                     libraryData.savedEpisodes = savedMedia;
                 }
-                
+
                 // URL ONLY SUPABASE EPISODES
-                if(Object.keys(media.sourceEpisode).length > 0) {
-                    libraryData.sourceEpisodes = media.sourceEpisode;
-                }
+                libraryData.sourceEpisodes = media.sourceEpisode;
 
                 if (hashes.length > 0) {
-                    const torrents = await Promise.all(hashes.map(async (source) => {
-                        const torrent = await getTorrentObjectFromHash(source.hash);
-
-                        return torrent;
-                    }));
-
-                    libraryData.torrents = torrents;
+                    const results = await Promise.allSettled(hashes.map(source =>
+                        getTorrentObjectFromHash(source.hash)));
+                    libraryData.torrents = results
+                        .filter(result => result.status === 'fulfilled')
+                        .map(result => result.value);
                 }
-                
+
+                if (userId !== appState.currentUser?.id) return;
+                const failedCount = hashes.length - (libraryData.torrents?.length || 0);
+                if (failedCount) {
+                    showToast(`${failedCount} torrent source${failedCount === 1 ? '' : 's'} could not be loaded.`, 'info');
+                }
+
                 await openPicker(
                     libraryData,
                     media.tmdb_id,
