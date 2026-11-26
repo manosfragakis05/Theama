@@ -15,12 +15,18 @@ import {
 } from '../streaming/playlist.js';
 
 import { fetchAnimeMapping } from '../api.js';
-import { getTmdbId, getTmdbSeasonEpisodes, getTmdbShowDetails } from './metadata.js';
+import {
+    fetchMediaMetadata, formatMediaMetadata,
+    getTmdbId,
+    getTmdbSeasonEpisodes
+} from './metadata.js';
+
 import { getPlayableSource } from '../utils/streams.js';
 import { fetchWatchProgress } from '../user-data/watch-history.js';
 
 //#region Open Logic
 let pickerGeneration = 0;
+
 export async function openPicker(libraryData, tmdbId, title) {
     const generation = ++pickerGeneration;
     const userId = appState.currentUser?.id;
@@ -42,25 +48,29 @@ export async function openPicker(libraryData, tmdbId, title) {
 
     const watchProgress = await fetchWatchProgress(tmdbId, userId);
 
+    // Basic Metadata
+    const mediaMetadata = await fetchMediaMetadata(libraryData.savedId, libraryData.baseUrl, libraryData.type);
+    const formattedMetadata = formatMediaMetadata(mediaMetadata);
+    console.log(formattedMetadata);
+    
     const torrentGroups = await buildTorrentGroups(torrents);
-
+    
     const urlEpisodes = { ...cloudEpisodes, ...localEpisodes };
-    const urlGroups = buildUrlGroups(urlEpisodes, libraryData.type, cleanName);
+    const urlGroups = buildUrlGroups(urlEpisodes, libraryData.type, cleanName, formattedMetadata?.poster);
 
-    let groups = await loadEpisodeGroups(mergePickerGroups(torrentGroups, urlGroups), tmdbId);
+    let groups = await loadEpisodeGroups(mergePickerGroups(torrentGroups, urlGroups), formattedMetadata, tmdbId);
     groups.savedId = libraryData.savedId;
 
     if (generation !== pickerGeneration) return;
     if (userId !== appState.currentUser?.id) return;
 
-    console.log(groups);
     const normalizedGroups = normalizePickerGroups(groups);
-    console.log(normalizedGroups);
 
     const fallbackImage = torrents.map(torrent => document.getElementById(`img-${torrent.id}`)?.src).find(Boolean) || '';
     const pickerData = preparePickerGroups(normalizedGroups, { title: cleanName, tmdbId, fallbackImage, watchProgress });
+    console.log(pickerData, normalizedGroups);
 
-    renderPickerUI(pickerData, list);
+    renderPickerUI(pickerData, list, formattedMetadata);
 }
 
 export function closePicker() {
@@ -239,7 +249,7 @@ function normalizePickerGroups(groups = {}) {
 
 //#region Process Groups
 // Movie URL keys are TMDB IDs; series URL keys are "season:episode".
-function buildUrlGroups(urlEpisodes = {}, mediaType = 'tv', title = '') {
+function buildUrlGroups(urlEpisodes = {}, mediaType = 'tv', title = '', poster = '') {
     const urlGroups = {};
     const isMovie = mediaType === 'movie';
 
@@ -278,6 +288,7 @@ function buildUrlGroups(urlEpisodes = {}, mediaType = 'tv', title = '') {
         urlGroups[groupKey].files.push({
             originalFile: null,
             fileTitle: isMovie ? title || `Movie ${tmdbId}` : `Episode ${episodeNumber}`,
+            displayThumbnail: isMovie ? poster : null,
             year: null,
             tmdbId,
             mediaType: isMovie ? 'movie' : 'tv',
@@ -493,6 +504,8 @@ async function preProcessEpisodeTorrentData(videoFiles, fallbackShowName = 'Seas
             tmdbId: entry.tmdbId ?? null,
             mediaType: entry.fileType === 'Movie' ? 'movie' : null,
             displayTitle: entry.displayTitle ?? null,
+            displayThumbnail: entry.fullTMDB?.poster_path
+                ? `https://image.tmdb.org/t/p/w500${entry.fullTMDB.poster_path}` : null,
             season: targetSeason.label,
             tmdbSeason: targetSeason.tmdbSeasonNumber,
             episode: entry.fileEpisode,
@@ -637,7 +650,6 @@ function preparePickerGroups(franchiseGroups, { title: cleanName = '', tmdbId = 
     // Merge distinct episodes by default and retain each source as an alternative.
     const seasonsByKey = new Map();
     const seasonSources = new Map();
-    const overlappingSeasons = new Set();
     const watchedCounts = watchProgress?.watched_counts || {};
     const position = Number(watchProgress?.position_seconds);
     const duration = Number(watchProgress?.duration_seconds);
@@ -660,7 +672,6 @@ function preparePickerGroups(franchiseGroups, { title: cleanName = '', tmdbId = 
         const variants = new Map();
         if (!seasonSources.has(groupData.seasonKey)) seasonSources.set(groupData.seasonKey, new Map());
         const sources = seasonSources.get(groupData.seasonKey);
-        const episodeSources = new Map();
 
         for (const file of groupData.files || []) {
             const source = file.sourceType === 'url' ? { sourceType: 'url', name: 'Saved URLs' }
@@ -672,12 +683,6 @@ function preparePickerGroups(franchiseGroups, { title: cleanName = '', tmdbId = 
             if (!variants.has(sourceKey)) variants.set(sourceKey, []);
             variants.get(sourceKey).push(file);
             sources.set(sourceKey, source);
-
-            const episode = duplicateEpisodeNumber(file);
-            if (episode != null) {
-                if (episodeSources.has(episode) && episodeSources.get(episode) !== sourceKey) overlappingSeasons.add(groupData.seasonKey);
-                episodeSources.set(episode, sourceKey);
-            }
         }
         variants.set(MERGED_SOURCE, groupData.files || []);
 
@@ -772,12 +777,12 @@ function preparePickerGroups(franchiseGroups, { title: cleanName = '', tmdbId = 
             const size = Number.isFinite(source.size) ? ` · ${(source.size / 1073741824).toFixed(1)} GB` : '';
             return `${source.name || 'Torrent'}${size}`;
         });
-        season.sourceSelector = sources.size > 1 && overlappingSeasons.has(season.key) ? {
+        season.sourceSelector = sources.size > 0 ? {
             id: 'library-torrent-select',
             label: `Source for ${season.label}`,
-            value: MERGED_SOURCE,
+            value: sources.size === 1 ? sources.keys().next().value : MERGED_SOURCE,
             options: [
-                { value: MERGED_SOURCE, label: 'All sources (merged)' },
+                ...(sources.size > 1 ? [{ value: MERGED_SOURCE, label: 'All sources (merged)' }] : []),
                 ...[...sources.keys()].map((sourceKey, index) => ({
                     value: sourceKey,
                     label: labels.indexOf(labels[index]) !== labels.lastIndexOf(labels[index])
@@ -792,23 +797,26 @@ function preparePickerGroups(franchiseGroups, { title: cleanName = '', tmdbId = 
     return { title: cleanName, tmdbId, seasons };
 }
 
-async function loadEpisodeGroups(franchiseGroups, tmdbId) {
+async function loadEpisodeGroups(franchiseGroups, formattedMedia, tmdbId) {
+    tmdbId ??= formattedMedia?.tmdbId;
 
     // We only process TMDB metadata if we have a valid ID
     if (tmdbId && Object.values(franchiseGroups).some(group => group.files?.length && group.fileType !== 'Movie')) {
-        const showDetails = await getTmdbShowDetails(tmdbId);
+        // Add-on metadata may not include the TMDB season summary needed for numbering.
+        const showMetadata = Array.isArray(formattedMedia?.raw?.seasons)
+            ? formattedMedia
+            : formatMediaMetadata(await fetchMediaMetadata(tmdbId, null, 'tv'));
+        const tmdbSeasons = showMetadata?.raw?.seasons;
 
-        if (showDetails && showDetails.seasons) {
-            const showBackdrop = showDetails.backdrop_path
-                ? `https://image.tmdb.org/t/p/w500${showDetails.backdrop_path}`
-                : null;
+        if (Array.isArray(tmdbSeasons)) {
+            const showBackdrop = formattedMedia?.backdrop || showMetadata.backdrop || null;
 
             const seasonCache = {};
             const aniZipCache = {};
             const animeData = await fetchAnimeMapping(tmdbId);
             const rawMatches = animeData?.data?.matches || animeData?.matches;
             const matches = Array.isArray(rawMatches) ? rawMatches : [];
-            const imdbId = showDetails.external_ids?.imdb_id || null;
+            const imdbId = showMetadata.imdbId || formattedMedia?.imdbId || null;
             const getMediaId = (season, episode) => {
                 const seasonMappings = matches
                     .filter(match => match.kitsu_id && (match.season?.tmdb ?? 1) === season)
@@ -829,7 +837,7 @@ async function loadEpisodeGroups(franchiseGroups, tmdbId) {
                     continue;
                 }
 
-                const tmdbSeasonObj = showDetails.seasons.find(
+                const tmdbSeasonObj = tmdbSeasons.find(
                     s => s.season_number === group.tmdbSeason && s.episode_count > 0
                 );
                 const tmdbHasSeason = Boolean(tmdbSeasonObj);
@@ -865,7 +873,7 @@ async function loadEpisodeGroups(franchiseGroups, tmdbId) {
                         if (aniEp?.absoluteEpisodeNumber) {
                             const tmdbMapped = mapAbsoluteToTmdbRelative(
                                 aniEp.absoluteEpisodeNumber,
-                                showDetails.seasons
+                                tmdbSeasons
                             );
 
                             if (tmdbMapped) {
@@ -879,14 +887,14 @@ async function loadEpisodeGroups(franchiseGroups, tmdbId) {
                         const startsRelative = group.files.some(f =>
                             f.sourceTorrent === file.sourceTorrent && parseInt(f.episode) === 1);
                         const priorEpisodesOffset = startsRelative
-                            ? showDetails.seasons
+                            ? tmdbSeasons
                                 .filter(s => s.season_number > 0 && s.season_number < group.tmdbSeason)
                                 .reduce((sum, s) => sum + s.episode_count, 0)
                             : 0;
 
                         const tmdbMapped = mapAbsoluteToTmdbRelative(
                             priorEpisodesOffset + targetEp,
-                            showDetails.seasons
+                            tmdbSeasons
                         );
 
                         if (tmdbMapped) {
@@ -963,7 +971,7 @@ function preparePickerQueue(episodes, startEpisode = null) {
 
 // Resolve by file identity: TMDB numbering can differ from torrent episode numbering.
 export async function buildRemainingTorrentQueue(torrent, tmdbId, fileId, title, thumbnail = '') {
-    const franchiseGroups = await loadEpisodeGroups(await buildTorrentGroups([torrent]), tmdbId);
+    const franchiseGroups = await loadEpisodeGroups(await buildTorrentGroups([torrent]), null, tmdbId);
     const pickerData = preparePickerGroups(franchiseGroups, { title, tmdbId, fallbackImage: thumbnail });
     const season = pickerData.seasons.find(season => season.episodes.some(
         item => String(item.fid) === String(fileId)));
@@ -973,8 +981,45 @@ export async function buildRemainingTorrentQueue(torrent, tmdbId, fileId, title,
 }
 
 //#region UI Rendering
-function renderPickerUI(pickerData, listElement) {
+function renderPickerUI(pickerData, listElement, mediaMetadata) {
     const { title, seasons } = pickerData;
+    const picker = document.getElementById('file-picker');
+    const poster = picker.querySelector('#picker-poster');
+    const backdrop = picker.querySelector('#picker-backdrop');
+    const description = picker.querySelector('#picker-description');
+
+    if (poster) {
+        if (mediaMetadata?.poster) {
+            poster.src = mediaMetadata.poster;
+        } else {
+            poster.removeAttribute('src');
+        }
+        poster.alt = `${mediaMetadata?.title || title || 'Media'} poster`;
+    }
+    if (backdrop) {
+        if (mediaMetadata?.backdrop) {
+            backdrop.src = mediaMetadata.backdrop;
+        } else {
+            backdrop.removeAttribute('src');
+        }
+    }
+    if (description) {
+        description.textContent = mediaMetadata?.description || 'No description available.';
+    }
+
+    const updateMetadataField = (selector, value) => {
+        const element = picker.querySelector(selector);
+        if (!element) return;
+        element.textContent = value == null ? '' : String(value);
+        element.classList.toggle('hidden', value == null || value === '');
+    };
+    updateMetadataField('#picker-rating', Number.isFinite(mediaMetadata?.rating)
+        ? `${mediaMetadata.rating.toFixed(1)} / 10` : '');
+    updateMetadataField('#picker-year', mediaMetadata?.year);
+    updateMetadataField('#picker-runtime', mediaMetadata?.runtime);
+    updateMetadataField('#picker-cast', mediaMetadata?.cast?.length
+        ? `Cast: ${mediaMetadata.cast.join(', ')}` : '');
+
     const selectedSources = new Map();
 
     let visibleEpisodes = [];
@@ -999,7 +1044,7 @@ function renderPickerUI(pickerData, listElement) {
 
     const getSeason = (seasonKey) => {
         const season = seasons.find(season => season.key === seasonKey);
-        const sourceKey = selectedSources.get(seasonKey) || MERGED_SOURCE;
+        const sourceKey = selectedSources.get(seasonKey) ?? season.sourceSelector?.value ?? MERGED_SOURCE;
         const selected = season.variants[sourceKey];
         visibleEpisodes = selected.episodes;
         const sourceSelector = season.sourceSelector ? {
@@ -1013,7 +1058,7 @@ function renderPickerUI(pickerData, listElement) {
     };
 
     renderPickerView({
-        title,
+        title: mediaMetadata?.title || title,
         seasons,
         getSeason,
         onPlay: () => playEpisode(),
@@ -1094,10 +1139,14 @@ function renderPickerView({ title, seasons, getSeason, onPlay, onShuffle, onQueu
 
         group.episodes.forEach(episode => {
             const card = cardTemplate.cloneNode(true);
-            card.querySelector('.picker-episode-badge').classList.add(episode.badgeColor);
+            card.dataset.artwork = episode.fileType === 'Movie' ? 'poster' : 'thumbnail';
+            const badge = card.querySelector('.picker-episode-badge');
+            badge.classList.add(episode.badgeColor);
+            badge.classList.toggle('hidden', episode.fileType === 'Movie');
+            badge.parentElement.classList.toggle('hidden', episode.fileType === 'Movie' && !episode.isExtended);
             card.querySelector('.picker-episode-extended').classList.toggle('hidden', !episode.isExtended);
             card.querySelector('.picker-episode-size').textContent = episode.size;
-            card.querySelector('.picker-episode-badge').textContent = episode.badge;
+            badge.textContent = episode.badge;
             card.querySelector('.picker-episode-title').textContent = episode.title;
             card.querySelector('.picker-episode-watched').classList.toggle('hidden', !episode.isWatched);
             card.querySelectorAll('[data-action="download"]').forEach(button => {
@@ -1198,7 +1247,7 @@ function renderPickerView({ title, seasons, getSeason, onPlay, onShuffle, onQueu
         }
     };
 
-    if (seasons.length > 1) {
+    if (seasons.length > 0) {
         seasonContainer.innerHTML = `
             <select id="library-season-select" aria-label="Season" class="min-h-11 min-w-0 max-w-full rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 shadow-lg shadow-black/10 hover:bg-slate-700 cursor-pointer outline-none">
                 <button type="button" class="flex w-full items-center justify-between gap-3 text-left">

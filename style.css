@@ -486,6 +486,12 @@ option:hover {
     padding-bottom: max(4.5rem, calc(env(safe-area-inset-bottom) + 2.5rem));
 }
 
+/* Fade the image itself; the content above it stays transparent. */
+#picker-backdrop {
+    mask-image: linear-gradient(to bottom,
+        #000 var(--picker-gradient-start),
+        transparent var(--picker-gradient-end));
+}
 
 /* Keep the existing picker title and controls within the full-screen hero. */
 #file-picker #picker-title > div {

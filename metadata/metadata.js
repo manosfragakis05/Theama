@@ -7,6 +7,7 @@
 
 // We need your TMDB key from your existing api.js file
 import { TMDB_KEY } from '../services/config.js';
+import { smartFetch } from '../services/config.js';
 
 //#region TMDB Logic
 export async function getPosterForLibrary(tmdbId, type) {
@@ -72,19 +73,6 @@ export async function getTmdbId(title, year, type = 'tv') {
 }
 //#endregion
 
-
-export async function getTmdbShowDetails(tmdbId) {
-    try {
-        const url = `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_KEY}&append_to_response=external_ids`;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error('TMDB Fetch Failed');
-        return await res.json();
-    } catch (e) {
-        console.error(e);
-        return null;
-    }
-}
-
 // 2. Fetch a specific season to get high-quality thumbnails and titles
 export async function getTmdbSeasonEpisodes(tmdbId, seasonNumber) {
     try {
@@ -97,4 +85,81 @@ export async function getTmdbSeasonEpisodes(tmdbId, seasonNumber) {
         console.error(e);
         return [];
     }
+}
+
+export async function fetchMediaMetadata(id, baseUrl, type) {
+    if (!id || !type) return null;
+
+    try {
+        const mediaType = baseUrl
+            ? (type === 'tv' ? 'series' : type)
+            : (type === 'series' ? 'tv' : type);
+        const url = baseUrl
+            ? `${baseUrl.replace(/\/+$/, '')}/meta/${mediaType}/${id}.json`
+            : `https://api.themoviedb.org/3/${mediaType}/${id}?api_key=${TMDB_KEY}&language=en-US&append_to_response=credits,external_ids`;
+        const response = baseUrl ? await smartFetch(url) : await fetch(url);
+        if (!response.ok) throw new Error(`Metadata fetch failed: ${response.status}`);
+
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Failed to fetch media metadata:', error);
+        return null;
+    }
+}
+
+// Normalize common fields and retain all provider-specific data in raw.
+export function formatMediaMetadata(result) {
+    if (!result || typeof result !== 'object' || Array.isArray(result)) return null;
+    const isAddon = Object.prototype.hasOwnProperty.call(result, 'meta');
+    const data = isAddon ? result.meta : result;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+
+    const toArray = value => value == null || value === '' ? [] : Array.isArray(value) ? value : [value];
+    const names = value => toArray(value).map(item => typeof item === 'string' ? item : item?.name).filter(Boolean);
+    const imageUrl = (path, size) => typeof path !== 'string' || !path
+        ? '' : path.startsWith('/') ? `https://image.tmdb.org/t/p/${size}${path}` : path;
+    const releaseDate = data.release_date || data.first_air_date || data.released || null;
+    const year = parseInt(data.year || data.releaseInfo || releaseDate, 10);
+    const runtime = data.runtime ?? data.episode_run_time?.[0] ?? null;
+    const rating = parseFloat(data.vote_average ?? data.imdbRating ?? data.rating);
+    const tmdbId = data._tmdbId ?? data.tmdb_id ?? data.tmdbId ?? data.external_ids?.tmdb_id
+        ?? (isAddon ? null : data.id ?? null);
+    const imdbId = data.external_ids?.imdb_id || data._imdbId || data.imdb_id || data.imdbId
+        || (/^tt\d+$/.test(String(data.id)) ? data.id : null);
+    const type = data.type || data.media_type || (data.first_air_date ? 'tv' : data.release_date ? 'movie' : null);
+    const genres = names(data.genres ?? data.genre);
+    const crew = Array.isArray(data.credits?.crew) ? data.credits.crew : [];
+
+    return {
+        id: data.id ?? null,
+        tmdbId,
+        imdbId,
+        externalIds: { ...data.external_ids, tmdb_id: tmdbId, imdb_id: imdbId },
+        type: type === 'series' ? 'tv' : type,
+        title: data.title || data.name || '',
+        originalTitle: data.original_title || data.original_name || data.title || data.name || '',
+        poster: imageUrl(data.poster || data.poster_path, 'w500'),
+        backdrop: imageUrl(data.background || data.backdrop || data.backdrop_path, 'original'),
+        logo: imageUrl(data.logo, 'original'),
+        description: data.description || data.overview || '',
+        tagline: data.tagline || '',
+        year: Number.isFinite(year) ? year : null,
+        releaseDate,
+        releaseInfo: data.releaseInfo || '',
+        runtime: typeof runtime === 'number' ? `${runtime}m` : runtime || '',
+        rating: Number.isFinite(rating) ? rating : null,
+        voteCount: data.vote_count ?? null,
+        genres,
+        cast: names(data.credits?.cast ?? data.app_extras?.cast ?? data.cast),
+        directors: names(data.director ?? crew.filter(person => person.job === 'Director')),
+        writers: names(data.writer ?? crew.filter(person => ['Writer', 'Screenplay', 'Story'].includes(person.job))),
+        countries: names(data.country ?? data.production_countries),
+        languages: toArray(data.spoken_languages).map(language => language?.english_name || language?.name).filter(Boolean),
+        originalLanguage: data.original_language || '',
+        status: data.status || '',
+        homepage: data.homepage || '',
+        trailers: data.trailers ?? data.videos?.results ?? [],
+        raw: data
+    };
 }

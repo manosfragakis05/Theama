@@ -345,6 +345,7 @@ export function renderAppLibrary(items) {
 
                 libraryData.type = media.media_type;
                 libraryData.savedId = media.id || mediaIds[0];
+                libraryData.baseUrl = media?.base_url;
 
                 // Local url/episode saves
                 const savedUrls = readEpisodeUrls(userId);

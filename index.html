@@ -1288,20 +1288,18 @@
         role="dialog" aria-modal="true" aria-label="Media files">
 
         <button id="close-episode-picker-btn" type="button" aria-label="Close file picker"
-            class="fixed top-[max(1.5rem,env(safe-area-inset-top))] right-6 z-20 bg-slate-900/40 backdrop-blur-xl p-3 rounded-full text-slate-200 hover:text-white hover:bg-blue-600 border border-white/10 shadow-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
+            class="fixed top-[max(1.5rem,env(safe-area-inset-top))] right-6 z-20 bg-slate-900/40 p-3 rounded-full text-slate-200 hover:text-white hover:bg-blue-600 border border-white/10 shadow-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" aria-hidden="true">
                 <use href="#icon-close"></use>
             </svg>
         </button>
 
-        <!-- Presentation placeholders; metadata will be connected separately. -->
-        <div id="picker-backdrop"
-            class="relative h-[45vh] md:h-[65vh] w-full bg-slate-800 bg-cover bg-[center_top_20%]" aria-hidden="true">
-            <div class="absolute inset-0 bg-gradient-to-br from-blue-900/20 via-transparent to-slate-900/50"></div>
-            <div class="absolute bottom-0 left-0 w-full h-[70%] bg-gradient-to-t from-slate-900 via-slate-900/60 to-transparent"></div>
-        </div>
+        <!-- The full image keeps its natural height. Adjust only its fade here. -->
+        <img id="picker-backdrop" alt="" aria-hidden="true"
+            style="--picker-gradient-start: 10%; --picker-gradient-end: 90%;"
+            class="pointer-events-none absolute inset-x-0 top-0 h-auto w-full [&:not([src])]:hidden">
 
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 relative z-10 -mt-32 md:-mt-48 pb-[max(5rem,env(safe-area-inset-bottom))]">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 relative z-10 bg-transparent pt-[25vh] md:pt-[35vh] pb-[max(5rem,env(safe-area-inset-bottom))]">
             <div class="flex flex-col md:flex-row gap-8 md:gap-12 items-center md:items-start">
                 <div class="shrink-0 w-[60vw] sm:w-[220px] md:w-[260px] lg:w-[320px] aspect-[2/3] relative rounded-2xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] border border-slate-700/50 bg-slate-800">
                     <div class="absolute inset-0 flex flex-col items-center justify-center gap-3 text-slate-500" aria-hidden="true">
@@ -1320,7 +1318,6 @@
                         <div class="flex w-full flex-wrap items-center gap-x-3 gap-y-2 md:flex-nowrap">
                             <span id="picker-series-title" class="max-w-full font-bold text-slate-100 text-base [overflow-wrap:anywhere] md:min-w-0 md:flex-1 md:truncate md:text-xl"></span>
                             <div class="flex min-w-0 max-w-full flex-auto items-center justify-end gap-2 md:flex-none md:gap-3">
-                                <div id="season-dropdown-container" class="relative inline-flex min-w-0 flex-1 items-center md:flex-none"></div>
                                 <div id="picker-actions" class="relative shrink-0">
                                     <button id="picker-actions-toggle" type="button" aria-label="Playback and queue options" aria-expanded="false" aria-controls="picker-actions-menu"
                                         class="group grid h-11 w-11 place-items-center rounded-lg text-slate-400 transition-colors hover:text-slate-200 aria-expanded:text-slate-200 md:hidden">
@@ -1353,15 +1350,25 @@
                             </div>
                         </div>
                     </div>
+                    <div class="mt-6 flex flex-wrap justify-center md:justify-start items-center gap-3 text-sm font-medium [&:not(:has(>span:not(.hidden)))]:hidden">
+                        <span id="picker-rating" class="hidden rounded-md border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-yellow-500"></span>
+                        <span id="picker-year" class="hidden rounded-md border border-slate-700/50 bg-slate-800/80 px-3 py-1 text-slate-300"></span>
+                        <span id="picker-runtime" class="hidden rounded-md border border-slate-700/50 bg-slate-800/80 px-3 py-1 text-slate-300"></span>
+                    </div>
                     <p id="picker-description" class="mt-6 text-center md:text-left text-slate-300 text-base md:text-lg leading-relaxed max-w-4xl">
                         No description available.
                     </p>
+                    <p id="picker-cast" class="hidden mt-6 text-center md:text-left text-slate-400 text-base leading-relaxed max-w-4xl"></p>
                 </div>
             </div>
 
             <section class="mt-10 md:mt-12 border-t border-slate-700/50 pt-6" aria-label="Media files">
-                <div id="library-torrent-select" role="group" aria-label="Source"
-                    class="hidden flex items-center gap-2 mb-5 overflow-x-auto custom-scrollbar overscroll-x-contain pb-2">
+                <div class="flex min-w-0 items-center gap-3 mb-5">
+                    <div id="season-dropdown-container"
+                        class="relative flex min-w-0 max-w-[45%] shrink-0 items-center border-r border-slate-700 pr-3 pb-2 empty:hidden"></div>
+                    <div id="library-torrent-select" role="group" aria-label="Source"
+                        class="hidden draggable-row flex min-w-0 flex-1 items-center gap-2 overflow-x-auto custom-scrollbar overscroll-x-contain pb-2 cursor-grab active:cursor-grabbing select-none">
+                    </div>
                 </div>
                 <div id="picker-list"
                     class="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 auto-rows-max content-start">
@@ -1371,23 +1378,23 @@
     </div>
 
     <template id="picker-episode-card-template">
-        <section class="picker-episode-group col-span-full w-full min-w-0" aria-label="Episode group">
+        <section class="picker-episode-group col-span-full w-full min-w-0 select-none" aria-label="Episode group">
             <h3 class="picker-group-title mb-2 text-lg font-bold text-slate-200">Episodes</h3>
-                    <div class="picker-episode-row draggable-row custom-scrollbar flex w-full min-w-0 items-start gap-4 overflow-x-auto overscroll-x-contain px-1 py-3 cursor-grab select-none active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded-lg"
-                        tabindex="0" role="list" aria-label="Files and episodes">
+                    <div class="picker-episode-row draggable-row custom-scrollbar flex w-full min-w-0 items-start gap-4 overflow-x-auto overscroll-x-contain px-1 py-3 cursor-grab active:cursor-grabbing rounded-lg"
+                        tabindex="-1" role="list" aria-label="Files and episodes">
                         <!-- Clone this card within its group row. Use data-artwork="poster" for portrait artwork. -->
                         <article data-artwork="thumbnail" role="listitem"
-                            class="picker-episode-card group relative flex w-48 min-w-0 flex-none flex-col overflow-hidden rounded-xl border-2 border-slate-700/50 bg-slate-800/40 cursor-pointer transition-colors hover:border-blue-400 focus-within:border-blue-400 md:w-64 data-[artwork=poster]:w-32 md:data-[artwork=poster]:w-40">
+                            class="picker-episode-card group relative flex w-48 min-w-0 flex-none flex-col overflow-hidden rounded-xl border-2 border-slate-700/50 bg-slate-800/40 cursor-pointer transition-colors hover:border-blue-400 focus-within:border-blue-400 md:w-64 data-[artwork=poster]:w-40 md:data-[artwork=poster]:w-48">
                     <div class="picker-episode-artwork relative aspect-video w-full shrink-0 overflow-hidden border-b border-slate-700 bg-slate-900 group-data-[artwork=poster]:aspect-[2/3]">
                         <img loading="lazy" draggable="false" class="absolute inset-0 h-full w-full object-cover transition-opacity md:group-hover:opacity-60 md:group-focus-within:opacity-60" alt="">
                         <span class="picker-episode-watched pointer-events-none absolute right-2 top-2 z-20 hidden h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg flex" role="img" aria-label="Watched" title="Watched">
                             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></svg>
                         </span>
                         <div class="absolute inset-0 z-10 hidden items-center justify-center gap-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 md:flex">
-                            <button type="button" data-action="download" class="flex h-10 w-10 items-center justify-center rounded-full border border-slate-600 bg-slate-800/90 text-white shadow-xl backdrop-blur-md transition-colors hover:bg-slate-700" title="Download to Device">
+                            <button type="button" data-action="download" class="flex h-10 w-10 items-center justify-center rounded-full border border-slate-600 bg-slate-800/90 text-white shadow-xl transition-colors hover:bg-slate-700" title="Download to Device">
                                 <svg class="h-[22px] w-[22px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                             </button>
-                            <button type="button" data-action="queue" class="flex h-10 w-10 items-center justify-center rounded-full border border-slate-600 bg-slate-800/90 text-white shadow-xl backdrop-blur-md transition-colors hover:bg-slate-700" title="Add to Queue">
+                            <button type="button" data-action="queue" class="flex h-10 w-10 items-center justify-center rounded-full border border-slate-600 bg-slate-800/90 text-white shadow-xl transition-colors hover:bg-slate-700" title="Add to Queue">
                                 <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
                             </button>
                         </div>
