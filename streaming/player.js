@@ -229,8 +229,7 @@ export async function startPlayer(url, name, localFileObject = null, media) {
             if (lastSavedSample?.userId === userId && lastSavedSample.position === position
                 && lastSavedSample.duration === duration) return;
 
-            const result = await upsertWatchProgress(position, duration, {
-                media, userId });
+            const result = await upsertWatchProgress(position, duration, media);
 
             if (result) lastSavedSample = { userId, position, duration };
         }).catch(error => {

@@ -342,7 +342,6 @@ async function sendUrltoTorbox(streamUrl) {
             throw new Error(`Add-on request failed (HTTP ${response.status}).`);
         }
 
-        showToast('Add-on pinged. TorBox addition is not validated.', 'info');
         return { response };
     } catch (error) {
         console.error('[TorBox] Add-on request failed:', error);

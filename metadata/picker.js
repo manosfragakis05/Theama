@@ -6,7 +6,7 @@
  */
 
 import { appState, showToast } from '../services/config.js';
-import { parseMediaData } from '../utils/parseMedia.js';
+import { parseMediaData, customParser } from '../utils/parseMedia.js';
 
 import { startPlayer } from '../streaming/player.js';
 import {
@@ -36,6 +36,7 @@ export async function openPicker(libraryData, tmdbId, title) {
     const sourceContainer = document.getElementById('library-torrent-select');
     sourceContainer.replaceChildren();
     sourceContainer.classList.add('hidden');
+    renderPickerSourceBadges(null);
 
     const torrents = libraryData?.torrents || [];
 
@@ -44,11 +45,17 @@ export async function openPicker(libraryData, tmdbId, title) {
 
     picker.classList.remove('hidden');
     list.innerHTML = `<div class="col-span-full flex justify-center p-10">...Loading Spinner...</div>`;
+
+    const id = libraryData.savedId || libraryData.tmdbId || tmdbId;
+    if (!id) {
+        renderPickerUI(buildRawPickerData(torrents, title || torrents[0]?.name || 'Files'), list, null);
+        return;
+    }
+
     const cleanName = title || (torrents[0]?.name ? parseMediaData(torrents[0].name).title : null) || 'Episodes';
 
     const watchProgress = await fetchWatchProgress(tmdbId, userId);
 
-    const id = libraryData.savedId || libraryData.tmdbId;
     // Basic Metadata
     const mediaMetadata = await fetchMediaMetadata(id, libraryData.baseUrl, libraryData.type);
     const formattedMetadata = formatMediaMetadata(mediaMetadata);
@@ -61,9 +68,6 @@ export async function openPicker(libraryData, tmdbId, title) {
         seasonData = formatMediaMetadata(tmdbMediaData)
     }
 
-    console.log(libraryData);
-    console.log(formattedMetadata);
-    console.log(seasonData);
     
     const torrentGroups = await buildTorrentGroups(torrents);
     
@@ -77,6 +81,7 @@ export async function openPicker(libraryData, tmdbId, title) {
     if (userId !== appState.currentUser?.id) return;
 
     const normalizedGroups = normalizePickerGroups(groups);
+    console.log(normalizedGroups);
 
     const fallbackImage = torrents.map(torrent => document.getElementById(`img-${torrent.id}`)?.src).find(Boolean) || '';
     const pickerData = preparePickerGroups(normalizedGroups, { title: cleanName, tmdbId, fallbackImage, watchProgress });
@@ -93,6 +98,65 @@ export function closePicker() {
 //#endregion
 
 //#region Data Grouping
+// Unidentified downloads use file identities and original names without metadata matching.
+function buildRawPickerData(torrents, title) {
+    const groups = torrents.map((torrent, index) => ({
+        key: `files-${index}`,
+        sourceKey: getTorrentKey(torrent),
+        title: torrents.length > 1 ? torrent.name : 'Files',
+        fileType: 'File',
+        episodes: (torrent.files || [])
+            .filter(file => /\.(mkv|mp4|avi|mov)$/i.test(file.name))
+            .map(file => ({
+                tid: torrent.id,
+                fid: file.id,
+                hash: torrent.hash,
+                torboxType: torrent.torboxType === 'usenet' ? 'usenet' : 'torrent',
+                sourceType: 'torrent',
+                tmdbId: null,
+                mediaType: null,
+                seasonNumber: null,
+                episodeNumber: null,
+                watchEpisodeNumber: null,
+                seriesTitle: title,
+                season: 'Files',
+                fileType: 'File',
+                title: file.short_name || file.name,
+                fileName: file.name,
+                torrentName: torrent.name,
+                thumbnail: '',
+                size: Number.isFinite(file.size) ? (file.size / 1073741824).toFixed(2) + ' GB' : '',
+                badge: '',
+                badgeColor: 'bg-blue-600',
+                isExtended: false,
+                isWatched: false,
+                progressInSeconds: 0,
+                progressPercent: null,
+                canDownload: true
+            }))
+    })).filter(group => group.episodes.length > 0);
+
+    const episodes = groups.flatMap(group => group.episodes);
+    const sources = new Map(torrents.map(torrent => [getTorrentKey(torrent), torrent]));
+    const variants = { [MERGED_SOURCE]: { groups, episodes } };
+    for (const group of groups) {
+        if (!variants[group.sourceKey]) variants[group.sourceKey] = { groups: [], episodes: [] };
+        variants[group.sourceKey].groups.push(group);
+        variants[group.sourceKey].episodes.push(...group.episodes);
+    }
+    return {
+        title,
+        tmdbId: null,
+        seasons: episodes.length ? [{
+            key: 'files',
+            label: 'Files',
+            sourceSelector: createPickerSourceSelector(
+                new Map([...sources].filter(([key]) => variants[key])), 'Source for files'),
+            variants
+        }] : []
+    };
+}
+
 const SWITCH_WORDS_REGEX = /(?:^|[\s._\-\[\]()])(MOVIE|OVA|OAD|ODA|ONA|SPECIAL|RECAP|SP|OPENING|NCOP|OP|ENDING|NCED|ED|THEME|PROMO|TEASER|TRAILER|PV|CM)(?:S?\d*[a-z]?)?(?=$|[\s._\-\[\]()])/i;
 const EXTENDED_WORDS_REGEX = /(?:^|[\s._\-\[\]()])(EXTEND(?:ED)?(?:[\s._\-]+(?:EDITION|CUT|VERSION|VER))?|DIRECTOR'?S[\s._\-]+(?:EDITION|CUT|VERSION|VER)|UNCUT|UNRATED)(?=$|[\s._\-\[\]()])/i;
 const MENU_WORDS_REGEX = /(?:^|[\s._\-\[\]()\\/])(?:BD|DVD|BLU[\s._-]*RAY|DISC|DISK)[\s._-]*MENUS?\d*(?=$|[\s._\-\[\]()\\/])/i;
@@ -585,6 +649,31 @@ async function buildTorrentGroups(torrents = []) {
 
 const MERGED_SOURCE = 'merged';
 
+function createPickerSourceSelector(sources, label) {
+    if (!sources.size) return null;
+    const labels = [...sources.values()].map(source => {
+        const size = Number.isFinite(source.size) ? ` · ${(source.size / 1073741824).toFixed(1)} GB` : '';
+        return `${source.name || 'Torrent'}${size}`;
+    });
+
+    const badges = {
+        id: 'library-torrent-select',
+        label,
+        value: sources.size === 1 ? sources.keys().next().value : MERGED_SOURCE,
+        options: [
+            ...(sources.size > 1 ? [{ value: MERGED_SOURCE, label: 'All sources (merged)', sourceData: null }] : []),
+            ...[...sources].map(([sourceKey, source], index) => ({
+                value: sourceKey,
+                label: labels.indexOf(labels[index]) !== labels.lastIndexOf(labels[index])
+                    ? `${labels[index]} — Source ${index + 1}` : labels[index],
+                sourceData: source.sourceType === 'url' || !source.name ? null : customParser(source.name)
+            }))
+        ]
+    };
+    console.log(badges);
+    return badges;
+}
+
 function pickerEpisodeNumber(file) {
     const value = file.relativeEpisode ?? file.episode;
     if (value == null || value === '') return null;
@@ -783,23 +872,7 @@ function preparePickerGroups(franchiseGroups, { title: cleanName = '', tmdbId = 
     const seasons = [...seasonsByKey.values()].sort((a, b) => a.order - b.order);
     for (const season of seasons) {
         const sources = seasonSources.get(season.key);
-        const labels = [...sources.values()].map(source => {
-            const size = Number.isFinite(source.size) ? ` · ${(source.size / 1073741824).toFixed(1)} GB` : '';
-            return `${source.name || 'Torrent'}${size}`;
-        });
-        season.sourceSelector = sources.size > 0 ? {
-            id: 'library-torrent-select',
-            label: `Source for ${season.label}`,
-            value: sources.size === 1 ? sources.keys().next().value : MERGED_SOURCE,
-            options: [
-                ...(sources.size > 1 ? [{ value: MERGED_SOURCE, label: 'All sources (merged)' }] : []),
-                ...[...sources.keys()].map((sourceKey, index) => ({
-                    value: sourceKey,
-                    label: labels.indexOf(labels[index]) !== labels.lastIndexOf(labels[index])
-                        ? `${labels[index]} — Source ${index + 1}` : labels[index]
-                }))
-            ]
-        } : null;
+        season.sourceSelector = createPickerSourceSelector(sources, `Source for ${season.label}`);
         season.groups = season.variants[MERGED_SOURCE].groups;
         season.episodes = season.variants[MERGED_SOURCE].episodes;
     }
@@ -999,6 +1072,39 @@ export async function buildRemainingTorrentQueue(torrent, tmdbId, fileId, title,
 }
 
 //#region UI Rendering
+function renderPickerSourceBadges(sourceData) {
+    const container = document.getElementById('picker-source-details');
+    const template = document.getElementById('picker-source-badge-template');
+    container.replaceChildren();
+    if (!sourceData) return;
+
+    // Badge colors live here; each template exposes matching CSS variables.
+    const fields = [
+        ['resolution', '#93c5fd'],
+        ['quality', '#67e8f9'],
+        ['audio', '#6ee7b7'],
+        ['codec', '#a5b4fc'],
+        ['languages', '#f9a8d4']
+    ];
+
+    for (const [field, color] of fields) {
+        const value = field === 'languages'
+            ? (sourceData.languages?.length ? sourceData.languages : sourceData.languageTags)
+            : sourceData[field];
+        const values = Array.isArray(value) ? value : [value];
+        for (const text of values) {
+            if (typeof text !== 'string' || !text.trim()) continue;
+            const badge = template.content.firstElementChild.cloneNode(true);
+            badge.textContent = text;
+            badge.dataset.field = field;
+            badge.style.setProperty('--badge-color', color);
+            badge.style.setProperty('--badge-bg', `${color}1a`);
+            badge.style.setProperty('--badge-border', `${color}40`);
+            container.appendChild(badge);
+        }
+    }
+}
+
 function renderPickerUI(pickerData, listElement, mediaMetadata) {
     const { title, seasons } = pickerData;
     const picker = document.getElementById('file-picker');
@@ -1045,6 +1151,9 @@ function renderPickerUI(pickerData, listElement, mediaMetadata) {
     let playbackRequested = false;
     const playEpisode = async (selectedEpisode = null, shuffled = false) => {
         if (playbackRequested) return;
+        selectedEpisode ??= shuffled
+            ? visibleEpisodes[Math.floor(Math.random() * visibleEpisodes.length)] : visibleEpisodes[0];
+        if (!selectedEpisode) return;
 
         console.log(selectedEpisode);
         const source = await getPlayableSource(selectedEpisode);
@@ -1108,36 +1217,6 @@ function renderPickerView({ title, seasons, getSeason, onPlay, onShuffle, onQueu
 
     document.getElementById('picker-series-title').textContent = title;
 
-    const actions = document.getElementById('picker-actions');
-    const actionsToggle = document.getElementById('picker-actions-toggle');
-    const actionsMenu = document.getElementById('picker-actions-menu');
-    const setActionsOpen = (open) => {
-        actionsToggle.setAttribute('aria-expanded', String(open));
-        actionsMenu.classList.toggle('hidden', !open);
-        actionsMenu.classList.toggle('flex', open);
-    };
-    setActionsOpen(false);
-    actionsToggle.addEventListener('click', () => {
-        closeEpisodeMenus();
-        setActionsOpen(actionsToggle.getAttribute('aria-expanded') !== 'true');
-    }, headerListenerOptions);
-    actionsMenu.addEventListener('click', event => {
-        if (event.target.closest('button')) {
-            setActionsOpen(false);
-            if (actionsToggle.offsetParent) actionsToggle.focus();
-        }
-    }, headerListenerOptions);
-    document.addEventListener('click', event => {
-        if (!actions.contains(event.target)) setActionsOpen(false);
-    }, { signal: pickerHeaderListeners.signal });
-    document.addEventListener('keydown', event => {
-        if (event.key === 'Escape' && actionsToggle.getAttribute('aria-expanded') === 'true') {
-            event.preventDefault();
-            setActionsOpen(false);
-            actionsToggle.focus();
-        }
-    }, { signal: pickerHeaderListeners.signal });
-
     document.getElementById('picker-queue-btn')?.addEventListener('click', onQueue, headerListenerOptions);
     document.getElementById('picker-play-btn')?.addEventListener('click', onPlay, headerListenerOptions);
     document.getElementById('picker-shuffle-btn')?.addEventListener('click', onShuffle, headerListenerOptions);
@@ -1146,6 +1225,7 @@ function renderPickerView({ title, seasons, getSeason, onPlay, onShuffle, onQueu
     const sourceContainer = document.getElementById('library-torrent-select');
     sourceContainer.replaceChildren();
     sourceContainer.classList.add('hidden');
+    renderPickerSourceBadges(null);
 
     const renderGroup = (group) => {
         const groupElement = document.getElementById('picker-episode-card-template').content.firstElementChild.cloneNode(true);
@@ -1162,8 +1242,9 @@ function renderPickerView({ title, seasons, getSeason, onPlay, onShuffle, onQueu
             card.dataset.artwork = episode.fileType === 'Movie' ? 'poster' : 'thumbnail';
             const badge = card.querySelector('.picker-episode-badge');
             badge.classList.add(episode.badgeColor);
-            badge.classList.toggle('hidden', episode.fileType === 'Movie');
-            badge.parentElement.classList.toggle('hidden', episode.fileType === 'Movie' && !episode.isExtended);
+            const hideBadge = episode.fileType === 'Movie' || !episode.badge;
+            badge.classList.toggle('hidden', hideBadge);
+            badge.parentElement.classList.toggle('hidden', hideBadge && !episode.isExtended);
             card.querySelector('.picker-episode-extended').classList.toggle('hidden', !episode.isExtended);
             card.querySelector('.picker-episode-size').textContent = episode.size;
             badge.textContent = episode.badge;
@@ -1189,7 +1270,6 @@ function renderPickerView({ title, seasons, getSeason, onPlay, onShuffle, onQueu
             optionsMenu.addEventListener('beforetoggle', event => {
                 const open = event.newState === 'open';
                 optionsToggle.setAttribute('aria-expanded', String(open));
-                if (open) setActionsOpen(false);
             });
             optionsToggle.addEventListener('click', () => {
                 // Native popovers escape the scrolling panel; position before the next paint.
@@ -1238,6 +1318,8 @@ function renderPickerView({ title, seasons, getSeason, onPlay, onShuffle, onQueu
         closeEpisodeMenus();
         listElement.replaceChildren();
         const { sourceSelector, groups } = getSeason(seasonKey);
+        const selectedSource = sourceSelector?.options.find(source => source.value === sourceSelector.value);
+        renderPickerSourceBadges(selectedSource?.sourceData);
         sourceContainer.replaceChildren();
         sourceContainer.classList.toggle('hidden', !sourceSelector);
         if (sourceSelector) {

@@ -78,7 +78,6 @@ export function parseFormated(stream) {
     return fullData;
 }
 
-// Parse single strings
 export function parseMediaData(rawString) {
     let cleanName = rawString.toLowerCase();
 
@@ -86,120 +85,53 @@ export function parseMediaData(rawString) {
 
     // Works for now
     return parsed;
-
-    // Seasons and Episodes
-    let finalSeasons = null;
-    let finalEpisodes = null;
-    
-    let fallbackSeason = null;
-    let fallbackEpisode = null;
-    const seMatch = rawString.match(/[sS](\d{1,2})[\.\-\s]?[eE](\d{1,4})/);
-    if (seMatch) {
-        fallbackSeason = parseInt(seMatch[1], 10);
-        fallbackEpisode = parseInt(seMatch[2], 10);
-    }
-
-    // Use PTT library
-
-    let finalTitle = parsed.title || rawString;
-
-    // Season packs
-    let seasonText = null;
-
-    if (/\b(?:complete series|complete collection|the complete series|full series)\b/i.test(cleanName)) {
-        seasonText = "COMPLETE SERIES";
-    }
-    if (!seasonText) {
-        const seasonRangeMatch = cleanName.match(/(?:s|season[s]?\s*)0*(\d{1,2})\s*(?:-|~)\s*(?:s|season[s]?\s*)?0*(\d{1,2})/i);
-        if (seasonRangeMatch) {
-            seasonText = `SEASONS ${seasonRangeMatch[1]}-${seasonRangeMatch[2]}`;
-        }
-    }
-    if (!seasonText && Array.isArray(parsed.season) && parsed.season.length > 1) {
-        const min = Math.min(...parsed.season);
-        const max = Math.max(...parsed.season);
-        seasonText = `SEASONS ${min}-${max}`;
-    }
-    if (!seasonText) {
-        const epRangeMatch = rawString.match(/(?:^|\s|-\s)0*(\d{1,3})\s*(?:~|\s-\s)\s*0*(\d{1,3})(?:\s|$|\[|\()/);
-        if (epRangeMatch) {
-            seasonText = `EPISODES ${epRangeMatch[1]}-${epRangeMatch[2]}`;
-        }
-    }
-    if (!seasonText) {
-        const activeSeason = parsed.season !== undefined ? parsed.season : fallbackSeason;
-        const activeEpisode = parsed.episode !== undefined ? parsed.episode : fallbackEpisode;
-
-        if (activeSeason !== undefined && activeSeason !== null && !Array.isArray(activeSeason)) {
-            const hasPackKeywords = /\b(?:season pack|complete season|season \d+ complete)\b/i.test(cleanName);
-            if (hasPackKeywords || (activeEpisode === undefined || activeEpisode === null)) {
-                seasonText = `FULL SEASON ${activeSeason}`;
-            }
-        }
-    }
-    if (!seasonText && /\bseason pack\b/i.test(cleanName)) {
-        seasonText = "SEASON PACK";
-    }
-
-    // Video codec
-    let videoFormat = "";
-    if (parsed.codec) {
-        videoFormat = (parsed.codec).toUpperCase();
-
-        if (videoFormat === 'H264' || videoFormat === 'X264') {
-            videoFormat = 'x264';
-        } else if (videoFormat === 'H265' || videoFormat === 'X265' || videoFormat === 'HEVC') {
-            videoFormat = 'HEVC/x265';
-        }
-    }
-
-    // Video Source (Blueray/WebRip...)
-    const customVideo = extractVideoCodec(cleanName);
-    const finalVideoSource = customVideo.source || parsed.source || "Unknown";
-    const finalVideoTier = customVideo.tier || "Standard";
-    const videoData = { source: finalVideoSource, tier: finalVideoTier };
-
-    // Audio Codec
-    const customAudio = extractAudioCodec(cleanName);
-    
-    const finalAudioCodecs = customAudio.codecs || (parsed.audio ? [parsed.audio] : []);
-    const finalAudioTier = customAudio.tier || "Standard";
-    const audioData = { codecs: finalAudioCodecs, tier: finalAudioTier };
-
-    finalTitle = finalTitle.replace(/^\[.*?\]\s*/, '');
-    finalTitle = finalTitle.replace(/\s*\[.*?\]$/, '');
-
-    finalTitle = finalTitle.replace(/[._]/g, ' ');
-    finalTitle = finalTitle.split(/\(|\bseason\b|\bepisode\b/i)[0];
-    finalTitle = finalTitle.replace(/\b[sS]\d{1,2}[eE]\d{1,4}\b/g, '');
-
-    if (parsed.year) {
-        const yearRegex = new RegExp(`\\s?\\[?${parsed.year}\\]?`, 'g');
-        finalTitle = finalTitle.replace(yearRegex, '');
-    } else {
-        finalTitle = finalTitle.replace(/\s\d{4}$/, '');
-    }
-
-    // 7. Clean up emojis, leftover hyphens, and normalize multiple spaces
-    finalTitle = finalTitle.replace(/[\p{Extended_Pictographic}]/gu, '');
-    finalTitle = finalTitle.replace(/\s+/g, ' ').trim();
-    finalTitle = finalTitle.replace(/^[-–—\s]+|[-–—\s]+$/g, '');
-
-    const pttData = {
-        title: finalTitle,
-        year: parsed.year,
-        season: parsed.season !== undefined ? parsed.season : fallbackSeason,
-        episode: parsed.episode !== undefined ? parsed.episode : fallbackEpisode,
-        seasonDetails: seasonText,
-        audioType: audioData,
-        languages: parsed.languages,
-        videoType: parsed.codec || videoFormat,
-        resolution: parsed.resolution,
-        source: videoData
-    };
-
-    return pttData;
 }
+
+// Preserve the library result and normalize the fields used by source badges.
+export function customParser(rawString) {
+    const input = typeof rawString === 'string' ? rawString : '';
+    const parsed = parseMedia(input);
+    const quality = extractVideoCodec(parsed.quality || input).source || parsed.quality || '';
+    const codec = findMediaFormats(parsed.codec || input, videoCodecs)[0]?.label || parsed.codec?.toUpperCase() || '';
+    const audio = new Set(findMediaFormats(input, audioCodecs, true).map(format => format.label));
+
+    for (const value of parsed.audio || []) {
+        // The library groups DTS variants together; retain the more specific raw-title match.
+        if (/^DTS Loss(?:less|y)$/i.test(value) && [...audio].some(codec => codec.startsWith('DTS'))) continue;
+        const normalized = findMediaFormats(value, audioCodecs)[0]?.label || value;
+        if (normalized === 'Dolby Digital' && audio.has('Dolby Digital Plus') && !audio.has('Dolby Digital')) continue;
+        audio.add(normalized);
+    }
+
+    const languageValues = [...(parsed.languages || []), ...(extractLanguage(input).languages || [])];
+    const languageTags = [];
+    const hasDualAudio = languageValues.includes('dual audio');
+    const hasMultiAudio = languageValues.includes('multi audio');
+    if (hasDualAudio) languageTags.push('Dual Audio');
+    if (hasMultiAudio) languageTags.push('Multi Audio');
+    if (parsed.dubbed && !hasDualAudio && !hasMultiAudio) languageTags.push('Dubbed');
+    if (parsed.subbed || languageValues.includes('multi subs')) languageTags.push('Subbed');
+
+    const languages = languageValues.filter(value => !['dual audio', 'multi audio', 'multi subs'].includes(value))
+        .map(value => {
+            if (/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/i.test(value)) {
+                return languageNames.of(value) || value;
+            }
+            return value;
+        });
+
+    return {
+        ...parsed,
+        resolution: { '4k': '2160p', '8k': '4320p' }[parsed.resolution?.toLowerCase()] || parsed.resolution || '',
+        quality,
+        codec,
+        audio: [...audio],
+        languages: [...new Set(languages)],
+        languageTags
+    };
+}
+
+const languageNames = new Intl.DisplayNames(['en'], { type: 'language' });
 
 // Ensure these are defined at the top of your file
 const emojiToLanguage = {
@@ -304,47 +236,51 @@ function extractVideoCodec(rawString) {
     return { source: null, tier: "Standard" };
 }
 
-// Audio categorization
-const losslessAudio = [
-    'atmos', 'truehd', 'dts-hd', 'dts:x', 'lossless'
+// Aliases share one display label, regardless of spelling or release-name separators.
+const videoCodecs = [
+    { label: 'HEVC', patterns: ['hevc', 'h265', 'h.265', 'x265'] },
+    { label: 'AVC', patterns: ['avc', 'h264', 'h.264', 'x264'] },
+    { label: 'VVC', patterns: ['vvc', 'h266', 'h.266'] },
+    { label: 'AV1', patterns: ['av1'] },
+    { label: 'VP9', patterns: ['vp9'] },
+    { label: 'VP8', patterns: ['vp8'] },
+    { label: 'MPEG-2', patterns: ['mpeg2', 'mpeg-2'] },
+    { label: 'DivX', patterns: ['divx', 'dvix'] },
+    { label: 'Xvid', patterns: ['xvid'] }
 ];
 
-const premiumAudio = [
-    'flac', 'aac', 'dts', 'dd5.1', 'ac3', 'eac3', 'e-ac3', 'dd+', 'dolby digital', '5.1', '7.1'
+const audioCodecs = [
+    { label: 'Dolby Atmos', patterns: ['dolby atmos', 'atmos'] },
+    { label: 'Dolby TrueHD', patterns: ['dolby truehd', 'truehd', 'true-hd'] },
+    { label: 'Dolby Digital Plus', patterns: ['dolby digital plus', 'dd plus', 'e-ac-3', 'e-ac3', 'eac3', 'dd+', 'ddp'] },
+    { label: 'Dolby Digital', patterns: ['dolby digital', 'dolbyd', 'ac3', 'ac-3', 'dd'] },
+    { label: 'DTS-HD MA', patterns: ['dts-hd master audio', 'dts-hd master', 'dts-hd ma', 'dtshdma'] },
+    { label: 'DTS-HD HRA', patterns: ['dts-hd hra', 'dts-hd hr', 'dtshdhr'] },
+    { label: 'DTS:X', patterns: ['dts:x', 'dts-x'] },
+    { label: 'DTS-HD', patterns: ['dts-hd'] },
+    { label: 'DTS', patterns: ['dts', 'dts lossy'] },
+    { label: 'DTS Lossless', patterns: ['dts lossless'] },
+    { label: 'FLAC', patterns: ['flac'] },
+    { label: 'AAC', patterns: ['he-aac', 'aac-lc', 'qaac', 'aac'] },
+    { label: 'Opus', patterns: ['opus'] },
+    { label: 'PCM', patterns: ['lpcm', 'pcm'] },
+    { label: 'ALAC', patterns: ['alac'] },
+    { label: 'MP3', patterns: ['mp3'] },
+    { label: 'MP2', patterns: ['mp2'] }
 ];
 
-// Master list for the regex scanner
-const allAudioTypes = [...losslessAudio, ...premiumAudio];
+function findMediaFormats(rawString, formats, allowChannelSuffix = false) {
+    const aliases = formats.flatMap(format => format.patterns).sort((a, b) => b.length - a.length);
+    const patterns = aliases.map(alias => alias.split(/[ ._-]+/)
+        .map(part => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[ ._-]*'));
+    const regex = new RegExp(`(?:^|[^a-z0-9])(${patterns.join('|')})(?=$|[^a-z0-9]${allowChannelSuffix ? '|\\d' : ''})`, 'gi');
+    const aliasKey = value => value.toLowerCase().replace(/[ ._-]/g, '');
+    const found = new Set();
 
-function extractAudioCodec(rawString) {
-    const foundAudio = new Set();
-    let highestTier = "Standard";
-
-    allAudioTypes.forEach(audio => {
-        // Escape special characters like + or . in the audio name
-        const escapedAudio = audio.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-
-        // This regex ensures we match exactly the audio string and not partial words
-        const audioRegex = new RegExp(`(?:^|\\W|_)${escapedAudio}(?:$|\\W|_)`, 'i');
-
-        if (audioRegex.test(rawString)) {
-            foundAudio.add(audio);
-        }
-    });
-
-    const codecsArray = foundAudio.size > 0 ? Array.from(foundAudio) : null;
-
-    // Evaluate the tier if codecs were found
-    if (codecsArray) {
-        if (codecsArray.some(c => losslessAudio.includes(c))) {
-            highestTier = "Lossless";
-        } else if (codecsArray.some(c => premiumAudio.includes(c))) {
-            highestTier = "Premium";
-        }
+    // Longest aliases consume the whole match, so DTS-HD MA doesn't also become DTS.
+    for (const match of (rawString || '').matchAll(regex)) {
+        const format = formats.find(format => format.patterns.some(alias => aliasKey(alias) === aliasKey(match[1])));
+        if (format) found.add(format);
     }
-
-    return {
-        codecs: codecsArray,
-        tier: highestTier
-    };
+    return [...found];
 }

@@ -1314,40 +1314,25 @@
                 </div>
 
                 <div class="flex-1 min-w-0 w-full mt-4 md:mt-0">
-                    <div id="picker-title" class="min-w-0 text-white">
-                        <div class="flex w-full flex-wrap items-center gap-x-3 gap-y-2 md:flex-nowrap">
-                            <span id="picker-series-title" class="max-w-full font-bold text-slate-100 text-base [overflow-wrap:anywhere] md:min-w-0 md:flex-1 md:truncate md:text-xl"></span>
-                            <div class="flex min-w-0 max-w-full flex-auto items-center justify-end gap-2 md:flex-none md:gap-3">
-                                <div id="picker-actions" class="relative shrink-0">
-                                    <button id="picker-actions-toggle" type="button" aria-label="Playback and queue options" aria-expanded="false" aria-controls="picker-actions-menu"
-                                        class="group grid h-11 w-11 place-items-center rounded-lg text-slate-400 transition-colors hover:text-slate-200 aria-expanded:text-slate-200 md:hidden">
-                                        <span class="pointer-events-none grid h-8 w-7 place-items-center rounded-lg bg-slate-700/20 transition-colors group-hover:bg-slate-700/40 group-aria-expanded:bg-slate-700/40">
-                                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
-                                                <circle cx="12" cy="5" r="1.75"></circle>
-                                                <circle cx="12" cy="12" r="1.75"></circle>
-                                                <circle cx="12" cy="19" r="1.75"></circle>
-                                            </svg>
-                                        </span>
-                                    </button>
-                                    <div id="picker-actions-menu" class="absolute right-0 top-full z-30 mt-2 hidden flex-col gap-1 w-48 max-w-[calc(100vw-6rem)] rounded-xl border border-slate-700 bg-slate-900 p-1.5 shadow-xl md:static md:mt-0 md:flex md:w-auto md:max-w-none md:flex-row md:gap-3 md:rounded-none md:border-0 md:bg-transparent md:p-0 md:shadow-none">
-                                        <button id="picker-play-btn" type="button" class="flex min-h-11 shrink-0 items-center justify-start gap-2 rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 shadow-lg shadow-black/10 hover:bg-slate-700 cursor-pointer md:justify-center">
-                                            Play
-                                        </button>
-                                        <button id="picker-shuffle-btn" type="button" class="flex min-h-11 shrink-0 items-center justify-start gap-2 rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 shadow-lg shadow-black/10 hover:bg-slate-700 cursor-pointer md:justify-center">
-                                            <svg class="w-5 h-5 shrink-0" aria-hidden="true" focusable="false" fill="none" stroke="currentColor">
-                                                <use href="#icon-shuffle"></use>
-                                            </svg>
-                                            Play Shuffled
-                                        </button>
-                                        <button id="picker-queue-btn" type="button" title="Add Series to Queue" class="flex min-h-11 shrink-0 items-center justify-start gap-1.5 rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 shadow-lg shadow-black/10 hover:bg-slate-700 cursor-pointer md:justify-center">
-                                            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-                                            </svg>
-                                            Queue
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
+                    <div id="picker-title" class="flex min-w-0 flex-col gap-4 text-center text-white md:text-left">
+                        <span id="picker-series-title" class="block max-w-full text-xl font-bold leading-snug text-slate-100 [overflow-wrap:anywhere] md:text-2xl"></span>
+                        <div id="picker-actions" role="group" aria-label="Playback and queue options"
+                            class="flex min-w-0 flex-wrap items-center justify-center gap-3 md:justify-start">
+                            <button id="picker-play-btn" type="button" class="inline-flex min-h-12 flex-none items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-[15px] font-medium leading-5 tracking-normal text-slate-100 antialiased shadow-lg shadow-black/10 transition-colors hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 cursor-pointer sm:px-5">
+                                <span>Play</span>
+                            </button>
+                            <button id="picker-shuffle-btn" type="button" class="inline-flex min-h-12 flex-none items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-[15px] font-medium leading-5 tracking-normal text-slate-100 antialiased shadow-lg shadow-black/10 transition-colors hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 cursor-pointer sm:px-5">
+                                <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor">
+                                    <use href="#icon-shuffle"></use>
+                                </svg>
+                                <span>Shuffle</span>
+                            </button>
+                            <button id="picker-queue-btn" type="button" title="Add Series to Queue" class="inline-flex min-h-12 flex-none items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-[15px] font-medium leading-5 tracking-normal text-slate-100 antialiased shadow-lg shadow-black/10 transition-colors hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 cursor-pointer sm:px-5">
+                                <svg class="w-4 h-4 shrink-0" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                                </svg>
+                                <span>Queue</span>
+                            </button>
                         </div>
                     </div>
                     <div class="mt-6 flex flex-wrap justify-center md:justify-start items-center gap-3 text-sm font-medium [&:not(:has(>span:not(.hidden)))]:hidden">
@@ -1370,12 +1355,20 @@
                         class="hidden draggable-row flex min-w-0 flex-1 items-center gap-2 overflow-x-auto custom-scrollbar overscroll-x-contain pb-2 cursor-grab active:cursor-grabbing select-none">
                     </div>
                 </div>
+                <div id="picker-source-details" role="group" aria-label="Source details"
+                    class="mb-6 flex min-w-0 flex-wrap items-center gap-2 empty:hidden"></div>
                 <div id="picker-list"
                     class="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 auto-rows-max content-start">
                 </div>
             </section>
         </div>
     </div>
+
+    <!-- Clones a badge into #picker-source-details; set textContent and the color variables from JavaScript. -->
+    <template id="picker-source-badge-template">
+        <span class="picker-source-badge inline-flex max-w-full items-center rounded-md border px-2.5 py-1 text-xs font-semibold leading-5 [overflow-wrap:anywhere]"
+            style="color: var(--badge-color, #cbd5e1); background-color: var(--badge-bg, #1e293b); border-color: var(--badge-border, #334155);"></span>
+    </template>
 
     <template id="picker-episode-card-template">
         <section class="picker-episode-group col-span-full w-full min-w-0 select-none" aria-label="Episode group">

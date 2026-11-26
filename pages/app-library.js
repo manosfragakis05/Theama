@@ -103,7 +103,7 @@ export async function addToAppLibrary(item, sourceKey) {
         poster: item.poster || null,
         baseUrl: item.baseUrl || null
     };
-    if (Object.values(mediaData).some(value => !value || (typeof value === 'string' && !value.trim()))) return;
+    if (!mediaData.id || mediaData.type) return;
 
     const userId = appState.currentUser?.id;
     if (!userId) throw new Error('Sign in to add cloud items to your library.');

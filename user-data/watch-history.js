@@ -13,8 +13,8 @@ export async function upsertWatchProgress(positionSeconds, durationSeconds, medi
 
     const tmdbId = media.tmdbId || media.id;
     const mediaType = media.mediaType;
-    const season = media.seasonNumber;
-    const episode = media.watchEpisodeNumber ?? media.episodeNumber;
+    const season = media?.seasonNumber;
+    const episode = media.watchEpisodeNumber ?? media?.episodeNumber;
 
     if (!Number.isSafeInteger(tmdbId) || tmdbId <= 0 || !['movie', 'tv'].includes(mediaType)) return null;
     if (mediaType === 'tv' && (!Number.isInteger(season) || season < 0
