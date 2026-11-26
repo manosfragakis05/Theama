@@ -493,6 +493,10 @@ option:hover {
         transparent var(--picker-gradient-end));
 }
 
+#picker-description {
+    text-shadow: 0 1px 3px #000, 0 2px 10px #000c;
+}
+
 /* Keep the existing picker title and controls within the full-screen hero. */
 #file-picker #picker-title > div {
     flex-wrap: wrap;

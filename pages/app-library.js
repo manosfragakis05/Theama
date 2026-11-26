@@ -339,8 +339,6 @@ export function renderAppLibrary(items) {
 
             // Normal click
             try {
-                console.log(media);
-
                 let libraryData = [];
 
                 libraryData.type = media.media_type;

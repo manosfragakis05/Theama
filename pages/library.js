@@ -405,6 +405,14 @@ function renderItem(item) {
     card.addEventListener('click', async (event) => {
         const btn = event.target.closest('button');
 
+        const libraryData = {
+            id: item.tmdbId.id,
+            tmdbId: item.tmdbId.id,
+            title: item.tmdbId.officialName,
+            type: item.mediaType,
+            poster: item?.poster
+        }
+
         // Handle Actions
         if (btn?.dataset.action === 'add-library') {
             event.stopPropagation();
@@ -421,14 +429,6 @@ function renderItem(item) {
             btn.setAttribute('aria-busy', 'true');
 
             try {
-                const libraryData = {
-                    id: item.tmdbId.id,
-                    tmdbId: item.tmdbId.id,
-                    title: item.tmdbId.officialName,
-                    type: item.mediaType,
-                    poster: item?.poster
-                }
-
                 const saved = await addToAppLibrary(libraryData, t?.hash);
 
                 if (saved && context === getMetadataContext() && card.isConnected) {
@@ -477,10 +477,10 @@ function renderItem(item) {
             }
         }
 
-        let libraryData = { torrents: [] };
+        libraryData.torrents = [];
         libraryData.torrents.push(t);
 
-        openPicker(libraryData, item.tmdbId?.id);
+        openPicker(libraryData, item.tmdbId?.id,);
     });
 
     return card;

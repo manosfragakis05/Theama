@@ -12,6 +12,11 @@ export async function getPlayableSource(episode) {
     let file_id = episode?.fid;
 
     const type = episode.mediaType || episode.media_type;
+    const id = [episode.id, episode.savedId].find(value => typeof value === 'string' && value.startsWith('kitsu:'))
+        || [episode.imdbId, episode.id].find(value => typeof value === 'string' && value.startsWith('tt'))
+        || episode.id || episode.savedId;
+
+    console.log(id);
 
     if (hasTorbox && hash) {
         let torrent = {};
@@ -43,7 +48,7 @@ export async function getPlayableSource(episode) {
         let targetStream;
 
         await getAddonStreams(
-            type, episode.id, episode.seasonNumber, episode.episodeNumber,
+            type, id, episode.seasonNumber, episode.episodeNumber,
             (streams) => {
                 if (targetStream) return true;
                 targetStream = getTargetStreamFromHash(hash, streams);
@@ -56,7 +61,7 @@ export async function getPlayableSource(episode) {
         return targetStream.url;
     }
 
-    return episode.url;
+    return episode.sourceUrl;
 }
 
 function getFirstVideoFile(torrent) {

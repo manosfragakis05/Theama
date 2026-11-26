@@ -48,18 +48,30 @@ export async function openPicker(libraryData, tmdbId, title) {
 
     const watchProgress = await fetchWatchProgress(tmdbId, userId);
 
+    const id = libraryData.savedId || libraryData.tmdbId;
     // Basic Metadata
-    const mediaMetadata = await fetchMediaMetadata(libraryData.savedId, libraryData.baseUrl, libraryData.type);
+    const mediaMetadata = await fetchMediaMetadata(id, libraryData.baseUrl, libraryData.type);
     const formattedMetadata = formatMediaMetadata(mediaMetadata);
+
+    let seasonData = {};
+    if(!libraryData.baseUrl) {
+        seasonData = formattedMetadata;
+    } else {
+        const tmdbMediaData = await fetchMediaMetadata(tmdbId, null, libraryData.type);
+        seasonData = formatMediaMetadata(tmdbMediaData)
+    }
+
+    console.log(libraryData);
     console.log(formattedMetadata);
+    console.log(seasonData);
     
     const torrentGroups = await buildTorrentGroups(torrents);
     
     const urlEpisodes = { ...cloudEpisodes, ...localEpisodes };
     const urlGroups = buildUrlGroups(urlEpisodes, libraryData.type, cleanName, formattedMetadata?.poster);
 
-    let groups = await loadEpisodeGroups(mergePickerGroups(torrentGroups, urlGroups), formattedMetadata, tmdbId);
-    groups.savedId = libraryData.savedId;
+    let groups = await loadEpisodeGroups(mergePickerGroups(torrentGroups, urlGroups), seasonData);
+    groups.savedId = id;
 
     if (generation !== pickerGeneration) return;
     if (userId !== appState.currentUser?.id) return;
@@ -68,7 +80,6 @@ export async function openPicker(libraryData, tmdbId, title) {
 
     const fallbackImage = torrents.map(torrent => document.getElementById(`img-${torrent.id}`)?.src).find(Boolean) || '';
     const pickerData = preparePickerGroups(normalizedGroups, { title: cleanName, tmdbId, fallbackImage, watchProgress });
-    console.log(pickerData, normalizedGroups);
 
     renderPickerUI(pickerData, list, formattedMetadata);
 }
@@ -374,7 +385,6 @@ async function preProcessEpisodeTorrentData(videoFiles, fallbackShowName = 'Seas
             entry.fullTMDB = match.full;
         }
     }));
-    console.log(parsedEntries);
 
     // Detect if the torrent uses season numbers; if so, default any untagged files to Season 1
     const torrentHasSeasons = parsedEntries.some(
@@ -797,26 +807,33 @@ function preparePickerGroups(franchiseGroups, { title: cleanName = '', tmdbId = 
     return { title: cleanName, tmdbId, seasons };
 }
 
-async function loadEpisodeGroups(franchiseGroups, formattedMedia, tmdbId) {
-    tmdbId ??= formattedMedia?.tmdbId;
+async function loadEpisodeGroups(franchiseGroups, formattedMedia) {
+    const tmdbId = formattedMedia?.tmdbId;
+
+    if (tmdbId && formattedMedia.type === 'movie' && formattedMedia.imdbId) {
+        for (const group of Object.values(franchiseGroups)) {
+            if (group.fileType !== 'Movie') continue;
+            for (const file of group.files) {
+                if (String(file.tmdbId) === String(tmdbId)) {
+                    file.imdbId ??= formattedMedia.imdbId;
+                }
+            }
+        }
+    }
 
     // We only process TMDB metadata if we have a valid ID
     if (tmdbId && Object.values(franchiseGroups).some(group => group.files?.length && group.fileType !== 'Movie')) {
-        // Add-on metadata may not include the TMDB season summary needed for numbering.
-        const showMetadata = Array.isArray(formattedMedia?.raw?.seasons)
-            ? formattedMedia
-            : formatMediaMetadata(await fetchMediaMetadata(tmdbId, null, 'tv'));
-        const tmdbSeasons = showMetadata?.raw?.seasons;
+        const tmdbSeasons = formattedMedia.raw?.seasons;
 
         if (Array.isArray(tmdbSeasons)) {
-            const showBackdrop = formattedMedia?.backdrop || showMetadata.backdrop || null;
+            const showBackdrop = formattedMedia.backdrop || null;
 
             const seasonCache = {};
             const aniZipCache = {};
             const animeData = await fetchAnimeMapping(tmdbId);
             const rawMatches = animeData?.data?.matches || animeData?.matches;
             const matches = Array.isArray(rawMatches) ? rawMatches : [];
-            const imdbId = showMetadata.imdbId || formattedMedia?.imdbId || null;
+            const imdbId = formattedMedia.imdbId || null;
             const getMediaId = (season, episode) => {
                 const seasonMappings = matches
                     .filter(match => match.kitsu_id && (match.season?.tmdb ?? 1) === season)
@@ -971,7 +988,8 @@ function preparePickerQueue(episodes, startEpisode = null) {
 
 // Resolve by file identity: TMDB numbering can differ from torrent episode numbering.
 export async function buildRemainingTorrentQueue(torrent, tmdbId, fileId, title, thumbnail = '') {
-    const franchiseGroups = await loadEpisodeGroups(await buildTorrentGroups([torrent]), null, tmdbId);
+    const formattedMedia = formatMediaMetadata(await fetchMediaMetadata(tmdbId, null, 'tv'));
+    const franchiseGroups = await loadEpisodeGroups(await buildTorrentGroups([torrent]), formattedMedia);
     const pickerData = preparePickerGroups(franchiseGroups, { title, tmdbId, fallbackImage: thumbnail });
     const season = pickerData.seasons.find(season => season.episodes.some(
         item => String(item.fid) === String(fileId)));
@@ -1014,7 +1032,7 @@ function renderPickerUI(pickerData, listElement, mediaMetadata) {
         element.classList.toggle('hidden', value == null || value === '');
     };
     updateMetadataField('#picker-rating', Number.isFinite(mediaMetadata?.rating)
-        ? `${mediaMetadata.rating.toFixed(1)} / 10` : '');
+        ? `${mediaMetadata.rating.toFixed(1)}` : '');
     updateMetadataField('#picker-year', mediaMetadata?.year);
     updateMetadataField('#picker-runtime', mediaMetadata?.runtime);
     updateMetadataField('#picker-cast', mediaMetadata?.cast?.length
@@ -1028,7 +1046,9 @@ function renderPickerUI(pickerData, listElement, mediaMetadata) {
     const playEpisode = async (selectedEpisode = null, shuffled = false) => {
         if (playbackRequested) return;
 
+        console.log(selectedEpisode);
         const source = await getPlayableSource(selectedEpisode);
+        if(!source) return;
 
         //const episodes = selectedEpisode?.fileType === 'Theme'
         //    ? [selectedEpisode] : preparePickerQueue(visibleEpisodes, selectedEpisode);
