@@ -1,5 +1,4 @@
-import { getQueueState, selectQueueItem, toggleShuffle, clearQueue, removeFromQueue } from './playlist.js';
-import { requestLink } from './player.js';
+import { getQueueState, playQueueItem, toggleShuffle, clearQueue, removeFromQueue } from './playlist.js';
 import { isDragging } from '../user-addons/catalog-renderer.js';
 
 function createQueueCard(item, status, isCurrent = false) {
@@ -14,8 +13,7 @@ function createQueueCard(item, status, isCurrent = false) {
     button.setAttribute('aria-label', `Play ${title}`);
     button.addEventListener('click', () => {
         if (isDragging) return;
-        const selected = selectQueueItem(item.uid);
-        if (selected) requestLink(selected.tid, selected.fid, selected.torrentName, selected.fileName, selected.uid);
+        playQueueItem(item.uid);
     });
 
     if (isCurrent) card.setAttribute('aria-current', 'true');

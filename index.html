@@ -1372,7 +1372,13 @@
 
     <template id="picker-episode-card-template">
         <section class="picker-episode-group col-span-full w-full min-w-0 select-none" aria-label="Episode group">
-            <h3 class="picker-group-title mb-2 text-lg font-bold text-slate-200">Episodes</h3>
+            <div class="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-3">
+                <h3 class="picker-group-title min-w-0 text-lg font-bold text-slate-200">Episodes</h3>
+                <button type="button" class="picker-group-queue inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-medium text-slate-200 transition-colors hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M12 4v16m8-8H4" stroke-width="2" stroke-linecap="round"></path></svg>
+                    Queue row
+                </button>
+            </div>
                     <div class="picker-episode-row draggable-row custom-scrollbar flex w-full min-w-0 items-start gap-4 overflow-x-auto overscroll-x-contain px-1 py-3 cursor-grab active:cursor-grabbing rounded-lg"
                         tabindex="-1" role="list" aria-label="Files and episodes">
                         <!-- Clone this card within its group row. Use data-artwork="poster" for portrait artwork. -->

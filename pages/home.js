@@ -1,11 +1,7 @@
 import { fetchTMDBEndpoint } from '../user-addons/catalogs.js';
 import { appState, showToast } from '../services/config.js';
 import { supabase } from '../user-data/db.js';
-import { getCurrentUserSettings } from '../user-data/user-settings.js';
-import { getPlayableSource, resolveLibraryTorrentFile } from '../utils/streams.js';
-import { startQueue, startQueueFromItem } from '../streaming/playlist.js';
-import { buildRemainingTorrentQueue } from '../metadata/picker.js';
-import { requestLink, startPlayer } from '../streaming/player.js';
+import { playNow } from '../streaming/playlist.js';
 import {
     renderHomeCarousel, renderHomeMessage, renderWatchProgress, renderWatchProgressMessage,
     renderHomeRecommendations, renderHomeRecommendationsMessage
@@ -137,67 +133,24 @@ export async function formatWatchProgress(row, userId = appState.currentUser?.id
 }
 
 export async function playWatchProgress(item) {
-    console.log(item);
     const version = ++resumeVersion;
     const userId = appState.currentUser?.id;
-    
-    const formatedItem = {
-        hash: item.currentHash,
-        fid: item.fileId,
-        sourceUrl: item.currentUrl,
-        mediaType: item.type,
-        id: item.id,
-        episodeNumber: item.episode,
-        seasonNumber: item.season
-    }
-
-    const source = await getPlayableSource(formatedItem);
-    console.log(source);
-
-    startPlayer(source, item.title, null, item);
-    return;
-    
     try {
         if (!userId || item.userId !== userId) throw new Error('Sign in to resume your watch history.');
-        if (!item.currentHash) {
-            throw new Error('Play this title from your library once to enable direct resume.');
-        }
+        if (!item.currentHash && !item.currentUrl) throw new Error('Choose this title from your library to save its playback source.');
         if (item.type === 'tv' && (!Number.isInteger(item.season) || !Number.isInteger(item.episode))) {
             throw new Error('Choose this episode from your library to save its playback details.');
         }
-
-        
-
-        const { torrentId } = await resolveLibraryTorrentFile(`library:${item.currentHash}`, item.fileId);
-        if (version !== resumeVersion || userId !== appState.currentUser?.id) return;
-        const torrent = appState.allTorrents.find(candidate => String(candidate.id) === String(torrentId));
-        const file = (torrent?.files || []).find(candidate => String(candidate.id) === String(item.fileId));
-        if (!file) throw new Error('The saved episode file is no longer available in this torrent.');
-
-        const resumeItem = {
-            tid: torrent.id, fid: file.id, hash: torrent.hash,
-            torrentName: torrent.name, fileName: file.name || file.short_name,
-            tmdbId: item.id, mediaType: item.type,
+        await playNow({
+            sourceType: item.currentHash ? 'torrent' : 'url',
+            hash: item.currentHash, fid: item.fileId, sourceUrl: item.currentUrl,
+            id: item.id, tmdbId: item.id, mediaType: item.type,
             seasonNumber: item.season, episodeNumber: item.episode, watchEpisodeNumber: item.episode,
             seriesTitle: item.type === 'tv' ? item.title : '',
-            season: item.season !== null ? `Season ${item.season}` : '',
-            title: item.episodeTitle || item.title, thumbnail: item.image
-        };
-        const episodes = item.type === 'tv'
-            ? await buildRemainingTorrentQueue(torrent, item.id, file.id, item.title, item.image)
-            : [];
-        if (version !== resumeVersion || userId !== appState.currentUser?.id) return;
-
-        let current;
-        if (episodes.length > 0) {
-            // Keep the saved episode mapping and position for the exact resumed file.
-            episodes[0] = { ...episodes[0], ...resumeItem };
-            current = startQueue(episodes);
-        } else {
-            current = startQueueFromItem(resumeItem);
-        }
-        await requestLink(current.tid, current.fid, current.torrentName, current.fileName,
-            current.uid, item.positionSeconds);
+            season: item.season != null ? `Season ${item.season}` : '',
+            title: item.episodeTitle || item.title, thumbnail: item.image,
+            progressInSeconds: item.completed ? 0 : item.positionSeconds
+        });
     } catch (error) {
         if (version === resumeVersion && userId === appState.currentUser?.id) {
             showToast(error.message || 'Could not resume this title.', 'error');

@@ -25,7 +25,9 @@ import { initializeLibraryTabs } from './pages/library.js';
 import { loadAppLibrary } from './pages/app-library.js';
 
 import { closePicker } from './metadata/picker.js';
-import { stopPlayback } from './streaming/player.js';
+import { startPlayer, stopPlayback } from './streaming/player.js';
+import { initializePlaylist } from './streaming/playlist.js';
+import { getPlayableSource } from './utils/streams.js';
 import { initializeQueueRenderer } from './streaming/playlist-renderer.js';
 
 import { updatePublicProfile, fetchPublicProfile, fetchFriendsList, handleFollowToggle } from './user-data/network.js';
@@ -56,6 +58,12 @@ import { initializeAvatarPicker } from './user-data/avatar-ui.js';
 
 // Setup Static Event Listeners
 function setupStaticEventListeners() {
+    initializePlaylist({
+        resolveSource: getPlayableSource,
+        play: (url, item, playback) => startPlayer(url, item.title, null, item, playback),
+        stop: () => stopPlayback({ notify: false }),
+        onError: message => showToast(message, 'error')
+    });
     initializeAvatarPicker();
     initializeProfileLayout({ onAniList: loadAniListWatchlists });
     initializeHelpPage();

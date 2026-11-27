@@ -13,13 +13,10 @@ import { parseMediaData } from '../utils/parseMedia.js';
 import { getPosterForLibrary, getTmdbId } from '../metadata/metadata.js';
 import { openPicker } from '../metadata/picker.js';
 
-import { requestLink, startPlayer } from '../streaming/player.js';
-import { startQueueFromItem } from '../streaming/playlist.js';
 import { downloadFile } from '../streaming/download.js';
 import { createLibraryCard } from './library-renderer.js';
 import { createLibraryGrid } from './library-grid.js';
 import { loadAppLibrary, addToAppLibrary } from './app-library.js';
-import { getPlayableSource } from '../utils/streams.js';
 
 export { downloadFile } from '../streaming/download.js';
 

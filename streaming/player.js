@@ -3,37 +3,32 @@ import { appState, smartFetch, showToast } from '../services/config.js';
 import { getCurrentUserSettings } from '../user-data/user-settings.js';
 import { upsertWatchProgress } from '../user-data/watch-history.js';
 
-import { advanceToNextItem, retreatToPreviousItem, getQueueState, setQueuePlaybackStatus } from './playlist.js';
+import { stopQueuePlayback } from './playlist.js';
 import { openExternalPlayer } from './external-players.js';
 
 export let art = null;
 let playbackGeneration = 0;
-let queuePlaybackUid = null;
+let queuePlayback = null;
 let watchProgressInterval = null;
 let saveActiveProgress = null;
 let progressSave = Promise.resolve();
 
-window.addEventListener('queue:updated', ({ detail }) => {
-    if (queuePlaybackUid && detail.current?.uid !== queuePlaybackUid) stopPlayback();
-});
-
-export async function requestLink(mediaObject, source, resumePosition = 0) {
-    
-}
-
 //#region Player
-export async function startPlayer(url, name, localFileObject = null, media) {
-    stopPlayback();
+export async function startPlayer(url, name, localFileObject = null, media, playback = null) {
+    if (playback && !playback.isCurrent()) return;
+    stopPlayback({ notify: !playback });
+    queuePlayback = playback;
     media = media ? { ...media, completionCounted: false } : null;
-    console.log(media);
+    const generation = playbackGeneration;
+    const isCurrentPlayback = () => generation === playbackGeneration && (!playback || playback.isCurrent());
     
     const defaultPlayer = getCurrentUserSettings().user_preferences.defaultPlayer || 'Internal';
     if (defaultPlayer !== 'Internal') {
         openExternalPlayer(url, name, localFileObject, defaultPlayer);
+        playback?.onStatus('playing');
         return;
     }
 
-    const generation = playbackGeneration;
     const openCurrentInExternalPlayer = () => {
         if (!art || generation !== playbackGeneration) return;
         art.pause();
@@ -45,7 +40,7 @@ export async function startPlayer(url, name, localFileObject = null, media) {
     document.getElementById('full-detail-view')?.classList.add('hidden', 'translate-y-full');
 
     let container = await detectContainer(url);
-    if (generation !== playbackGeneration) return;
+    if (!isCurrentPlayback()) return;
     if (!container && !localFileObject) {
         try {
             // Resolve redirects through the proxy when browser CORS hides the file headers.
@@ -60,7 +55,7 @@ export async function startPlayer(url, name, localFileObject = null, media) {
             console.warn('Could not resolve the video container through the proxy.');
         }
     }
-    if (generation !== playbackGeneration) return;
+    if (!isCurrentPlayback()) return;
     const isMkv = container === 'mkv';
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
@@ -76,6 +71,7 @@ export async function startPlayer(url, name, localFileObject = null, media) {
         title: name,
         type: videoType,
         autoSize: false,
+        autoplay: true,
         playsInline: true,
         fullscreen: true,
         fullscreenWeb: false,
@@ -92,20 +88,14 @@ export async function startPlayer(url, name, localFileObject = null, media) {
         playbackRate: false,
 
         controls: [
-            ...(false ? [
+            ...(playback ? [
                 {
                     position: 'left',
                     index: 5,
                     html: '<svg style="width:24px;height:24px;" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>',
                     tooltip: 'Previous',
                     click: function () {
-                        if (generation !== playbackGeneration || getQueueState().current?.uid !== queueUid) return;
-                        const prev = retreatToPreviousItem();
-                        if (prev) {
-                            requestLink(prev.tid, prev.fid, prev.torrentName, prev.fileName, prev.uid);
-                        } else {
-                            showToast('No previous episode in queue', 'info');
-                        }
+                        if (isCurrentPlayback()) playback.onPrevious();
                     },
                 },
                 {
@@ -114,13 +104,7 @@ export async function startPlayer(url, name, localFileObject = null, media) {
                     html: '<svg style="width:24px;height:24px;" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>',
                     tooltip: 'Next in Queue',
                     click: function () {
-                        if (generation !== playbackGeneration || getQueueState().current?.uid !== queueUid) return;
-                        const next = advanceToNextItem();
-                        if (next) {
-                            requestLink(next.tid, next.fid, next.torrentName, next.fileName, next.uid);
-                        } else {
-                            showToast('End of queue reached', 'info');
-                        }
+                        if (isCurrentPlayback()) playback.onNext();
                     },
                 },
             ] : []),
@@ -273,16 +257,15 @@ export async function startPlayer(url, name, localFileObject = null, media) {
     playerArt.on('control', syncPlayerButtons);
     syncPlayerButtons();
 
-    // Auto skip when video ends
+    playerArt.on('video:playing', () => {
+        if (art === playerArt && isCurrentPlayback()) playback?.onStatus('playing');
+    });
+
+    // The playlist decides what follows this entry.
     playerArt.on('video:ended', () => {
         if (art !== playerArt || generation !== playbackGeneration) return;
         saveProgress();
-        if (!queueUid || getQueueState().current?.uid !== queueUid) return;
-        const next = advanceToNextItem();
-        if (next) {
-            showToast(`Playing Next: ${next.title}`, 'info');
-            requestLink(next.tid, next.fid, next.torrentName, next.fileName, next.uid);
-        }
+        if (isCurrentPlayback()) playback?.onEnded();
     });
 
     playerArt.on('video:error', () => {
@@ -465,7 +448,8 @@ export async function startPlayer(url, name, localFileObject = null, media) {
     document.getElementById('app-main')?.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-export function stopPlayback() {
+export function stopPlayback({ notify = true } = {}) {
+    if (notify) stopQueuePlayback({ stopPlayer: false });
     const saveProgress = saveActiveProgress;
     saveActiveProgress = null;
     saveProgress?.();
@@ -473,10 +457,8 @@ export function stopPlayback() {
     watchProgressInterval = null;
     const generation = ++playbackGeneration;
     const instance = art;
-    const stoppedQueueUid = queuePlaybackUid;
-    queuePlaybackUid = null;
+    queuePlayback = null;
     art = null;
-    if (stoppedQueueUid) setQueuePlaybackStatus(stoppedQueueUid, 'idle');
 
     if (instance) {
         // A load that is still in progress destroys itself when it settles.
@@ -503,12 +485,10 @@ export function stopPlayback() {
 
 export function handlePlaybackFailure(reason) {
     if (!art) return;
-    const failedQueueUid = queuePlaybackUid;
-    stopPlayback();
-    showToast(`Playback Failed: ${reason}`, 'error');
-    if (failedQueueUid && getQueueState().current?.uid === failedQueueUid) {
-        setQueuePlaybackStatus(failedQueueUid, 'failed');
-    }
+    const failedPlayback = queuePlayback;
+    stopPlayback({ notify: false });
+    if (failedPlayback) failedPlayback.onStatus('failed', reason);
+    else showToast(`Playback Failed: ${reason}`, 'error');
 }
 
 export function playDirect() {

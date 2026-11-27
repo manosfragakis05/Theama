@@ -15,9 +15,7 @@ import { fetchLibrary } from '../pages/library.js';
 import { addToAppLibrary } from '../pages/app-library.js';
 
 import { requestTorboxDeviceCode, waitForTorboxDeviceToken } from './torbox-device-auth.js';
-import { requestLink } from '../streaming/player.js';
-
-import { startQueueFromItem } from '../streaming/playlist.js';
+import { playNow } from '../streaming/playlist.js';
 
 let pairingController = null;
 let pairingUserId;
@@ -253,20 +251,19 @@ export async function addStreamtoTorbox(hash, rawStream) {
 
 async function playAddedItem(source, media = mediaStore.get()) {
     try {
-        const current = startQueueFromItem({
-            sourceType: 'addon', sourceMediaId: String(media.id), streamId: media.streamId,
-            hash: media.hash,
-            tid: `addon:${media.id}`, fid: `addon:${media.seasonNumber ?? 1}:${media.episodeNumber ?? 1}`,
+        closeStreamPicker();
+        return await playNow({
+            sourceType: media.hash ? 'addon' : 'url',
+            id: media.id, savedId: media.id, imdbId: media.imdbId,
+            sourceMediaId: String(media.id), streamId: media.streamId,
+            hash: media.hash, sourceUrl: source,
             tmdbId: media.tmdbId, mediaType: media.type === 'movie' ? 'movie' : 'tv',
             seasonNumber: media.seasonNumber, episodeNumber: media.episodeNumber,
             watchEpisodeNumber: media.episodeNumber,
             title: media.title, thumbnail: media.poster, torrentName: media.title,
-            fileName: media.fileName || media.title || 'Stream'
+            fileName: media.fileName || media.title || 'Stream',
+            progressInSeconds: media.resumePosition || 0
         });
-        closeStreamPicker();
-
-        return await requestLink(current.tid, current.fid, current.torrentName, current.fileName, current.uid,
-            media.resumePosition || 0, { sourceUrl: source });
     } catch (error) {
         console.error('Play after add failed:', error);
         showToast(`Could not play: ${error.message}`, 'error');

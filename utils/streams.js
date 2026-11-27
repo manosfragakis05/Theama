@@ -3,65 +3,56 @@ import { getAddonStreams } from "../user-addons/scrapers";
 import { getCurrentUserSettings } from "../user-data/user-settings";
 
 export async function getPlayableSource(episode) {
-    const hasTorbox = getCurrentUserSettings().user_preferences.torboxApiKey != "";
-
+    if (!episode) return null;
+    const key = getCurrentUserSettings().user_preferences.torboxApiKey;
     const hash = episode.hash;
     const url = episode.sourceUrl;
-    if (!hash && !url) return;
-
-    let file_id = episode?.fid;
+    if (episode.sourceType === 'url') return url || null;
 
     const type = episode.mediaType || episode.media_type;
-    const id = [episode.id, episode.savedId].find(value => typeof value === 'string' && value.startsWith('kitsu:'))
-        || [episode.imdbId, episode.id].find(value => typeof value === 'string' && value.startsWith('tt'))
-        || episode.id || episode.savedId;
+    const ids = [episode.streamId, episode.imdbId, episode.id, episode.savedId, episode.sourceMediaId]
+        .filter(value => value !== 'undefined' && value !== 'null');
+    const id = ids.find(value => typeof value === 'string' && value.startsWith('kitsu:'))
+        || ids.find(value => typeof value === 'string' && value.startsWith('tt'))
+        || ids.find(value => value != null && value !== '') || episode.tmdbId;
+    const hasAccountIds = Number.isSafeInteger(Number(episode.tid)) && Number(episode.tid) > 0
+        && Number.isSafeInteger(Number(episode.fid)) && episode.fid != null && Number(episode.fid) >= 0;
 
-    console.log(id);
-
-    if (hasTorbox && hash) {
-        let torrent = {};
-        if (file_id == null) {
-            torrent = await getTorboxTorrentFromHash(hash, true);
-
-            file_id = getFirstVideoFile(torrent);
-        } else {
-            torrent = await getTorboxTorrentFromHash(hash, false);
+    // An add-on item without a file ID must resolve its exact episode, not the first file in a pack.
+    const needsAddonLookup = episode.sourceType === 'addon' && episode.fid == null;
+    if (key && (hash || hasAccountIds) && !needsAddonLookup) {
+        const torrent = hash ? await getTorboxTorrentFromHash(hash, episode.fid == null)
+            : { id: episode.tid, torboxType: episode.torboxType, download_finished: true };
+        if (!torrent?.download_finished) {
+            if (url) return url;
+            throw new Error('This source is not ready in TorBox yet.');
         }
-        if (!torrent?.download_finished) return;
-
-        let torboxType = 'torrents';
-
+        const fileId = episode.fid ?? getFirstVideoFile(torrent);
+        if (fileId == null) throw new Error('No playable file was found in this source.');
         const isUsenet = torrent.torboxType === 'usenet';
-        if (isUsenet) torboxType = 'usenet'
-
-        const params = new URLSearchParams({
-            token: getCurrentUserSettings().user_preferences.torboxApiKey,
+        const params = new URLSearchParams({ token: key,
             [isUsenet ? 'usenet_id' : 'torrent_id']: String(torrent.id),
-            file_id: file_id,
-            redirect: 'true'
-        });
-
-        return `https://api.torbox.app/v1/api/${torboxType}/requestdl?${params}`;
+            file_id: String(fileId), redirect: 'true' });
+        return `https://api.torbox.app/v1/api/${isUsenet ? 'usenet' : 'torrents'}/requestdl?${params}`;
     }
 
-    if (!hasTorbox && hash) {
+    if (id && type && (hash || episode.sourceType === 'addon')) {
         let targetStream;
-
-        await getAddonStreams(
-            type, id, episode.seasonNumber, episode.episodeNumber,
-            (streams) => {
-                if (targetStream) return true;
-                targetStream = getTargetStreamFromHash(hash, streams);
-                if (!targetStream) return false;
-                return true;
-            }
-        );
-        console.log(targetStream);
-
-        return targetStream.url;
+        const hashes = hash ? [hash] : episode.sourceHashes || [];
+        try {
+            await getAddonStreams(type, id, episode.seasonNumber, episode.episodeNumber, streams => {
+                targetStream = streams.find(stream => typeof stream.url === 'string'
+                    && (hashes.some(hash => getStreamHash(stream)?.toLowerCase() === hash.toLowerCase())
+                        || (!hashes.length && stream.url === url)));
+                return Boolean(targetStream);
+            });
+        } catch (error) {
+            if (!url) throw error;
+        }
+        if (targetStream?.url) return targetStream.url;
     }
-
-    return episode.sourceUrl;
+    if (url) return url;
+    throw new Error('This episode source is no longer available.');
 }
 
 function getFirstVideoFile(torrent) {
@@ -75,12 +66,6 @@ function getFirstVideoFile(torrent) {
     return null;
 }
 
-function getTargetStreamFromHash(hash, streams) {
-    for (const stream of streams) {
-        stream.hash = getStreamHash(stream);
-        if (stream.hash === hash) return stream;
-    }
-}
 
 export function getStreamHash(stream = {}) {
     if (!stream || typeof stream !== 'object') return '';

@@ -8,6 +8,7 @@
     "build": "vite build",
     "test:anilist": "node --test tests/anilist-*.test.js",
     "test:avatars": "node --test tests/avatar-*.test.js",
+    "test:playlist": "node --test tests/playlist*.test.js",
     "preview": "vite preview"
   },
   "devDependencies": {

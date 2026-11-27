@@ -8,11 +8,7 @@
 import { appState, showToast } from '../services/config.js';
 import { parseMediaData, customParser } from '../utils/parseMedia.js';
 
-import { startPlayer } from '../streaming/player.js';
-import {
-    addToQueue,
-    addItemsToQueue
-} from '../streaming/playlist.js';
+import { startQueue, addToQueue } from '../streaming/playlist.js';
 
 import { fetchAnimeMapping } from '../api.js';
 import {
@@ -21,7 +17,6 @@ import {
     getTmdbSeasonEpisodes
 } from './metadata.js';
 
-import { getPlayableSource } from '../utils/streams.js';
 import { fetchWatchProgress } from '../user-data/watch-history.js';
 
 //#region Open Logic
@@ -823,6 +818,7 @@ function preparePickerGroups(franchiseGroups, { title: cleanName = '', tmdbId = 
                     savedId: franchiseGroups.savedId,
                     id: fileObj.id ?? (isMovieFile && episodeTmdbId != null ? `tmdb:${episodeTmdbId}` : null),
                     tid: sourceTorrent?.id ?? null,
+                    torboxType: sourceTorrent?.torboxType === 'usenet' ? 'usenet' : 'torrent',
                     fid: originalFile?.id ?? null,
                     hash: sourceTorrent?.hash ?? null,
                     tmdbId: episodeTmdbId,
@@ -1051,26 +1047,6 @@ function closeEpisodeMenus() {
         .forEach(menu => menu.hidePopover());
 }
 
-// Queue the displayed episodes in their existing order, excluding songs.
-function preparePickerQueue(episodes, startEpisode = null) {
-    const items = episodes.filter(episode => episode.fileType !== 'Theme');
-    if (!startEpisode) return items;
-    const index = items.indexOf(startEpisode);
-    return index >= 0 ? items.slice(index) : [];
-}
-
-// Resolve by file identity: TMDB numbering can differ from torrent episode numbering.
-export async function buildRemainingTorrentQueue(torrent, tmdbId, fileId, title, thumbnail = '') {
-    const formattedMedia = formatMediaMetadata(await fetchMediaMetadata(tmdbId, null, 'tv'));
-    const franchiseGroups = await loadEpisodeGroups(await buildTorrentGroups([torrent]), formattedMedia);
-    const pickerData = preparePickerGroups(franchiseGroups, { title, tmdbId, fallbackImage: thumbnail });
-    const season = pickerData.seasons.find(season => season.episodes.some(
-        item => String(item.fid) === String(fileId)));
-    if (!season) return [];
-    const startEpisode = season.episodes.find(item => String(item.fid) === String(fileId));
-    return preparePickerQueue(season.episodes, startEpisode);
-}
-
 //#region UI Rendering
 function renderPickerSourceBadges(sourceData) {
     const container = document.getElementById('picker-source-details');
@@ -1149,26 +1125,21 @@ function renderPickerUI(pickerData, listElement, mediaMetadata) {
     let visibleEpisodes = [];
     // Guard playback within this picker so the library's click cooldown does not block it.
     let playbackRequested = false;
-    const playEpisode = async (selectedEpisode = null, shuffled = false) => {
+    const playEpisodes = async (episodes, options = {}) => {
         if (playbackRequested) return;
-        selectedEpisode ??= shuffled
-            ? visibleEpisodes[Math.floor(Math.random() * visibleEpisodes.length)] : visibleEpisodes[0];
-        if (!selectedEpisode) return;
-
-        console.log(selectedEpisode);
-        const source = await getPlayableSource(selectedEpisode);
-        if(!source) return;
-
-        //const episodes = selectedEpisode?.fileType === 'Theme'
-        //    ? [selectedEpisode] : preparePickerQueue(visibleEpisodes, selectedEpisode);
-        //
-        //const episode = startQueue(episodes, { shuffled });
-        //if (!episode) return;
-
         playbackRequested = true;
         closePicker();
-
-        startPlayer(source, selectedEpisode.title, null, selectedEpisode);
+        try { await startQueue(episodes, options); }
+        catch (error) { showToast(error.message || 'Could not start this collection.', 'error'); }
+        finally { playbackRequested = false; }
+    };
+    const queueEpisodes = (episodes, options = {}) => {
+        try {
+            const count = addToQueue(episodes, options);
+            showToast(count ? `Added ${count} item${count === 1 ? '' : 's'} to queue` : 'Already queued.', count ? 'success' : 'info');
+        } catch (error) {
+            showToast(error.message || 'Could not queue these files.', 'error');
+        }
     };
 
     const getSeason = (seasonKey) => {
@@ -1190,23 +1161,21 @@ function renderPickerUI(pickerData, listElement, mediaMetadata) {
         title: mediaMetadata?.title || title,
         seasons,
         getSeason,
-        onPlay: () => playEpisode(),
-        onShuffle: () => playEpisode(null, true),
-        onEpisodePlay: episode => playEpisode(episode),
-        onEpisodeQueue: addToQueue,
+        onPlay: () => playEpisodes(visibleEpisodes),
+        onShuffle: () => playEpisodes(visibleEpisodes, { shuffled: true }),
+        onEpisodePlay: (episode, group) => playEpisodes(group.episodes, { startItem: episode, includeThemes: true }),
+        onEpisodeQueue: queueEpisodes,
+        onGroupQueue: group => queueEpisodes(group.episodes),
         onEpisodeDownload: (episode) => {
             // FIX DOWNLOAD
         },
-        onQueue: () => {
-            const count = addItemsToQueue(preparePickerQueue(visibleEpisodes));
-            if (count > 0) showToast(`Added ${count} episodes to queue`, 'success');
-        }
+        onQueue: () => queueEpisodes(visibleEpisodes, { includeThemes: false })
     }, listElement);
 }
 
 let pickerHeaderListeners = null;
 // Render prepared seasons and episode cards; the caller supplies all source actions.
-function renderPickerView({ title, seasons, getSeason, onPlay, onShuffle, onQueue, onEpisodePlay, onEpisodeQueue, onEpisodeDownload }, listElement) {
+function renderPickerView({ title, seasons, getSeason, onPlay, onShuffle, onQueue, onGroupQueue, onEpisodePlay, onEpisodeQueue, onEpisodeDownload }, listElement) {
     closeEpisodeMenus();
     pickerHeaderListeners?.abort();
     pickerHeaderListeners = new AbortController();
@@ -1232,6 +1201,9 @@ function renderPickerView({ title, seasons, getSeason, onPlay, onShuffle, onQueu
         const row = groupElement.querySelector('.picker-episode-row');
         const cardTemplate = row.querySelector('.picker-episode-card');
         groupElement.querySelector('.picker-group-title').textContent = group.title;
+        const queueGroupButton = groupElement.querySelector('.picker-group-queue');
+        queueGroupButton.setAttribute('aria-label', `Queue ${group.title}`);
+        queueGroupButton.addEventListener('click', () => onGroupQueue(group));
         groupElement.setAttribute('aria-label', group.title);
         row.setAttribute('aria-label', group.title);
         row.replaceChildren();
@@ -1306,7 +1278,7 @@ function renderPickerView({ title, seasons, getSeason, onPlay, onShuffle, onQueu
 
                 if (btn || e.target.closest('.picker-episode-menu')) return;
 
-                onEpisodePlay(episode);
+                onEpisodePlay(episode, group);
             };
 
             row.appendChild(card);
