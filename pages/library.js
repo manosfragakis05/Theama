@@ -427,6 +427,7 @@ function renderItem(item) {
 
             try {
                 const saved = await addToAppLibrary(getLibraryData(), t?.hash);
+                console.log(saved, getLibraryData());
 
                 if (saved && context === getMetadataContext() && card.isConnected) {
                     btn.dataset.added = 'true';
